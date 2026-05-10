@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>AI Categorizer &raquo; Firefly III</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/AdminLTE.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/skins/skin-blue.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:400&display=swap">
+
+    <style>
+        body,
+        .content-wrapper,
+        .main-footer {
+            font-family: 'Roboto', 'Source Sans Pro', sans-serif;
+        }
+
+        /* Job table */
+        #job-table tbody tr {
+            cursor: pointer;
+        }
+
+        .job-detail-row {
+            background-color: #f9fafc !important;
+            cursor: default;
+        }
+
+        .job-detail-row td {
+            border-top: none !important;
+            padding: 0 !important;
+        }
+
+        .detail-inner {
+            padding: 14px 16px 14px 38px;
+            border-bottom: 1px solid #f4f4f5;
+        }
+
+        pre.detail-pre {
+            font-size: 11px;
+            max-height: 180px;
+            overflow-y: auto;
+            background: #f4f4f5;
+            border: none;
+        }
+
+        /* Category chips */
+        .cat-chip {
+            display: inline-block;
+            padding: 4px 10px;
+            margin: 3px 4px 3px 0;
+            background: #f9fafc;
+            border: 1px solid #d2d6de;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .cat-chip .cat-notes {
+            color: #848484;
+            font-size: 12px;
+        }
+
+        /* Selected transaction row */
+        #txn-tbody tr.selected td {
+            background-color: #d9edf7 !important;
+        }
+
+        /* Tighten info boxes slightly */
+        .info-box {
+            min-height: 70px;
+        }
+
+        .info-box .info-box-icon {
+            height: 70px;
+            line-height: 70px;
+            width: 70px;
+            font-size: 28px;
+        }
+
+        .info-box .info-box-content {
+            padding: 10px 14px;
+            margin-left: 70px;
+        }
+
+        .info-box .info-box-number {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        /* Sidebar collapse persistence */
+        .sidebar-toggle {
+            cursor: pointer;
+        }
+
+        /* Batch status inline text */
+        #batch-status {
+            font-size: 13px;
+            color: #848484;
+        }
+
+        /* Connection dot in navbar */
+        #conn-dot {
+            font-size: 10px;
+            vertical-align: middle;
+        }
+
+        /* Select-all-pages banner */
+        #txn-select-all-bar {
+            background: #d9edf7;
+            border-bottom: 1px solid #bce8f1;
+            padding: 8px 14px;
+            font-size: 13px;
+            display: none;
+        }
+
+        #txn-select-all-bar a {
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body class="skin-blue sidebar-mini hold-transition">
+    <script>
+        if ('true' === localStorage.getItem('ff3ai_sidebar_collapsed')) {
+            document.body.classList.add('sidebar-collapse');
+        }
+    </script>
+    <div class="wrapper">
+
+        <!-- ═══════════════════════ HEADER ═══════════════════════════ -->
+        <header class="main-header">
+            <a href="/" class="logo">
+                <span class="logo-mini"><b>AI</b></span>
+                <span class="logo-lg"><b>Firefly</b>&nbsp;AI</span>
+            </a>
+            <nav class="navbar navbar-static-top" role="navigation">
+                <a href="#" class="sidebar-toggle" data-toggle="push-menu" role="button">
+                    <span class="sr-only">Toggle navigation</span>
+                </a>
+                <div class="navbar-custom-menu">
+                    <ul class="nav navbar-nav">
+                        <li>
+                            <a href="#">
+                                <i class="fa fa-circle" id="conn-dot" style="color:#d2d6de"></i>
+                                &nbsp;<span id="conn-label" style="font-size:13px">Connecting&hellip;</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+        </header>
+
+        <!-- ═══════════════════════ SIDEBAR ═════════════════════════ -->
+        <aside class="main-sidebar">
+            <section class="sidebar">
+                <ul class="sidebar-menu" data-widget="tree">
+                    <li class="header">AI CATEGORIZER</li>
+                    <li class="active" id="nav-jobs">
+                        <a href="#" onclick="return switchTab('jobs')">
+                            <i class="fa fa-tasks"></i>
+                            <span>Jobs</span>
+                            <span class="pull-right-container">
+                                <small class="label pull-right bg-blue" id="jobs-running-badge"
+                                    style="display:none"></small>
+                            </span>
+                        </a>
+                    </li>
+                    <li id="nav-transactions">
+                        <a href="#" onclick="return switchTab('transactions')">
+                            <i class="fa fa-list-alt"></i>
+                            <span>Transactions</span>
+                        </a>
+                    </li>
+                    <li id="nav-categories">
+                        <a href="#" onclick="return switchTab('categories')">
+                            <i class="fa fa-bookmark-o"></i>
+                            <span>Categories</span>
+                        </a>
+                    </li>
+                    <li id="nav-settings">
+                        <a href="#" onclick="return switchTab('settings')">
+                            <i class="fa fa-cog"></i>
+                            <span>Settings</span>
+                            <span class="pull-right-container">
+                                <small class="label pull-right bg-red" id="settings-badge"
+                                    style="display:none">!</small>
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </section>
+        </aside>
+
+        <!-- ═══════════════════════ CONTENT ═════════════════════════ -->
+        <div class="content-wrapper">
+
+            <section class="content-header">
+                <h1 id="page-title">Jobs <small id="page-subtitle">Recent classification activity</small></h1>
+                <ol class="breadcrumb">
+                    <li><a href="#"><i class="fa fa-home"></i> Firefly III</a></li>
+                    <li class="active" id="breadcrumb-leaf">Jobs</li>
+                </ol>
+            </section>
+
+            <section class="content">
+
+                <!-- ─────────────────── JOBS ─────────────────── -->
+                <div id="tab-jobs">
+
+                    <div class="row hidden-xs">
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box bg-aqua-gradient">
+                                <span class="info-box-icon"><i class="fa fa-tasks"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">Total</span>
+                                    <span class="info-box-number" id="stat-total">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box bg-blue-gradient">
+                                <span class="info-box-icon"><i class="fa fa-spinner"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">Running</span>
+                                    <span class="info-box-number" id="stat-running">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box bg-green-gradient">
+                                <span class="info-box-icon"><i class="fa fa-check"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">Classified</span>
+                                    <span class="info-box-number" id="stat-classified">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box bg-teal-gradient">
+                                <span class="info-box-icon"><i class="fa fa-question-circle"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">Assumed</span>
+                                    <span class="info-box-number" id="stat-assumed">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box" style="background:linear-gradient(to right,#e8722f,#f0914f)">
+                                <span class="info-box-icon"><i class="fa fa-flag-o"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text" style="color:#fff">Review</span>
+                                    <span class="info-box-number" style="color:#fff" id="stat-review">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
+                            <div class="info-box bg-maroon" style="background:#c0392b">
+                                <span class="info-box-icon"><i class="fa fa-times-circle"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">Failed</span>
+                                    <span class="info-box-number" id="stat-failed">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-default collapsed-box">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-bolt"></i> Batch Classification</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
+                                            <i class="fa fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body" style="display:none">
+                                    <p class="text-muted" style="margin-bottom:14px">
+                                        Classify all uncategorized withdrawal transactions in Firefly III using the
+                                        configured AI provider.
+                                    </p>
+                                    <button type="button" class="btn btn-default" id="btn-dry-run" onclick="dryRun()">
+                                        <i class="fa fa-search"></i> Check uncategorized
+                                    </button>
+                                    &nbsp;
+                                    <button type="button" class="btn btn-primary" id="btn-batch" disabled
+                                        onclick="confirmBatch()">
+                                        <i class="fa fa-play"></i> Run batch
+                                    </button>
+                                    &nbsp;&nbsp;<span id="batch-status"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-primary">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title">Classification Jobs</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
+                                            <i class="fa fa-minus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body no-padding">
+                                    <table class="table table-hover" id="job-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:18px"></th>
+                                                <th>Destination</th>
+                                                <th class="hidden-xs">Description</th>
+                                                <th class="text-right hidden-sm hidden-xs">Amount</th>
+                                                <th>Category</th>
+                                                <th>Outcome</th>
+                                                <th class="hidden-xs text-right">Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="job-tbody">
+                                            <tr id="job-empty-row">
+                                                <td colspan="7" class="text-center text-muted" style="padding:40px 0">
+                                                    <i class="fa fa-inbox fa-3x"
+                                                        style="display:block;margin-bottom:10px;opacity:.3"></i>
+                                                    No jobs yet &mdash; waiting for webhooks or run a batch.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /tab-jobs -->
+
+                <!-- ─────────────────── TRANSACTIONS ─────────────────── -->
+                <div id="tab-transactions" style="display:none">
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-default">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-filter"></i> Filter</h3>
+                                </div>
+                                <div class="box-body">
+                                    <form class="form-inline" onsubmit="loadTransactions();return false">
+                                        <div class="form-group">
+                                            <label class="sr-only">From</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-addon">From</span>
+                                                <input type="date" class="form-control" id="txn-start">
+                                            </div>
+                                        </div>
+                                        &nbsp;
+                                        <div class="form-group">
+                                            <label class="sr-only">To</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-addon">To</span>
+                                                <input type="date" class="form-control" id="txn-end">
+                                            </div>
+                                        </div>
+                                        &nbsp;&nbsp;
+                                        <button type="submit" class="btn btn-default btn-sm">
+                                            <i class="fa fa-refresh"></i> Load
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="txn-flash"></div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-primary">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title">Withdrawals</h3>
+                                    <div class="box-tools pull-right">
+                                        <span class="label label-primary" id="txn-sel-badge"
+                                            style="display:none;margin-right:8px"></span>
+                                        <button type="button" class="btn btn-primary btn-sm" id="btn-recategorize"
+                                            disabled onclick="recategorizeSelected()">
+                                            <i class="fa fa-magic"></i> Re-categorize selected
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="txn-select-all-bar">
+                                    All <strong id="txn-page-count"></strong> transactions on this page are selected.
+                                    &nbsp;<a href="#" onclick="selectAllPages();return false">Select all <strong
+                                            id="txn-all-count"></strong> transactions in this period</a>
+                                    &nbsp;&mdash;&nbsp;<a href="#" onclick="clearSelection();return false">Clear
+                                        selection</a>
+                                </div>
+                                <div class="box-body no-padding">
+                                    <table class="table table-striped table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:18px">
+                                                    <input type="checkbox" id="txn-select-all"
+                                                        onchange="toggleSelectAll(this)">
+                                                </th>
+                                                <th>Date</th>
+                                                <th>Destination</th>
+                                                <th class="hidden-xs">Description</th>
+                                                <th class="text-right">Amount</th>
+                                                <th>Category</th>
+                                                <th class="hidden-xs">AI tag</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="txn-tbody">
+                                            <tr>
+                                                <td colspan="7" class="text-center text-muted" style="padding:40px 0">
+                                                    Set a date range above and click Load.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="box-footer clearfix" id="txn-footer" style="display:none">
+                                    <ul class="pagination pagination-sm no-margin pull-right" id="txn-pagination"></ul>
+                                    <p class="text-muted" style="line-height:34px" id="txn-count"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /tab-transactions -->
+
+                <!-- ─────────────────── CATEGORIES ─────────────────── -->
+                <div id="tab-categories" style="display:none">
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-primary">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-bookmark-o"></i> AI-Visible Categories</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-default btn-sm" onclick="loadCategories()">
+                                            <i class="fa fa-refresh"></i> Refresh
+                                        </button>
+                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
+                                            <i class="fa fa-minus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body" id="cat-body">
+                                    <p class="text-muted">Click Refresh to load categories from Firefly III.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div><!-- /tab-categories -->
+
+                <!-- ─────────────────── SETTINGS ─────────────────── -->
+                <div id="tab-settings" style="display:none">
+
+                    <div id="settings-flash"></div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="box box-primary">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-plug"></i> Firefly III Connection</h3>
+                                </div>
+                                <div class="box-body">
+                                    <form class="form-horizontal">
+                                        <div class="form-group">
+                                            <label class="col-sm-4 control-label">Instance URL</label>
+                                            <div class="col-sm-8">
+                                                <input type="url" class="form-control" id="cfg-firefly-url"
+                                                    placeholder="https://firefly.example.com">
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-4 control-label">Personal Access Token</label>
+                                            <div class="col-sm-8">
+                                                <input type="password" class="form-control" id="cfg-firefly-token"
+                                                    placeholder="Leave blank to keep existing">
+                                                <p class="help-block" id="token-hint"
+                                                    style="display:none;color:#3c763d">
+                                                    <i class="fa fa-check-circle"></i> Token is configured
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="box-footer">
+                                    <button type="button" class="btn btn-default" id="btn-test"
+                                        onclick="testConnection()">
+                                        <i class="fa fa-check-circle-o"></i> Test connection
+                                    </button>
+                                    <span id="test-result" style="margin-left:10px;font-size:13px"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="box box-primary">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-magic"></i> AI Provider</h3>
+                                </div>
+                                <div class="box-body">
+                                    <form class="form-horizontal">
+                                        <div class="form-group">
+                                            <label class="col-sm-4 control-label">Provider</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-control" id="cfg-provider"
+                                                    onchange="onProviderChange()">
+                                                    <option value="openai">OpenAI</option>
+                                                    <option value="gemini">Google Gemini</option>
+                                                    <option value="deepseek">Deepseek</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div id="section-openai">
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">API Key</label>
+                                                <div class="col-sm-8">
+                                                    <input type="password" class="form-control" id="cfg-openai-key"
+                                                        placeholder="Leave blank to keep existing">
+                                                    <p class="help-block" id="openai-key-hint"
+                                                        style="display:none;color:#3c763d">
+                                                        <i class="fa fa-check-circle"></i> Key is configured
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">Model</label>
+                                                <div class="col-sm-8">
+                                                    <input type="text" class="form-control" id="cfg-openai-model"
+                                                        placeholder="gpt-4o-mini">
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">
+                                                    Base URL
+                                                    <small class="text-muted">(optional)</small>
+                                                </label>
+                                                <div class="col-sm-8">
+                                                    <input type="url" class="form-control" id="cfg-openai-base-url"
+                                                        placeholder="https://api.openai.com/v1">
+                                                    <p class="help-block">Override for Ollama or other OpenAI-compatible
+                                                        APIs.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div id="section-gemini" style="display:none">
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">API Key</label>
+                                                <div class="col-sm-8">
+                                                    <input type="password" class="form-control" id="cfg-gemini-key"
+                                                        placeholder="Leave blank to keep existing">
+                                                    <p class="help-block" id="gemini-key-hint"
+                                                        style="display:none;color:#3c763d">
+                                                        <i class="fa fa-check-circle"></i> Key is configured
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">Model</label>
+                                                <div class="col-sm-8">
+                                                    <input type="text" class="form-control" id="cfg-gemini-model"
+                                                        placeholder="gemini-2.5-flash">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div id="section-deepseek" style="display:none">
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">API Key</label>
+                                                <div class="col-sm-8">
+                                                    <input type="password" class="form-control" id="cfg-deepseek-key"
+                                                        placeholder="Leave blank to keep existing">
+                                                    <p class="help-block" id="deepseek-key-hint"
+                                                        style="display:none;color:#3c763d">
+                                                        <i class="fa fa-check-circle"></i> Key is configured
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="col-sm-4 control-label">Model</label>
+                                                <div class="col-sm-8">
+                                                    <input type="text" class="form-control" id="cfg-deepseek-model"
+                                                        placeholder="deepseek-chat">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="box box-default">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-sliders"></i> Behaviour</h3>
+                                </div>
+                                <div class="box-body">
+                                    <form class="form-horizontal">
+                                        <div class="form-group">
+                                            <label class="col-sm-4 control-label">Tag prefix</label>
+                                            <div class="col-sm-4">
+                                                <input type="text" class="form-control" id="cfg-tag-prefix"
+                                                    placeholder="ai">
+                                                <p class="help-block">
+                                                    Tags applied to transactions:
+                                                    <code>&lt;prefix&gt;:classified</code>,
+                                                    <code>:assumed</code>,
+                                                    <code>:needs-review</code>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-4 control-label">
+                                                Additional context
+                                                <small class="text-muted">(optional)</small>
+                                            </label>
+                                            <div class="col-sm-8">
+                                                <textarea class="form-control" id="cfg-custom-context" rows="5"
+                                                    placeholder="Provide any context that helps the AI make better decisions. For example:&#10;- I have no business expenses, classify everything as personal&#10;- I live in the UK; currency amounts are GBP&#10;- Transactions from &quot;AMZN&quot; are always household purchases"></textarea>
+                                                <p class="help-block">
+                                                    This text is appended to the AI system prompt verbatim.
+                                                    Use it to describe your financial situation, rule out irrelevant
+                                                    categories,
+                                                    or clarify ambiguous merchant names.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <button type="button" class="btn btn-primary" onclick="saveSettings()">
+                                <i class="fa fa-floppy-o"></i> Save settings
+                            </button>
+                            <span id="save-status" style="margin-left:12px;font-size:13px"></span>
+                        </div>
+                    </div>
+
+                </div><!-- /tab-settings -->
+
+            </section>
+        </div><!-- /content-wrapper -->
+
+        <!-- ═══════════════════════ FOOTER ══════════════════════════ -->
+        <footer class="main-footer">
+            <div class="pull-right">
+                <i class="fa fa-circle" id="footer-conn-dot" style="color:#d2d6de"></i>
+                <small>AI Categorizer</small>
+            </div>
+            <strong><a href="https://github.com/firefly-iii/firefly-iii">Firefly III</a></strong>
+            AI Categorizer &mdash; automated transaction classification.
+        </footer>
+
+    </div><!-- /wrapper -->
+
+    <!-- ═══════════════════════ CONFIRM MODAL ══════════════════════════ -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                    <h4 class="modal-title" id="modal-title">Confirm</h4>
+                </div>
+                <div class="modal-body">
+                    <p id="modal-body-text"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">
+                        <i class="fa fa-times"></i> Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary" id="modal-confirm-btn">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/js/adminlte.min.js"></script>
+    <script>
+        // ─── Sidebar collapse persistence ──────────────────────────────────────────
+        $(document).on('collapsed.pushMenu', function () {
+            localStorage.setItem('ff3ai_sidebar_collapsed', 'true');
+        });
+        $(document).on('expanded.pushMenu', function () {
+            localStorage.setItem('ff3ai_sidebar_collapsed', 'false');
+        });
+
+        // ─── State ─────────────────────────────────────────────────────────────────
+        var jobs = {};
+        var pendingDryRunCount = 0;
+        var txnPage = 1, txnTotalPages = 1, txnTotal = 0;
+        var selectedTxns = new Set();
+
+        // ─── Tab navigation ─────────────────────────────────────────────────────────
+        var TAB_META = {
+            jobs: {title: 'Jobs', sub: 'Recent classification activity'},
+            transactions: {title: 'Transactions', sub: 'Select and re-categorize transactions'},
+            categories: {title: 'Categories', sub: 'Categories available to the AI'},
+            settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
+        };
+
+        function switchTab(name) {
+            Object.keys(TAB_META).forEach(function (t) {
+                document.getElementById('tab-' + t).style.display = (t === name) ? '' : 'none';
+                document.getElementById('nav-' + t).classList.toggle('active', t === name);
+            });
+            var m = TAB_META[name];
+            document.getElementById('page-title').innerHTML = esc(m.title) + ' <small>' + esc(m.sub) + '</small>';
+            document.getElementById('breadcrumb-leaf').textContent = m.title;
+            if (name === 'settings') loadSettings();
+            if (name === 'categories') loadCategories();
+            return false;
+        }
+
+        // ─── SSE ───────────────────────────────────────────────────────────────────
+        function setConn(state) {
+            var c = {live: '#00a65a', error: '#dd4b39', connecting: '#d2d6de'};
+            var l = {live: 'Live', error: 'Disconnected', connecting: 'Connecting…'};
+            $('#conn-dot, #footer-conn-dot').css('color', c[state]);
+            $('#conn-label').text(l[state]);
+        }
+
+        function connectSSE() {
+            var es = new EventSource('/events');
+            es.onopen = function () {setConn('live');};
+            es.onerror = function () {setConn('error'); setTimeout(connectSSE, 3000);};
+            es.onmessage = function (e) {
+                var data = JSON.parse(e.data);
+                if (data.type === 'snapshot') {
+                    (data.jobs || []).forEach(function (j) {jobs[j.id] = j;});
+                    renderJobTable();
+                } else if (data.type === 'created') {
+                    jobs[data.job.id] = data.job;
+                    prependJobRow(data.job);
+                    updateStats();
+                } else if (data.type === 'updated') {
+                    jobs[data.job.id] = data.job;
+                    var row = document.querySelector('tr[data-job="' + data.job.id + '"]');
+                    if (row) row.replaceWith(buildJobRow(data.job));
+                    var det = document.getElementById('detail-' + data.job.id);
+                    if (det) $(det).find('.detail-inner').html(buildDetailInner(data.job));
+                    updateStats();
+                }
+            };
+        }
+        connectSSE();
+
+        // ─── Jobs ──────────────────────────────────────────────────────────────────
+        function renderJobTable() {
+            var tbody = document.getElementById('job-tbody');
+            tbody.innerHTML = '';
+            var sorted = Object.values(jobs).sort(function (a, b) {
+                return new Date(b.created_at) - new Date(a.created_at);
+            });
+            if (!sorted.length) {
+                tbody.innerHTML = '<tr id="job-empty-row"><td colspan="7" class="text-center text-muted" style="padding:40px 0">'
+                    + '<i class="fa fa-inbox fa-3x" style="display:block;margin-bottom:10px;opacity:.3"></i>'
+                    + 'No jobs yet &mdash; waiting for webhooks or run a batch.</td></tr>';
+            } else {
+                sorted.forEach(function (j) {tbody.appendChild(buildJobRow(j));});
+            }
+            updateStats();
+        }
+
+        function prependJobRow(j) {
+            var tbody = document.getElementById('job-tbody');
+            var empty = document.getElementById('job-empty-row');
+            if (empty) empty.remove();
+            tbody.insertBefore(buildJobRow(j), tbody.firstChild);
+        }
+
+        function buildJobRow(j) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-job', j.id);
+            tr.onclick = function () {toggleDetail(j.id);};
+
+            var lbl = jobLabel(j);
+            var amount = j.amount != null ? parseFloat(j.amount).toFixed(2) : '&mdash;';
+            var t = new Intl.DateTimeFormat(undefined, {dateStyle: 'short', timeStyle: 'short'}).format(new Date(j.created_at));
+
+            tr.innerHTML =
+                '<td style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
+                + '<td><strong>' + esc(j.destination_name || '&mdash;') + '</strong></td>'
+                + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + '</td>'
+                + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
+                + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
+                + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
+                + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>';
+            return tr;
+        }
+
+        function toggleDetail(id) {
+            var existing = document.getElementById('detail-' + id);
+            var icon = document.getElementById('ic-' + id);
+            if (existing) {
+                existing.remove();
+                if (icon) {icon.classList.remove('fa-chevron-down'); icon.classList.add('fa-chevron-right');}
+                return;
+            }
+            var j = jobs[id];
+            if (!j) return;
+            var mainRow = document.querySelector('tr[data-job="' + id + '"]');
+            if (!mainRow) return;
+            if (icon) {icon.classList.remove('fa-chevron-right'); icon.classList.add('fa-chevron-down');}
+            var tr = document.createElement('tr');
+            tr.id = 'detail-' + id;
+            tr.className = 'job-detail-row';
+            tr.onclick = function (e) {e.stopPropagation();};
+            tr.innerHTML = '<td colspan="7"><div class="detail-inner">' + buildDetailInner(j) + '</div></td>';
+            mainRow.after(tr);
+        }
+
+        function buildDetailInner(j) {
+            var html = '';
+            if (j.reason) html += '<p><strong>Reason:</strong> ' + esc(j.reason) + '</p>';
+            if (j.assumption) html += '<p><strong>Assumption:</strong> <em class="text-warning">' + esc(j.assumption) + '</em></p>';
+            if (j.error) html += '<div class="alert alert-danger" style="margin:0 0 8px"><i class="fa fa-warning"></i> ' + esc(j.error) + '</div>';
+            if (j.raw_prompt || j.raw_response) {
+                html += '<div class="row">';
+                if (j.raw_prompt) html += '<div class="col-md-6"><p class="text-muted" style="margin-bottom:4px;font-size:12px"><strong>Prompt</strong></p><pre class="detail-pre">' + esc(j.raw_prompt) + '</pre></div>';
+                if (j.raw_response) html += '<div class="col-md-6"><p class="text-muted" style="margin-bottom:4px;font-size:12px"><strong>Response</strong></p><pre class="detail-pre">' + esc(j.raw_response) + '</pre></div>';
+                html += '</div>';
+            }
+            if (!html) html = '<span class="text-muted">No details available yet.</span>';
+            return html;
+        }
+
+        function jobLabel(j) {
+            if (j.status === 'queued') return {cls: 'label-default', txt: 'Queued'};
+            if (j.status === 'in_progress') return {cls: 'label-info', txt: 'Running'};
+            if (j.status === 'failed') return {cls: 'label-danger', txt: 'Failed'};
+            if (j.outcome === 'CLASSIFIED') return {cls: 'label-success', txt: 'Classified'};
+            if (j.outcome === 'ASSUMED') return {cls: 'label-warning', txt: 'Assumed'};
+            if (j.outcome === 'NEEDS_REVIEW') return {cls: 'label-danger', txt: 'Needs Review'};
+            return {cls: 'label-default', txt: j.status};
+        }
+
+        function updateStats() {
+            var vals = Object.values(jobs);
+            $('#stat-total').text(vals.length);
+            $('#stat-running').text(vals.filter(function (j) {return j.status === 'in_progress';}).length);
+            $('#stat-classified').text(vals.filter(function (j) {return j.outcome === 'CLASSIFIED';}).length);
+            $('#stat-assumed').text(vals.filter(function (j) {return j.outcome === 'ASSUMED';}).length);
+            $('#stat-review').text(vals.filter(function (j) {return j.outcome === 'NEEDS_REVIEW';}).length);
+            $('#stat-failed').text(vals.filter(function (j) {return j.status === 'failed';}).length);
+            var running = vals.filter(function (j) {return j.status === 'in_progress';}).length;
+            $('#jobs-running-badge').toggle(running > 0).text(running);
+        }
+
+        // ─── Batch ─────────────────────────────────────────────────────────────────
+        async function dryRun() {
+            $('#btn-dry-run').prop('disabled', true);
+            $('#batch-status').html('<i class="fa fa-spinner fa-spin"></i> Checking&hellip;');
+            try {
+                var res = await fetch('/batch/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filter: {uncategorized_only: true}, dry_run: true})
+                });
+                if (res.status === 503) {
+                    $('#batch-status').html('<span class="text-warning"><i class="fa fa-warning"></i> Not configured &mdash; check Settings.</span>');
+                    return;
+                }
+                var d = await res.json();
+                pendingDryRunCount = d.matching;
+                $('#batch-status').html('<span class="text-muted">' + d.matching + ' uncategorized transaction(s) found.</span>');
+                $('#btn-batch').prop('disabled', d.matching === 0);
+            } catch (e) {
+                $('#batch-status').html('<span class="text-danger">' + esc(e.message) + '</span>');
+            } finally {
+                $('#btn-dry-run').prop('disabled', false);
+            }
+        }
+
+        function confirmBatch() {
+            showModal('Run batch classification',
+                'Classify ' + pendingDryRunCount + ' uncategorized transaction(s) using the configured AI provider? This action cannot be undone.',
+                async function () {
+                    $('#btn-batch').prop('disabled', true);
+                    $('#batch-status').html('<i class="fa fa-spinner fa-spin"></i> Submitting&hellip;');
+                    var res = await fetch('/batch/run', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({filter: {uncategorized_only: true}})
+                    });
+                    var d = await res.json();
+                    $('#batch-status').html('<span class="text-muted">' + d.enqueued + ' job(s) enqueued.</span>');
+                });
+        }
+
+        // ─── Transactions ──────────────────────────────────────────────────────────
+        function txnFlash(msg, type) {
+            var el = document.getElementById('txn-flash');
+            if (!msg) {el.innerHTML = ''; return;}
+            el.innerHTML = '<div class="row"><div class="col-md-12"><div class="alert alert-' + type + '">' + msg + '</div></div></div>';
+        }
+
+        async function loadTransactions(page) {
+            if (!page) page = 1;
+            txnPage = page;
+            var start = $('#txn-start').val(), end = $('#txn-end').val();
+            var params = new URLSearchParams({page: page, limit: 50});
+            if (start) params.set('start', start);
+            if (end) params.set('end', end);
+            txnFlash('', '');
+            $('#txn-select-all-bar').hide();
+            $('#txn-select-all').prop('checked', false);
+            $('#txn-tbody').html('<tr><td colspan="7" class="text-center" style="padding:30px">'
+                + '<i class="fa fa-spinner fa-spin"></i> Loading&hellip;</td></tr>');
+            try {
+                var res = await fetch('/api/transactions?' + params);
+                if (res.status === 503) {
+                    txnFlash('<i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.', 'warning');
+                    $('#txn-tbody').html(''); return;
+                }
+                if (!res.ok) throw new Error(await res.text());
+                var d = await res.json();
+                txnTotalPages = d.total_pages || 1;
+                txnTotal = d.total || 0;
+                renderTxnTable(d.data || []);
+                renderTxnPagination();
+            } catch (e) {
+                txnFlash('<i class="fa fa-times-circle"></i> Failed to load transactions: ' + esc(e.message), 'danger');
+                $('#txn-tbody').html('');
+            }
+        }
+
+        function renderTxnTable(rows) {
+            if (!rows.length) {
+                $('#txn-tbody').html('<tr><td colspan="7" class="text-center text-muted" style="padding:40px 0">No transactions found for the selected period.</td></tr>');
+                $('#txn-footer').hide(); return;
+            }
+            $('#txn-footer').show();
+            var html = rows.map(function (r) {
+                var checked = selectedTxns.has(r.id) ? 'checked' : '';
+                var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
+                var date = r.date ? r.date.substring(0, 10) : '';
+                var aiTag = aiTagLabel(r.tags);
+                return '<tr' + cls + '>'
+                    + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
+                    + '<td style="white-space:nowrap">' + esc(date) + '</td>'
+                    + '<td><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
+                    + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
+                    + '<td class="text-right">' + esc(r.amount) + '</td>'
+                    + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
+                    + '<td class="hidden-xs">' + aiTag + '</td>'
+                    + '</tr>';
+            }).join('');
+            $('#txn-tbody').html(html);
+        }
+
+        function aiTagLabel(tags) {
+            if (!tags || !tags.length) return '';
+            for (var i = 0; i < tags.length; i++) {
+                if (tags[i].indexOf(':classified') >= 0) return '<span class="label label-success">classified</span>';
+                if (tags[i].indexOf(':assumed') >= 0) return '<span class="label label-warning">assumed</span>';
+                if (tags[i].indexOf(':needs-review') >= 0) return '<span class="label label-danger">needs review</span>';
+            }
+            return '';
+        }
+
+        function renderTxnPagination() {
+            $('#txn-count').text(txnTotal + ' transaction(s)');
+            var lo = Math.max(1, txnPage - 2), hi = Math.min(txnTotalPages, txnPage + 2);
+            var html = '<li' + (txnPage <= 1 ? ' class="disabled"' : '') + '>'
+                + '<a href="#" onclick="loadTransactions(' + (txnPage - 1) + ');return false">&laquo;</a></li>';
+            for (var p = lo; p <= hi; p++) {
+                html += '<li' + (p === txnPage ? ' class="active"' : '') + '>'
+                    + '<a href="#" onclick="loadTransactions(' + p + ');return false">' + p + '</a></li>';
+            }
+            html += '<li' + (txnPage >= txnTotalPages ? ' class="disabled"' : '') + '>'
+                + '<a href="#" onclick="loadTransactions(' + (txnPage + 1) + ');return false">&raquo;</a></li>';
+            $('#txn-pagination').html(html);
+        }
+
+        function toggleTxn(cb, id) {
+            if (cb.checked) {selectedTxns.add(id); $(cb).closest('tr').addClass('selected');}
+            else {selectedTxns.delete(id); $(cb).closest('tr').removeClass('selected');}
+            updateTxnSel();
+        }
+
+        function toggleSelectAll(master) {
+            var pageIds = [];
+            $('#txn-tbody input[type=checkbox]').each(function () {
+                var id = $(this).data('id');
+                if (!id) return;
+                this.checked = master.checked;
+                if (master.checked) {selectedTxns.add(id); $(this).closest('tr').addClass('selected'); pageIds.push(id);}
+                else {selectedTxns.delete(id); $(this).closest('tr').removeClass('selected');}
+            });
+            // Show "select all pages" banner when all visible rows are selected and there are more pages
+            if (master.checked && txnTotalPages > 1) {
+                $('#txn-page-count').text(pageIds.length);
+                $('#txn-all-count').text(txnTotal);
+                $('#txn-select-all-bar').show();
+            } else {
+                $('#txn-select-all-bar').hide();
+            }
+            updateTxnSel();
+        }
+
+        async function selectAllPages() {
+            var start = $('#txn-start').val(), end = $('#txn-end').val();
+            var params = new URLSearchParams({ids_only: 'true'});
+            if (start) params.set('start', start);
+            if (end) params.set('end', end);
+            $('#txn-select-all-bar').html('<i class="fa fa-spinner fa-spin"></i> Fetching all transaction IDs&hellip;');
+            try {
+                var res = await fetch('/api/transactions?' + params);
+                if (!res.ok) throw new Error(await res.text());
+                var ids = await res.json();
+                ids.forEach(function (id) {selectedTxns.add(id);});
+                // Re-render current page checkboxes to reflect full selection
+                $('#txn-tbody input[type=checkbox]').each(function () {
+                    var id = $(this).data('id');
+                    if (id && selectedTxns.has(id)) {this.checked = true; $(this).closest('tr').addClass('selected');}
+                });
+                $('#txn-select-all-bar').html(
+                    'All <strong>' + selectedTxns.size + '</strong> transactions are selected. '
+                    + '&nbsp;<a href="#" onclick="clearSelection();return false">Clear selection</a>'
+                ).show();
+                updateTxnSel();
+            } catch (e) {
+                $('#txn-select-all-bar').html('<span class="text-danger"><i class="fa fa-times"></i> ' + esc(e.message) + '</span>').show();
+            }
+        }
+
+        function clearSelection() {
+            selectedTxns.clear();
+            $('#txn-tbody input[type=checkbox]').prop('checked', false).closest('tr').removeClass('selected');
+            $('#txn-select-all').prop('checked', false);
+            $('#txn-select-all-bar').hide();
+            updateTxnSel();
+        }
+
+        function updateTxnSel() {
+            var n = selectedTxns.size;
+            $('#txn-sel-badge').toggle(n > 0).text(n + ' selected');
+            $('#btn-recategorize').prop('disabled', n === 0);
+        }
+
+        async function recategorizeSelected() {
+            var ids = Array.from(selectedTxns);
+            if (!ids.length) return;
+            showModal('Re-categorize transactions',
+                'Run AI classification on ' + ids.length + ' selected transaction(s)? Existing categories will be replaced.',
+                async function () {
+                    txnFlash('<i class="fa fa-spinner fa-spin"></i> Submitting ' + ids.length + ' job(s)&hellip;', 'info');
+                    var res = await fetch('/batch/run', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({filter: {transaction_ids: ids}, force: true})
+                    });
+                    if (!res.ok) {txnFlash('<i class="fa fa-times"></i> Error: ' + esc(await res.text()), 'danger'); return;}
+                    var d = await res.json();
+                    txnFlash('<i class="fa fa-check"></i> ' + d.enqueued + ' job(s) enqueued. Switch to Jobs to monitor progress.', 'success');
+                    selectedTxns.clear(); updateTxnSel();
+                });
+        }
+
+        // Default date range: last 30 days
+        (function () {
+            var end = new Date(), start = new Date();
+            start.setDate(start.getDate() - 30);
+            document.getElementById('txn-end').value = end.toISOString().slice(0, 10);
+            document.getElementById('txn-start').value = start.toISOString().slice(0, 10);
+        })();
+
+        // ─── Categories ────────────────────────────────────────────────────────────
+        async function loadCategories() {
+            var body = document.getElementById('cat-body');
+            body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+            try {
+                var res = await fetch('/api/categories');
+                if (res.status === 503) {
+                    body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+                    return;
+                }
+                if (!res.ok) throw new Error(await res.text());
+                var cats = await res.json();
+                if (!cats || !cats.length) {
+                    body.innerHTML = '<p class="text-muted">No categories found in Firefly III.</p>';
+                    return;
+                }
+                var html = '<div style="margin-bottom:12px">';
+                cats.forEach(function (c) {
+                    html += '<span class="cat-chip"><i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>'
+                        + esc(c.name)
+                        + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
+                        + '</span>';
+                });
+                html += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
+                    + cats.length + ' categories available to the AI.</small></p>';
+                body.innerHTML = html;
+            } catch (e) {
+                body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+            }
+        }
+
+        // ─── Settings ──────────────────────────────────────────────────────────────
+        async function loadSettings() {
+            settingsFlash('', '');
+            try {
+                var d = await (await fetch('/api/config')).json();
+                $('#cfg-firefly-url').val(d.firefly_url || '');
+                $('#cfg-firefly-token').val('');
+                $('#token-hint').toggle(!!d.firefly_token_set);
+                $('#cfg-provider').val(d.ai_provider || 'openai');
+                $('#cfg-openai-key').val('');
+                $('#openai-key-hint').toggle(!!d.openai_key_set);
+                $('#cfg-openai-model').val(d.openai_model || '');
+                $('#cfg-openai-base-url').val(d.openai_base_url || '');
+                $('#cfg-gemini-key').val('');
+                $('#gemini-key-hint').toggle(!!d.gemini_key_set);
+                $('#cfg-gemini-model').val(d.gemini_model || '');
+                $('#cfg-deepseek-key').val('');
+                $('#deepseek-key-hint').toggle(!!d.deepseek_key_set);
+                $('#cfg-deepseek-model').val(d.deepseek_model || '');
+                $('#cfg-tag-prefix').val(d.tag_prefix || '');
+                $('#cfg-custom-context').val(d.custom_system_context || '');
+                onProviderChange();
+                $('#settings-badge').toggle(!d.configured);
+                if (!d.configured) {
+                    settingsFlash('<i class="fa fa-exclamation-triangle"></i> Not fully configured &mdash; fill in the required fields below and save.', 'warning');
+                } else {
+                    settingsFlash('<i class="fa fa-check-circle"></i> Configured and ready.', 'success');
+                }
+            } catch (e) {
+                settingsFlash('<i class="fa fa-times-circle"></i> Failed to load configuration: ' + esc(e.message), 'danger');
+            }
+        }
+
+        function settingsFlash(msg, type) {
+            var el = document.getElementById('settings-flash');
+            if (!msg) {el.innerHTML = ''; return;}
+            el.innerHTML = '<div class="row"><div class="col-md-12"><div class="alert alert-' + type + '">' + msg + '</div></div></div>';
+        }
+
+        function onProviderChange() {
+            var p = $('#cfg-provider').val();
+            $('#section-openai').toggle(p === 'openai');
+            $('#section-gemini').toggle(p === 'gemini');
+            $('#section-deepseek').toggle(p === 'deepseek');
+        }
+
+        async function testConnection() {
+            $('#btn-test').prop('disabled', true);
+            $('#test-result').html('<i class="fa fa-spinner fa-spin"></i> Testing&hellip;').removeClass('text-success text-danger').addClass('text-muted');
+            try {
+                var d = await (await fetch('/api/config/test')).json();
+                if (d.ok) {
+                    $('#test-result').html('<i class="fa fa-check-circle"></i> Connected &mdash; ' + d.categories + ' categories found')
+                        .removeClass('text-muted text-danger').addClass('text-success');
+                } else {
+                    $('#test-result').html('<i class="fa fa-times-circle"></i> ' + esc(d.error))
+                        .removeClass('text-muted text-success').addClass('text-danger');
+                }
+            } catch (e) {
+                $('#test-result').html('<i class="fa fa-times-circle"></i> ' + esc(e.message))
+                    .removeClass('text-muted text-success').addClass('text-danger');
+            } finally {
+                $('#btn-test').prop('disabled', false);
+            }
+        }
+
+        async function saveSettings() {
+            var p = $('#cfg-provider').val();
+            var payload = {ai_provider: p};
+            var ffUrl = $('#cfg-firefly-url').val().trim(), ffToken = $('#cfg-firefly-token').val();
+            if (ffUrl) payload.firefly_url = ffUrl;
+            if (ffToken) payload.firefly_token = ffToken;
+            if (p === 'openai') {
+                var k = $('#cfg-openai-key').val(), m = $('#cfg-openai-model').val().trim(), b = $('#cfg-openai-base-url').val().trim();
+                if (k) payload.openai_api_key = k;
+                if (m) payload.openai_model = m;
+                payload.openai_base_url = b;
+            } else if (p === 'gemini') {
+                var k = $('#cfg-gemini-key').val(), m = $('#cfg-gemini-model').val().trim();
+                if (k) payload.gemini_api_key = k;
+                if (m) payload.gemini_model = m;
+            } else if (p === 'deepseek') {
+                var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
+                if (k) payload.deepseek_api_key = k;
+                if (m) payload.deepseek_model = m;
+            }
+            var tag = $('#cfg-tag-prefix').val().trim();
+            if (tag) payload.tag_prefix = tag;
+            // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
+            payload.custom_system_context = $('#cfg-custom-context').val();
+            $('#save-status').text('Saving…');
+            try {
+                var res = await fetch('/api/config', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error(await res.text());
+                $('#save-status').text('');
+                loadSettings();
+            } catch (e) {
+                $('#save-status').html('<span class="text-danger">' + esc(e.message) + '</span>');
+            }
+        }
+
+        // ─── Modal ─────────────────────────────────────────────────────────────────
+        function showModal(title, body, onConfirm) {
+            $('#modal-title').text(title);
+            $('#modal-body-text').text(body);
+            $('#modal-confirm-btn').off('click').on('click', function () {
+                $('#confirmModal').modal('hide');
+                onConfirm();
+            });
+            $('#confirmModal').modal('show');
+        }
+
+        // ─── Utilities ─────────────────────────────────────────────────────────────
+        function trunc(s, n) {return s && s.length > n ? s.substring(0, n) + '…' : (s || '');}
+        function esc(s) {
+            if (s == null) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+
+</html>
