@@ -1,3 +1,6 @@
+<img width="3808" height="2000" alt="transactions-page" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
+<img width="3808" height="2000" alt="jobs-page" src="https://github.com/user-attachments/assets/c6bdae2f-ff83-4c08-8c52-0aa100263e3d" />
+<img width="3834" height="2000" alt="settings-page" src="https://github.com/user-attachments/assets/7e061547-65ac-402a-90be-6a3b1699a640" />
 # Firefly III AI Categorization (Three-Outcome Fork)
 
 > Fork of [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), rebuilt with a three-outcome classification model inspired by [OpenAccountants](https://github.com/openaccountants/openaccountants).
