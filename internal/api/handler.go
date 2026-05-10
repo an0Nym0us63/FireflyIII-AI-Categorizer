@@ -214,7 +214,7 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 	req := batchRequest{Filter: batchFilter{UncategorizedOnly: true}}
 	if body, err := io.ReadAll(r.Body); err == nil && len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
 	}

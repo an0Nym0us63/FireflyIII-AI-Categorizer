@@ -1,0 +1,206 @@
+body,
+.content-wrapper,
+.main-footer {
+    font-family: 'Roboto', 'Source Sans Pro', sans-serif;
+}
+
+/* Job table */
+#job-table tbody tr {
+    cursor: pointer;
+}
+
+.job-detail-row {
+    background-color: #f9fafc !important;
+    cursor: default;
+}
+
+.job-detail-row td {
+    border-top: none !important;
+    padding: 0 !important;
+}
+
+.detail-inner {
+    padding: 14px 16px 14px 38px;
+    border-bottom: 1px solid #f4f4f5;
+}
+
+pre.detail-pre {
+    font-size: 11px;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #f4f4f5;
+    border: none;
+}
+
+/* Category chips */
+.cat-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    margin: 3px 4px 3px 0;
+    background: #f9fafc;
+    border: 1px solid #d2d6de;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+.cat-chip .cat-notes {
+    color: #848484;
+    font-size: 12px;
+}
+
+/* Selected transaction row */
+#txn-tbody tr.selected td {
+    background-color: #d9edf7 !important;
+}
+
+/* Tighten info boxes slightly */
+.info-box {
+    min-height: 70px;
+}
+
+.info-box .info-box-icon {
+    height: 70px;
+    line-height: 70px;
+    width: 70px;
+    font-size: 28px;
+}
+
+.info-box .info-box-content {
+    padding: 10px 14px;
+    margin-left: 70px;
+}
+
+.info-box .info-box-number {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+/* Sidebar collapse persistence */
+.sidebar-toggle {
+    cursor: pointer;
+}
+
+/* Batch status inline text */
+#batch-status {
+    font-size: 13px;
+    color: #848484;
+}
+
+/* Connection dot in navbar */
+#conn-dot {
+    font-size: 10px;
+    vertical-align: middle;
+}
+
+/* Select-all-pages banner */
+#txn-select-all-bar {
+    background: #d9edf7;
+    border-bottom: 1px solid #bce8f1;
+    padding: 8px 14px;
+    font-size: 13px;
+    display: none;
+}
+
+#txn-select-all-bar a {
+    font-weight: 600;
+}
+
+/* ── Dark mode — app-specific overrides not covered by darkmode.css ─── */
+/* darkmode.css handles boxes, sidebar, navbar, forms, tables, modals,  */
+/* pagination, footer, and text. Only app-specific elements live here.  */
+
+/* AdminLTE adds a box-shadow that darkmode.css doesn't remove */
+body.dark-mode .box {
+    box-shadow: none;
+}
+
+/* lightmode.css sets a visible border-right on the sidebar; hide it in dark mode */
+body.dark-mode .main-sidebar {
+    border-right-color: #272c30;
+}
+
+/* Selected transaction row (app-specific) */
+body.dark-mode #txn-tbody tr.selected td {
+    background-color: #1b3a5c !important;
+}
+
+/* Job detail rows (app-specific) */
+body.dark-mode .job-detail-row {
+    background-color: #2a2f34 !important;
+}
+
+body.dark-mode .detail-inner {
+    border-bottom-color: #353c42;
+}
+
+/* Inline status text (app-specific) */
+body.dark-mode #batch-status {
+    color: #b0b8c0;
+}
+
+body.dark-mode .help-block {
+    color: #b0b8c0;
+}
+
+/* Category chips (app-specific) */
+body.dark-mode .cat-chip {
+    background: #272c30;
+    border-color: #353c42;
+    color: #bec5cb;
+}
+
+body.dark-mode .cat-chip .cat-notes {
+    color: #b0b8c0;
+}
+
+/* Alerts — Bootstrap's defaults are unreadable on dark backgrounds */
+body.dark-mode .alert-warning {
+    background-color: #2e2408;
+    border-color: #6b5000;
+    color: #f39c12;
+}
+
+body.dark-mode .alert-success {
+    background-color: #0a2115;
+    border-color: #004726;
+    color: #4caf76;
+}
+
+body.dark-mode .alert-danger {
+    background-color: #250a0a;
+    border-color: #dd4b39;
+    color: #e47365;
+}
+
+body.dark-mode .alert-info {
+    background-color: #00374a;
+    border-color: #006b87;
+    color: #47b2f5;
+}
+
+/* Select-all pages banner (app-specific) */
+body.dark-mode #txn-select-all-bar {
+    background: #272c30;
+    border-bottom-color: #353c42;
+    color: #bec5cb;
+}
+
+body.dark-mode #txn-select-all-bar a {
+    color: #5fa4cc;
+}
+
+/* Box collapse buttons */
+body.dark-mode .btn-box-tool {
+    color: #b0b8c0;
+}
+
+body.dark-mode .btn-box-tool:hover {
+    color: #fff;
+}
+
+/* Default label/badge — needs enough contrast against dark table rows (#272c30 / #373f45) */
+body.dark-mode .label-default {
+    background-color: #55606a;
+    color: #dde2e7;
+    border: 1px solid #7a8794;
+}
