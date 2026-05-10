@@ -107,13 +107,15 @@ Set the URL to `http://<host>:3000/webhook` and save. New withdrawals will now b
 
 > **Note:** Only withdrawal transactions without an existing category are processed. All other events are acknowledged and ignored.
 
----
-
-### That's it
-
 The categorizer is running. New withdrawals added in Firefly III will appear in the **Jobs** tab as they are classified. Each job shows the outcome, the assigned category, and expandable detail with the AI's reasoning.
 
+---
+
+### Mass Categorization
+
 To classify existing uncategorised transactions, use the **Batch Classification** panel on the Jobs tab — click **Check uncategorized** first to preview the count, then **Run batch** to process them.
+
+You can also select individaul transactions or *all* transactions on the **Transactions** page and force them to be re-categorized.
 
 <img width="100%" alt="Transactions page showing categorised results" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
 
