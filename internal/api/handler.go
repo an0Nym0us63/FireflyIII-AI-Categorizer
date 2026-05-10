@@ -76,6 +76,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/config", h.getConfig)
 	r.Put("/api/config", h.putConfig)
 	r.Get("/api/config/test", h.testFirefly)
+	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
 	r.Get("/api/transactions", h.getTransactions)
 
@@ -291,6 +292,11 @@ type configResponse struct {
 	TagPrefix           string `json:"tag_prefix"`
 	CustomSystemContext string `json:"custom_system_context"`
 	Configured          bool   `json:"configured"`
+
+	HistoryContextLimit int `json:"history_context_limit"`
+	HistoryLookbackDays int `json:"history_lookback_days"`
+	WorkerConcurrency   int `json:"worker_concurrency"`
+	BatchConcurrency    int `json:"batch_concurrency"`
 }
 
 func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
@@ -309,11 +315,16 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		TagPrefix:           cfg.TagPrefix,
 		CustomSystemContext: cfg.CustomSystemContext,
 		Configured:          cfg.IsConfigured(),
+		HistoryContextLimit: cfg.HistoryContextLimit,
+		HistoryLookbackDays: cfg.HistoryLookbackDays,
+		WorkerConcurrency:   cfg.WorkerConcurrency,
+		BatchConcurrency:    cfg.BatchConcurrency,
 	})
 }
 
-// configUpdateRequest uses *string so absent fields (null) mean "keep existing",
-// while an explicit empty string means "clear this field".
+// configUpdateRequest uses pointer types so absent fields (null/missing) mean
+// "keep existing". For strings an explicit empty value clears the field; for
+// ints a value of 0 or less is rejected.
 type configUpdateRequest struct {
 	FireflyURL    *string `json:"firefly_url"`
 	FireflyToken  *string `json:"firefly_token"`
@@ -327,6 +338,11 @@ type configUpdateRequest struct {
 	DeepseekModel *string `json:"deepseek_model"`
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
+
+	HistoryContextLimit *int `json:"history_context_limit"`
+	HistoryLookbackDays *int `json:"history_lookback_days"`
+	WorkerConcurrency   *int `json:"worker_concurrency"`
+	BatchConcurrency    *int `json:"batch_concurrency"`
 }
 
 func (h *Handler) putConfig(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +366,46 @@ func (h *Handler) putConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.getConfig(w, r)
+}
+
+type themeResponse struct {
+	Dark    bool `json:"dark"`
+	Browser bool `json:"browser"` // true = defer to prefers-color-scheme
+}
+
+func (h *Handler) getTheme(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		writeJSON(w, http.StatusOK, themeResponse{})
+		return
+	}
+	val, err := fc.GetPreference(r.Context(), "darkMode")
+	if err != nil {
+		slog.Warn("theme: could not fetch darkMode preference", "error", err)
+		writeJSON(w, http.StatusOK, themeResponse{})
+		return
+	}
+	slog.Info("theme: darkMode preference", "value", val, "type", fmt.Sprintf("%T", val))
+	if s, ok := val.(string); ok && s == "browser" {
+		writeJSON(w, http.StatusOK, themeResponse{Browser: true})
+		return
+	}
+	writeJSON(w, http.StatusOK, themeResponse{Dark: preferenceIsTruthy(val)})
+}
+
+// preferenceIsTruthy coerces a Firefly preference value to bool.
+// The JSON decoder produces bool for JSON true/false, float64 for numbers,
+// and string for quoted values — all of which Firefly versions have used.
+func preferenceIsTruthy(val interface{}) bool {
+	switch v := val.(type) {
+	case bool:
+		return v
+	case float64:
+		return v != 0
+	case string:
+		return v == "true" || v == "1" || v == "yes" || v == "dark"
+	}
+	return false
 }
 
 func (h *Handler) testFirefly(w http.ResponseWriter, r *http.Request) {
@@ -616,6 +672,18 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.CustomSystemContext != nil {
 		existing.CustomSystemContext = *req.CustomSystemContext
+	}
+	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
+		existing.HistoryContextLimit = *req.HistoryContextLimit
+	}
+	if req.HistoryLookbackDays != nil && *req.HistoryLookbackDays > 0 {
+		existing.HistoryLookbackDays = *req.HistoryLookbackDays
+	}
+	if req.WorkerConcurrency != nil && *req.WorkerConcurrency > 0 {
+		existing.WorkerConcurrency = *req.WorkerConcurrency
+	}
+	if req.BatchConcurrency != nil && *req.BatchConcurrency > 0 {
+		existing.BatchConcurrency = *req.BatchConcurrency
 	}
 	return existing
 }

@@ -44,7 +44,7 @@ type Config struct {
 func Load() (*Config, *Store, error) {
 	cfg := &Config{
 		Port:                getEnv("PORT", "3000"),
-		EnableUI:            getEnv("ENABLE_UI", "false") == "true",
+		EnableUI:            getEnv("ENABLE_UI", "true") != "false",
 		AIProvider:          getEnv("AI_PROVIDER", "openai"),
 		FireflyURL:          getEnv("FIREFLY_URL", ""),
 		FireflyToken:        getEnv("FIREFLY_PERSONAL_TOKEN", ""),
@@ -69,7 +69,8 @@ func Load() (*Config, *Store, error) {
 	}
 	cfg.HistoryCacheTTL = ttl
 
-	store, err := NewStore(StoreFile)
+	storeFile := getEnv("CONFIG_FILE", StoreFile)
+	store, err := NewStore(storeFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("config store: %w", err)
 	}
@@ -116,6 +117,19 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	// CustomSystemContext is only ever set via the file (not env vars), so always
 	// apply it — including empty string, which clears a previously saved value.
 	cfg.CustomSystemContext = sc.CustomSystemContext
+
+	if sc.HistoryContextLimit > 0 {
+		cfg.HistoryContextLimit = sc.HistoryContextLimit
+	}
+	if sc.HistoryLookbackDays > 0 {
+		cfg.HistoryLookbackDays = sc.HistoryLookbackDays
+	}
+	if sc.WorkerConcurrency > 0 {
+		cfg.WorkerConcurrency = sc.WorkerConcurrency
+	}
+	if sc.BatchConcurrency > 0 {
+		cfg.BatchConcurrency = sc.BatchConcurrency
+	}
 }
 
 // IsConfigured returns true if all fields required to run the pipeline are present.

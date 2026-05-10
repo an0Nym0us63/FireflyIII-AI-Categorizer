@@ -22,8 +22,13 @@ type StoredConfig struct {
 	GeminiModel   string `json:"gemini_model,omitempty"`
 	DeepseekKey   string `json:"deepseek_api_key,omitempty"`
 	DeepseekModel string `json:"deepseek_model,omitempty"`
-	TagPrefix          string `json:"tag_prefix,omitempty"`
+	TagPrefix           string `json:"tag_prefix,omitempty"`
 	CustomSystemContext string `json:"custom_system_context,omitempty"`
+
+	HistoryContextLimit int `json:"history_context_limit,omitempty"`
+	HistoryLookbackDays int `json:"history_lookback_days,omitempty"`
+	WorkerConcurrency   int `json:"worker_concurrency,omitempty"`
+	BatchConcurrency    int `json:"batch_concurrency,omitempty"`
 }
 
 // Store manages a JSON config file that overlays environment variables.

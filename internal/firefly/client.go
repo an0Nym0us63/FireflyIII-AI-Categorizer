@@ -28,6 +28,17 @@ func New(baseURL, token, tagPrefix string) *Client {
 	}
 }
 
+// GetPreference fetches a single user preference value by name.
+// Returns the raw JSON value (bool, string, number) and nil on success.
+func (c *Client) GetPreference(ctx context.Context, name string) (interface{}, error) {
+	u := fmt.Sprintf("%s/api/v1/preferences/%s", c.baseURL, name)
+	var resp preferenceResponse
+	if err := c.get(ctx, u, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data.Attributes.Data, nil
+}
+
 // GetCategories fetches all categories, paginating through all pages.
 func (c *Client) GetCategories(ctx context.Context) ([]Category, error) {
 	var categories []Category
@@ -369,4 +380,17 @@ type transactionsResponse struct {
 
 type singleTransactionResponse struct {
 	Data transactionData `json:"data"`
+}
+
+type preferenceAttributes struct {
+	Name string      `json:"name"`
+	Data interface{} `json:"data"`
+}
+
+type preferenceData struct {
+	Attributes preferenceAttributes `json:"attributes"`
+}
+
+type preferenceResponse struct {
+	Data preferenceData `json:"data"`
 }

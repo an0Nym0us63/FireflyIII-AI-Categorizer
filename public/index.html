@@ -5,12 +5,12 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>AI Categorizer &raquo; Firefly III</title>
+    <title>AI Categorizer &raquo; Frefly III</title>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/AdminLTE.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/skins/skin-blue.min.css">
+    <link rel="stylesheet" href="/lightmode.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:400&display=swap">
 
     <style>
@@ -120,10 +120,68 @@
         #txn-select-all-bar a {
             font-weight: 600;
         }
+
+        /* ── Dark mode — app-specific overrides not covered by darkmode.css ─── */
+        /* darkmode.css handles boxes, sidebar, navbar, forms, tables, modals,  */
+        /* pagination, footer, and text. Only app-specific elements live here.  */
+
+        /* AdminLTE adds a box-shadow that darkmode.css doesn't remove */
+        body.dark-mode .box { box-shadow: none; }
+
+        /* lightmode.css sets a visible border-right on the sidebar; hide it in dark mode */
+        body.dark-mode .main-sidebar { border-right-color: #272c30; }
+
+        /* Selected transaction row (app-specific) */
+        body.dark-mode #txn-tbody tr.selected td { background-color: #1b3a5c !important; }
+
+        /* Job detail rows (app-specific) */
+        body.dark-mode .job-detail-row { background-color: #2a2f34 !important; }
+        body.dark-mode .detail-inner { border-bottom-color: #353c42; }
+
+        /* Inline status text (app-specific) */
+        body.dark-mode #batch-status { color: #b0b8c0; }
+        body.dark-mode .help-block   { color: #b0b8c0; }
+
+        /* Category chips (app-specific) */
+        body.dark-mode .cat-chip {
+            background: #272c30;
+            border-color: #353c42;
+            color: #bec5cb;
+        }
+        body.dark-mode .cat-chip .cat-notes { color: #b0b8c0; }
+
+        /* Alerts — Bootstrap's defaults are unreadable on dark backgrounds */
+        body.dark-mode .alert-warning {
+            background-color: #2e2408; border-color: #6b5000; color: #f39c12;
+        }
+        body.dark-mode .alert-success {
+            background-color: #0a2115; border-color: #004726; color: #4caf76;
+        }
+        body.dark-mode .alert-danger {
+            background-color: #250a0a; border-color: #dd4b39; color: #e47365;
+        }
+        body.dark-mode .alert-info {
+            background-color: #00374a; border-color: #006b87; color: #47b2f5;
+        }
+
+        /* Select-all pages banner (app-specific) */
+        body.dark-mode #txn-select-all-bar {
+            background: #272c30;
+            border-bottom-color: #353c42;
+            color: #bec5cb;
+        }
+        body.dark-mode #txn-select-all-bar a { color: #5fa4cc; }
+
+        /* Box collapse buttons */
+        body.dark-mode .btn-box-tool       { color: #b0b8c0; }
+        body.dark-mode .btn-box-tool:hover { color: #fff; }
+
+        /* Default label/badge */
+        body.dark-mode .label-default { background-color: #454e56; }
     </style>
 </head>
 
-<body class="skin-blue sidebar-mini hold-transition">
+<body class="skin-firefly-iii sidebar-mini hold-transition">
     <script>
         if ('true' === localStorage.getItem('ff3ai_sidebar_collapsed')) {
             document.body.classList.add('sidebar-collapse');
@@ -135,7 +193,7 @@
         <header class="main-header">
             <a href="/" class="logo">
                 <span class="logo-mini"><b>AI</b></span>
-                <span class="logo-lg"><b>Firefly</b>&nbsp;AI</span>
+                <span class="logo-lg"><b>Firefly</b>III&nbsp;AI</span>
             </a>
             <nav class="navbar navbar-static-top" role="navigation">
                 <a href="#" class="sidebar-toggle" data-toggle="push-menu" role="button">
@@ -270,16 +328,11 @@
 
                     <div class="row">
                         <div class="col-md-12">
-                            <div class="box box-default collapsed-box">
+                            <div class="box box-default">
                                 <div class="box-header with-border">
                                     <h3 class="box-title"><i class="fa fa-bolt"></i> Batch Classification</h3>
-                                    <div class="box-tools pull-right">
-                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
-                                            <i class="fa fa-plus"></i>
-                                        </button>
-                                    </div>
                                 </div>
-                                <div class="box-body" style="display:none">
+                                <div class="box-body">
                                     <p class="text-muted" style="margin-bottom:14px">
                                         Classify all uncategorized withdrawal transactions in Firefly III using the
                                         configured AI provider.
@@ -443,9 +496,6 @@
                                     <div class="box-tools pull-right">
                                         <button type="button" class="btn btn-default btn-sm" onclick="loadCategories()">
                                             <i class="fa fa-refresh"></i> Refresh
-                                        </button>
-                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
-                                            <i class="fa fa-minus"></i>
                                         </button>
                                     </div>
                                 </div>
@@ -640,6 +690,92 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div class="col-md-6">
+                            <div class="box box-default collapsed-box">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-cogs"></i> Advanced</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
+                                            <i class="fa fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body" style="display:none">
+                                    <form class="form-horizontal">
+                                        <div class="form-group">
+                                            <label class="col-sm-5 control-label">History context limit</label>
+                                            <div class="col-sm-3">
+                                                <input type="number" class="form-control" id="cfg-history-context-limit"
+                                                    min="1" max="50" placeholder="5">
+                                            </div>
+                                            <div class="col-sm-4" style="padding-top:7px">
+                                                <small class="text-muted">
+                                                    How many of your past transactions the AI sees as examples when
+                                                    classifying a new one.
+                                                    Higher values improve accuracy for ambiguous merchants but increase
+                                                    AI cost and latency.
+                                                    Leave blank to use the default (5).
+                                                </small>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-5 control-label">History lookback days</label>
+                                            <div class="col-sm-3">
+                                                <input type="number" class="form-control" id="cfg-history-lookback-days"
+                                                    min="1" placeholder="90">
+                                            </div>
+                                            <div class="col-sm-4" style="padding-top:7px">
+                                                <small class="text-muted">
+                                                    How far back (in days) the AI searches for historical transaction
+                                                    examples.
+                                                    A longer window gives more context but may include outdated spending
+                                                    patterns.
+                                                </small>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-5 control-label">
+                                                Webhook concurrency
+                                                <small class="text-muted label label-default"
+                                                    style="font-size:10px;vertical-align:middle">restart</small>
+                                            </label>
+                                            <div class="col-sm-3">
+                                                <input type="number" class="form-control" id="cfg-worker-concurrency"
+                                                    min="1" max="20" placeholder="1">
+                                            </div>
+                                            <div class="col-sm-4" style="padding-top:7px">
+                                                <small class="text-muted">
+                                                    Number of incoming webhook transactions processed in parallel.
+                                                    Keep at <strong>1</strong> unless your Firefly III instance handles
+                                                    concurrent API writes reliably.
+                                                    Requires a restart to take effect.
+                                                </small>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-5 control-label">
+                                                Batch concurrency
+                                                <small class="text-muted label label-default"
+                                                    style="font-size:10px;vertical-align:middle">restart</small>
+                                            </label>
+                                            <div class="col-sm-3">
+                                                <input type="number" class="form-control" id="cfg-batch-concurrency"
+                                                    min="1" max="50" placeholder="5">
+                                            </div>
+                                            <div class="col-sm-4" style="padding-top:7px">
+                                                <small class="text-muted">
+                                                    Number of transactions processed simultaneously during a batch run.
+                                                    Higher values finish batch jobs faster but increase API rate-limit
+                                                    risk.
+                                                    Requires a restart to take effect.
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="row">
@@ -658,10 +794,6 @@
 
         <!-- ═══════════════════════ FOOTER ══════════════════════════ -->
         <footer class="main-footer">
-            <div class="pull-right">
-                <i class="fa fa-circle" id="footer-conn-dot" style="color:#d2d6de"></i>
-                <small>AI Categorizer</small>
-            </div>
             <strong><a href="https://github.com/firefly-iii/firefly-iii">Firefly III</a></strong>
             AI Categorizer &mdash; automated transaction classification.
         </footer>
@@ -734,7 +866,7 @@
         function setConn(state) {
             var c = {live: '#00a65a', error: '#dd4b39', connecting: '#d2d6de'};
             var l = {live: 'Live', error: 'Disconnected', connecting: 'Connecting…'};
-            $('#conn-dot, #footer-conn-dot').css('color', c[state]);
+            $('#conn-dot').css('color', c[state]);
             $('#conn-label').text(l[state]);
         }
 
@@ -762,6 +894,52 @@
             };
         }
         connectSSE();
+
+        // ─── Theme (dark mode) ─────────────────────────────────────────────────────
+        var _schemeListener = null;
+
+        function applyDark(dark) {
+            document.body.classList.toggle('dark-mode', dark);
+            var existing = document.getElementById('dark-theme-css');
+            if (dark && !existing) {
+                var link = document.createElement('link');
+                link.id = 'dark-theme-css';
+                link.rel = 'stylesheet';
+                link.href = '/darkmode.css';
+                document.head.appendChild(link);
+            } else if (!dark && existing) {
+                existing.remove();
+            }
+        }
+
+        async function applyTheme() {
+            // Remove any previous prefers-color-scheme listener before re-fetching.
+            var mq = window.matchMedia('(prefers-color-scheme: dark)');
+            if (_schemeListener) {
+                mq.removeEventListener('change', _schemeListener);
+                _schemeListener = null;
+            }
+            try {
+                var d = await (await fetch('/api/theme')).json();
+                if (d.browser) {
+                    applyDark(mq.matches);
+                    _schemeListener = function (e) { applyDark(e.matches); };
+                    mq.addEventListener('change', _schemeListener);
+                } else {
+                    applyDark(!!d.dark);
+                }
+            } catch (e) { }
+        }
+        applyTheme();
+
+        // ─── Initial config check ──────────────────────────────────────────────────
+        // Navigate to Settings automatically on first load if credentials are missing.
+        (async function () {
+            try {
+                var d = await (await fetch('/api/config')).json();
+                if (!d.configured) switchTab('settings');
+            } catch (e) { }
+        })();
 
         // ─── Jobs ──────────────────────────────────────────────────────────────────
         function renderJobTable() {
@@ -1136,6 +1314,10 @@
                 $('#cfg-deepseek-model').val(d.deepseek_model || '');
                 $('#cfg-tag-prefix').val(d.tag_prefix || '');
                 $('#cfg-custom-context').val(d.custom_system_context || '');
+                $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
+                $('#cfg-history-lookback-days').val(d.history_lookback_days || '');
+                $('#cfg-worker-concurrency').val(d.worker_concurrency || '');
+                $('#cfg-batch-concurrency').val(d.batch_concurrency || '');
                 onProviderChange();
                 $('#settings-badge').toggle(!d.configured);
                 if (!d.configured) {
@@ -1205,6 +1387,14 @@
             if (tag) payload.tag_prefix = tag;
             // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
             payload.custom_system_context = $('#cfg-custom-context').val();
+            var hcl = parseInt($('#cfg-history-context-limit').val(), 10);
+            if (!isNaN(hcl) && hcl > 0) payload.history_context_limit = hcl;
+            var hld = parseInt($('#cfg-history-lookback-days').val(), 10);
+            if (!isNaN(hld) && hld > 0) payload.history_lookback_days = hld;
+            var wc = parseInt($('#cfg-worker-concurrency').val(), 10);
+            if (!isNaN(wc) && wc > 0) payload.worker_concurrency = wc;
+            var bc = parseInt($('#cfg-batch-concurrency').val(), 10);
+            if (!isNaN(bc) && bc > 0) payload.batch_concurrency = bc;
             $('#save-status').text('Saving…');
             try {
                 var res = await fetch('/api/config', {
@@ -1214,6 +1404,7 @@
                 if (!res.ok) throw new Error(await res.text());
                 $('#save-status').text('');
                 loadSettings();
+                applyTheme();
             } catch (e) {
                 $('#save-status').html('<span class="text-danger">' + esc(e.message) + '</span>');
             }

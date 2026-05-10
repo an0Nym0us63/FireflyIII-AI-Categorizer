@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -51,12 +52,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// reqCtx is the base context for every HTTP request. Cancelling it propagates
+	// into r.Context() for all in-flight handlers (including long-lived SSE
+	// connections), so they exit promptly on SIGINT/SIGTERM rather than waiting
+	// for the 30-second Shutdown timeout to expire.
+	reqCtx, cancelReqs := context.WithCancel(context.Background())
+	defer cancelReqs()
+
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: handler.Router(),
+		Addr:        ":" + cfg.Port,
+		Handler:     handler.Router(),
+		BaseContext: func(_ net.Listener) context.Context { return reqCtx },
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
@@ -71,10 +80,14 @@ func main() {
 		}
 	}()
 
-	<-ctx.Done()
+	<-sigCtx.Done()
 	slog.Info("shutting down")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Cancel all request contexts first so SSE and other long-lived handlers
+	// return immediately, then give the server a short window to flush responses.
+	cancelReqs()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_ = srv.Shutdown(shutdownCtx)
