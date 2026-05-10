@@ -62,15 +62,12 @@ In the **Settings → Firefly III Connection** section, enter your Firefly III i
 
 To create a Personal Access Token in Firefly III, go to your profile and open the **OAuth** tab.
 
-<img width="100%" alt="Firefly III OAuth tab" src="docs/img/pat1.png" />
-
 Scroll to **Personal Access Tokens** and click **Create new token**.
 
-<img width="100%" alt="Create new token" src="docs/img/pat2.png" />
+<img width="1383" height="567" alt="pat-creator" src="https://github.com/user-attachments/assets/85ada5ac-c56f-40cc-855b-8bc01192bc3c" />
 
 Give it a name, confirm, and copy the token that appears — it is only shown once.
 
-<img width="100%" alt="Copy the token" src="docs/img/pat3.png" />
 
 Paste the URL and token into the Settings page and click **Test connection** to verify, then **Save settings**.
 
@@ -82,8 +79,6 @@ In the **Settings → AI Provider** section, choose a provider and enter your AP
 
 For OpenAI, create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys):
 
-<img width="100%" alt="OpenAI API key" src="docs/img/openai-key.png" />
-
 The default model is `gpt-4o-mini`, which is fast and inexpensive. Gemini and DeepSeek are supported as alternatives. For fully local inference, set **Base URL** to an [Ollama](https://ollama.com/) endpoint and leave the API key blank.
 
 Click **Save settings** when done.
@@ -94,11 +89,13 @@ Click **Save settings** when done.
 
 In Firefly III, go to **Automation → Webhooks** and click **Create new webhook**.
 
-<img width="100%" alt="Webhooks menu" src="docs/img/webhook1.png" />
+<img width="287" height="638" alt="webhook1" src="https://github.com/user-attachments/assets/7829dffb-812e-4d93-a8ee-d79c45bf325c" />
+
 
 Fill in the form with the following values:
 
-<img width="100%" alt="Webhook form" src="docs/img/webhook2.png" />
+<img width="795" height="370" alt="webhook2" src="https://github.com/user-attachments/assets/20bea3bd-4dcb-4de6-a997-c44cf3692317" />
+
 
 | Field | Value |
 |-------|-------|
@@ -108,7 +105,7 @@ Fill in the form with the following values:
 | Delivery | JSON |
 | URL | `http://<host>:3000/webhook` |
 
-<img width="100%" alt="Saved webhook" src="docs/img/webhook3.png" />
+<img width="1091" height="705" alt="webhook3" src="https://github.com/user-attachments/assets/de7a273e-9460-4b58-99ad-50cad3f09f21" />
 
 Save the webhook. New withdrawals will now be sent to the categorizer automatically.
 
