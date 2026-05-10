@@ -33,6 +33,9 @@ The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/
 
 ## Getting started
 
+> [!WARNING]
+> This application has no built-in authentication — do not expose it directly to the internet. Run it on a private network or behind a reverse proxy with authentication (e.g. Nginx basic auth over HTTPS).
+
 ### 1. Run the server
 
 The recommended way is Docker Compose with a volume mount so settings survive container restarts:
@@ -77,9 +80,13 @@ Paste the URL and token into the Settings page and click **Test connection** to 
 
 In the **Settings → AI Provider** section, choose a provider and enter your API key.
 
-For OpenAI, create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys):
+**OpenAI** — create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). The default model is `gpt-4o-mini`, which is fast and inexpensive.
 
-The default model is `gpt-4o-mini`, which is fast and inexpensive. Gemini and DeepSeek are supported as alternatives. For fully local inference, set **Base URL** to an [Ollama](https://ollama.com/) endpoint and leave the API key blank.
+**Google Gemini** — go to [aistudio.google.com](https://aistudio.google.com), sign in, and click **Get API key**. The default model is `gemini-2.5-flash`.
+
+**DeepSeek** — create an account at [platform.deepseek.com](https://platform.deepseek.com), go to **API keys**, and generate a new key. The default model is `deepseek-chat`.
+
+**Local (Ollama)** — select OpenAI as the provider, set **Base URL** to your Ollama endpoint (e.g. `http://localhost:11434/v1`), leave the API key blank, and set the model name to whichever model you have pulled.
 
 Click **Save settings** when done.
 
@@ -89,25 +96,14 @@ Click **Save settings** when done.
 
 In Firefly III, go to **Automation → Webhooks** and click **Create new webhook**.
 
-<img width="287" height="638" alt="webhook1" src="https://github.com/user-attachments/assets/7829dffb-812e-4d93-a8ee-d79c45bf325c" />
+<p>
+  <img width="24%" alt="Webhooks navigation" src="https://github.com/user-attachments/assets/7829dffb-812e-4d93-a8ee-d79c45bf325c" />
+  <img width="74%" alt="Webhook creation form" src="https://github.com/user-attachments/assets/20bea3bd-4dcb-4de6-a997-c44cf3692317" />
+</p>
 
+Set the URL to `http://<host>:3000/webhook` and save. New withdrawals will now be sent to the categorizer automatically.
 
-Fill in the form with the following values:
-
-<img width="795" height="370" alt="webhook2" src="https://github.com/user-attachments/assets/20bea3bd-4dcb-4de6-a997-c44cf3692317" />
-
-
-| Field | Value |
-|-------|-------|
-| Title | AI Categorizer (or any name) |
-| Trigger | After transaction creation |
-| Response | Transaction details |
-| Delivery | JSON |
-| URL | `http://<host>:3000/webhook` |
-
-<img width="1091" height="705" alt="webhook3" src="https://github.com/user-attachments/assets/de7a273e-9460-4b58-99ad-50cad3f09f21" />
-
-Save the webhook. New withdrawals will now be sent to the categorizer automatically.
+<img width="100%" alt="Saved webhook" src="https://github.com/user-attachments/assets/de7a273e-9460-4b58-99ad-50cad3f09f21" />
 
 > **Note:** Only withdrawal transactions without an existing category are processed. All other events are acknowledged and ignored.
 
