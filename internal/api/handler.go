@@ -79,6 +79,8 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
 	r.Get("/api/transactions", h.getTransactions)
+	r.Get("/api/review", h.getReview)
+	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
 
 	// SSE
 	r.Get("/events", h.events)
@@ -445,6 +447,124 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cats)
+}
+
+// --- Review ---
+
+type reviewTxn struct {
+	ID     string `json:"id"`
+	Date   string `json:"date"`
+	Amount string `json:"amount"`
+}
+
+type reviewGroup struct {
+	Outcome         string      `json:"outcome"`
+	Description     string      `json:"description"`
+	DestinationName string      `json:"destination_name"`
+	CategoryName    string      `json:"category_name,omitempty"`
+	CategoryID      string      `json:"category_id,omitempty"`
+	Transactions    []reviewTxn `json:"transactions"`
+}
+
+func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	needsReview, err := fc.GetNeedsReviewWithdrawals(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch needs-review transactions: %v", err), http.StatusBadGateway)
+		return
+	}
+	assumed, err := fc.GetAssumedWithdrawals(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch assumed transactions: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	result := buildReviewGroups("NEEDS_REVIEW", needsReview)
+	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGroup {
+	groups := make(map[string]*reviewGroup)
+	var order []string
+
+	for _, txn := range txns {
+		if len(txn.Splits) == 0 {
+			continue
+		}
+		s := txn.Splits[0]
+		key := s.Description
+		if key == "" {
+			key = s.DestinationName
+		}
+
+		if _, ok := groups[key]; !ok {
+			g := &reviewGroup{
+				Outcome:         outcome,
+				Description:     s.Description,
+				DestinationName: s.DestinationName,
+			}
+			if outcome == "ASSUMED" {
+				g.CategoryName = s.CategoryName
+				g.CategoryID = s.CategoryID
+			}
+			groups[key] = g
+			order = append(order, key)
+		}
+		groups[key].Transactions = append(groups[key].Transactions, reviewTxn{
+			ID:     txn.ID,
+			Date:   s.Date,
+			Amount: s.Amount,
+		})
+	}
+
+	result := make([]*reviewGroup, 0, len(order))
+	for _, key := range order {
+		result = append(result, groups[key])
+	}
+	return result
+}
+
+type categorizeRequest struct {
+	CategoryID string `json:"category_id"`
+}
+
+func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	var req categorizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.CategoryID == "" {
+		http.Error(w, "category_id is required", http.StatusBadRequest)
+		return
+	}
+
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+
+	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID); err != nil {
+		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Transactions list ---

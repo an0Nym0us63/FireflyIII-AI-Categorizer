@@ -81,6 +81,16 @@
                             <span>Transactions</span>
                         </a>
                     </li>
+                    <li id="nav-review">
+                        <a href="#" onclick="return switchTab('review')">
+                            <i class="fa fa-flag-o"></i>
+                            <span>Review</span>
+                            <span class="pull-right-container">
+                                <small class="label pull-right bg-red" id="review-count-badge"
+                                    style="display:none"></small>
+                            </span>
+                        </a>
+                    </li>
                     <li id="nav-categories">
                         <a href="#" onclick="return switchTab('categories')">
                             <i class="fa fa-bookmark-o"></i>
@@ -333,6 +343,41 @@
                     </div>
 
                 </div><!-- /tab-transactions -->
+
+                <!-- ─────────────────── REVIEW ─────────────────── -->
+                <div id="tab-review" style="display:none">
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="box box-warning">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-flag-o"></i> Transactions Needing Review</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-default btn-sm" onclick="loadReview()">
+                                            <i class="fa fa-refresh"></i> Refresh
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body">
+                                    <div id="review-action-bar" style="display:none">
+                                        <button type="button" class="btn btn-primary" id="btn-submit-all"
+                                            onclick="submitAllReview()" disabled>
+                                            <i class="fa fa-check"></i> Apply categorized
+                                        </button>
+                                        &nbsp;
+                                        <span id="review-progress" style="font-size:12px;color:#848484"></span>
+                                        &nbsp;
+                                        <span id="review-submit-status" style="font-size:13px"></span>
+                                    </div>
+                                    <div id="review-body">
+                                        <p class="text-muted">Click Refresh to load transactions flagged for human review.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /tab-review -->
 
                 <!-- ─────────────────── CATEGORIES ─────────────────── -->
                 <div id="tab-categories" style="display:none">

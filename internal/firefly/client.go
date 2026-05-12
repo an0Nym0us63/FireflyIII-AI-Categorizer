@@ -85,6 +85,66 @@ func (c *Client) GetAllWithdrawals(ctx context.Context) ([]Transaction, error) {
 	return c.fetchTransactions(ctx, params, func(_ Split) bool { return true })
 }
 
+// GetNeedsReviewWithdrawals fetches all withdrawals tagged with the needs-review tag.
+func (c *Client) GetNeedsReviewWithdrawals(ctx context.Context) ([]Transaction, error) {
+	params := url.Values{"type": {"withdrawal"}}
+	tag := c.tagPrefix + ":needs-review"
+	return c.fetchTransactions(ctx, params, func(s Split) bool {
+		return contains(s.Tags, tag)
+	})
+}
+
+// GetAssumedWithdrawals fetches all withdrawals tagged with the assumed tag.
+func (c *Client) GetAssumedWithdrawals(ctx context.Context) ([]Transaction, error) {
+	params := url.Values{"type": {"withdrawal"}}
+	tag := c.tagPrefix + ":assumed"
+	return c.fetchTransactions(ctx, params, func(s Split) bool {
+		return contains(s.Tags, tag)
+	})
+}
+
+// ApplyHumanCategory sets a category on a previously-flagged transaction.
+// It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
+func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID string) error {
+	aiOutcomeTags := map[string]bool{
+		c.tagPrefix + ":needs-review": true,
+		c.tagPrefix + ":assumed":      true,
+	}
+	reviewedTag := c.tagPrefix + ":reviewed"
+
+	type splitUpdate struct {
+		TransactionJournalID string   `json:"transaction_journal_id"`
+		Tags                 []string `json:"tags"`
+		CategoryID           string   `json:"category_id,omitempty"`
+	}
+	type body struct {
+		ApplyRules   bool          `json:"apply_rules"`
+		FireWebhooks bool          `json:"fire_webhooks"`
+		Transactions []splitUpdate `json:"transactions"`
+	}
+
+	b := body{ApplyRules: true, FireWebhooks: false}
+	for _, s := range splits {
+		tags := make([]string, 0, len(s.Tags))
+		for _, t := range s.Tags {
+			if !aiOutcomeTags[t] {
+				tags = append(tags, t)
+			}
+		}
+		if !contains(tags, reviewedTag) {
+			tags = append(tags, reviewedTag)
+		}
+		b.Transactions = append(b.Transactions, splitUpdate{
+			TransactionJournalID: s.JournalID,
+			Tags:                 tags,
+			CategoryID:           categoryID,
+		})
+	}
+
+	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
+	return c.put(ctx, u, b)
+}
+
 // GetTransactionsByIDs fetches specific transaction groups by ID.
 func (c *Client) GetTransactionsByIDs(ctx context.Context, ids []string) ([]Transaction, error) {
 	var txns []Transaction

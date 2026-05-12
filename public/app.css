@@ -92,6 +92,67 @@ pre.detail-pre {
     vertical-align: middle;
 }
 
+/* ── Review page ─────────────────────────────────────────────────────── */
+
+#review-action-bar {
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #f4f4f4;
+}
+
+.review-section-header {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.review-groups-grid {
+    column-count: 2;
+    column-gap: 14px;
+}
+
+.review-groups-grid .review-group {
+    break-inside: avoid;
+    margin-bottom: 10px;
+}
+
+.review-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px !important;
+}
+
+.review-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.review-group-body {
+    padding: 8px 10px !important;
+}
+
+.review-skip-btn {
+    flex-shrink: 0;
+    margin-left: 6px;
+    padding: 1px 5px;
+    line-height: 1.4;
+}
+
+@media (max-width: 767px) {
+    .review-groups-grid {
+        column-count: 1;
+    }
+}
+
+body.dark-mode #review-action-bar {
+    border-bottom-color: #353c42;
+}
+
 /* Select-all-pages banner */
 #txn-select-all-bar {
     background: #d9edf7;

@@ -16,6 +16,7 @@ var selectedTxns = new Set();
 var TAB_META = {
     jobs: {title: 'Jobs', sub: 'Recent classification activity'},
     transactions: {title: 'Transactions', sub: 'Select and re-categorize transactions'},
+    review: {title: 'Review', sub: 'Transactions requiring human categorization'},
     categories: {title: 'Categories', sub: 'Categories available to the AI'},
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
@@ -30,6 +31,7 @@ function switchTab(name) {
     document.getElementById('breadcrumb-leaf').textContent = m.title;
     if (name === 'settings') loadSettings();
     if (name === 'categories') loadCategories();
+    if (name === 'review') loadReview();
     return false;
 }
 
@@ -324,6 +326,7 @@ function aiTagLabel(tags) {
         if (tags[i].indexOf(':classified') >= 0) return '<span class="label label-success">classified</span>';
         if (tags[i].indexOf(':assumed') >= 0) return '<span class="label label-warning">assumed</span>';
         if (tags[i].indexOf(':needs-review') >= 0) return '<span class="label label-danger">needs review</span>';
+        if (tags[i].indexOf(':reviewed') >= 0) return '<span class="label label-info">reviewed</span>';
     }
     return '';
 }
@@ -434,6 +437,275 @@ async function recategorizeSelected() {
     document.getElementById('txn-end').value = end.toISOString().slice(0, 10);
     document.getElementById('txn-start').value = start.toISOString().slice(0, 10);
 })();
+
+// ─── Review ────────────────────────────────────────────────────────────────
+var reviewCategories = [];
+var reviewPendingCount = 0;
+var reviewGroupCounter = 0;
+var allReviewGroups = [];
+var reviewBatchOffset = 0;
+var reviewCurrentBatchSize = 0;
+var REVIEW_BATCH_SIZE = 8;
+
+async function loadReview() {
+    var body = document.getElementById('review-body');
+    var actionBar = document.getElementById('review-action-bar');
+    body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    actionBar.style.display = 'none';
+    try {
+        var catRes = fetch('/api/categories');
+        var reviewRes = fetch('/api/review');
+        catRes = await catRes;
+        reviewRes = await reviewRes;
+
+        if (catRes.status === 503 || reviewRes.status === 503) {
+            body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            return;
+        }
+        if (!catRes.ok) throw new Error(await catRes.text());
+        if (!reviewRes.ok) throw new Error(await reviewRes.text());
+
+        reviewCategories = await catRes.json();
+        allReviewGroups = (await reviewRes.json()) || [];
+
+        reviewPendingCount = allReviewGroups.reduce(function (sum, g) {
+            return sum + (g.transactions || []).length;
+        }, 0);
+        $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
+
+        reviewBatchOffset = 0;
+        renderNextBatch();
+    } catch (e) {
+        body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+    }
+}
+
+function renderNextBatch() {
+    var body = document.getElementById('review-body');
+    var actionBar = document.getElementById('review-action-bar');
+    var batch = allReviewGroups.slice(reviewBatchOffset, reviewBatchOffset + REVIEW_BATCH_SIZE);
+
+    if (!batch.length) {
+        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review &mdash; all caught up!</div>';
+        actionBar.style.display = 'none';
+        $('#review-count-badge').hide();
+        return;
+    }
+
+    reviewCurrentBatchSize = batch.length;
+    reviewGroupCounter = 0;
+    document.getElementById('review-submit-status').innerHTML = '';
+    body.innerHTML = renderReviewGroups(batch);
+    actionBar.style.display = '';
+    updateSubmitBar();
+    updateProgressIndicator();
+}
+
+function advanceToNextBatch() {
+    reviewBatchOffset += reviewCurrentBatchSize;
+    renderNextBatch();
+}
+
+function updateProgressIndicator() {
+    var el = document.getElementById('review-progress');
+    if (!el) return;
+    var total = allReviewGroups.length;
+    if (total > REVIEW_BATCH_SIZE) {
+        var batchEnd = Math.min(reviewBatchOffset + reviewCurrentBatchSize, total);
+        el.textContent = (reviewBatchOffset + 1) + '–' + batchEnd + ' of ' + total + ' groups';
+    } else {
+        el.textContent = '';
+    }
+}
+
+function resolveGroupLabel(g) {
+    var dest = (g.destination_name || '').trim();
+    var noName = !dest || dest.toLowerCase() === '(no name)';
+    var label = noName ? (g.description || '(unknown)') : dest;
+    var sub = (!noName && g.description && g.description !== dest) ? g.description : '';
+    return {label: label, sub: sub};
+}
+
+function renderReviewGroups(groups) {
+    var needsReview = groups.filter(function (g) { return g.outcome === 'NEEDS_REVIEW'; });
+    var assumed = groups.filter(function (g) { return g.outcome === 'ASSUMED'; });
+    var html = '';
+
+    if (needsReview.length) {
+        html += '<p class="review-section-header">'
+            + '<i class="fa fa-flag text-danger"></i> <strong>Needs Review</strong>'
+            + ' <span class="text-muted">&mdash; The AI could not classify these.</span></p>'
+            + '<div class="review-groups-grid" id="grid-needs-review">'
+            + needsReview.map(function (g) { return renderReviewGroup(g, false); }).join('')
+            + '</div>';
+    }
+
+    if (assumed.length) {
+        html += '<p class="review-section-header"' + (needsReview.length ? ' style="margin-top:20px"' : '') + '>'
+            + '<i class="fa fa-question-circle text-warning"></i> <strong>AI Assumed</strong>'
+            + ' <span class="text-muted">&mdash; The AI made a best guess. Confirm or correct.</span></p>'
+            + '<div class="review-groups-grid" id="grid-assumed">'
+            + assumed.map(function (g) { return renderReviewGroup(g, true); }).join('')
+            + '</div>';
+    }
+
+    return html;
+}
+
+function renderReviewGroup(g, isAssumed) {
+    var gi = reviewGroupCounter++;
+    var resolved = resolveGroupLabel(g);
+    var count = (g.transactions || []).length;
+    var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+
+    var txnRows = (g.transactions || []).map(function (t) {
+        var date = t.date ? t.date.substring(0, 10) : '—';
+        var amount = isNaN(parseFloat(t.amount)) ? '—' : parseFloat(t.amount).toFixed(2);
+        return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;padding:3px 6px">' + esc(date) + '</td>'
+            + '<td class="text-right" style="font-size:12px;padding:3px 6px">' + amount + '</td>'
+            + '</tr>';
+    }).join('');
+
+    var countBadgeCls = isAssumed ? 'label-warning' : 'label-danger';
+    var sub = resolved.sub
+        ? ' <small style="font-weight:normal;color:#999">' + esc(resolved.sub) + '</small>' : '';
+    var aiHint = isAssumed && g.category_name
+        ? '<p style="margin:0 0 5px;font-size:11px;color:#8a6d3b">'
+            + '<i class="fa fa-magic"></i> AI guessed: <strong>' + esc(g.category_name) + '</strong></p>'
+        : '';
+
+    var catOptions = '<option value="">— category —</option>'
+        + reviewCategories.map(function (c) {
+            var sel = (isAssumed && g.category_id && c.id === g.category_id) ? ' selected' : '';
+            return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
+        }).join('');
+
+    return '<div class="box box-default review-group" id="review-group-' + gi + '"'
+        + ' data-ids="' + esc(idsJson) + '" data-count="' + count + '">'
+        + '<div class="box-header with-border review-group-header">'
+        + '<span class="review-group-title">' + esc(resolved.label) + sub
+        + ' <span class="label ' + countBadgeCls + '" style="font-size:10px;font-weight:normal;margin-left:3px">'
+        + count + '</span></span>'
+        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip">'
+        + '<i class="fa fa-times"></i>'
+        + '</button>'
+        + '</div>'
+        + '<div class="box-body review-group-body">'
+        + aiHint
+        + '<table class="table table-condensed" style="margin-bottom:6px">'
+        + '<tbody>' + txnRows + '</tbody>'
+        + '</table>'
+        + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar()">'
+        + catOptions
+        + '</select>'
+        + '</div>'
+        + '</div>';
+}
+
+function skipReviewGroup(gi) {
+    var el = document.getElementById('review-group-' + gi);
+    if (!el) return;
+    var count = parseInt(el.getAttribute('data-count'), 10) || 0;
+    reviewPendingCount = Math.max(0, reviewPendingCount - count);
+    $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
+    el.remove();
+    if (!document.querySelector('.review-group')) {
+        advanceToNextBatch();
+    } else {
+        updateSubmitBar();
+    }
+}
+
+function updateSubmitBar() {
+    var groups = document.querySelectorAll('.review-group');
+    var total = groups.length;
+    var categorized = 0;
+    groups.forEach(function (el) {
+        var gi = el.id.replace('review-group-', '');
+        var sel = document.getElementById('review-cat-' + gi);
+        if (sel && sel.value) categorized++;
+    });
+    var btn = document.getElementById('btn-submit-all');
+    if (!btn) return;
+    btn.disabled = categorized === 0;
+    btn.innerHTML = '<i class="fa fa-check"></i> Apply ' + categorized + ' of ' + total
+        + ' group' + (total === 1 ? '' : 's');
+}
+
+async function submitAllReview() {
+    var toSubmit = Array.from(document.querySelectorAll('.review-group')).filter(function (el) {
+        var gi = el.id.replace('review-group-', '');
+        var sel = document.getElementById('review-cat-' + gi);
+        return sel && sel.value;
+    });
+    if (!toSubmit.length) return;
+
+    var statusEl = document.getElementById('review-submit-status');
+    var btn = document.getElementById('btn-submit-all');
+    btn.disabled = true;
+    document.querySelectorAll('.review-group select, .review-group button').forEach(function (el) { el.disabled = true; });
+    statusEl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting&hellip;';
+
+    var totalErrors = 0;
+    var totalTxns = 0;
+
+    for (var i = 0; i < toSubmit.length; i++) {
+        var el = toSubmit[i];
+        var gi = el.id.replace('review-group-', '');
+        var sel = document.getElementById('review-cat-' + gi);
+        var categoryId = sel.value;
+        var ids = JSON.parse(el.getAttribute('data-ids'));
+        var count = parseInt(el.getAttribute('data-count'), 10);
+
+        var groupErrors = 0;
+        for (var j = 0; j < ids.length; j++) {
+            try {
+                var res = await fetch('/api/transactions/' + encodeURIComponent(ids[j]) + '/categorize', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({category_id: categoryId})
+                });
+                if (!res.ok) groupErrors++;
+            } catch (e) {
+                groupErrors++;
+            }
+        }
+
+        if (groupErrors === 0) {
+            totalTxns += count;
+            reviewPendingCount = Math.max(0, reviewPendingCount - count);
+            el.remove();
+        } else {
+            totalErrors += groupErrors;
+        }
+    }
+
+    $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
+
+    if (!document.querySelector('.review-group')) {
+        if (totalErrors === 0) {
+            statusEl.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> '
+                + totalTxns + ' transaction' + (totalTxns === 1 ? '' : 's') + ' categorized.</span>';
+            setTimeout(advanceToNextBatch, 500);
+        } else {
+            advanceToNextBatch();
+        }
+        return;
+    }
+
+    document.querySelectorAll('.review-group select, .review-group button').forEach(function (el) { el.disabled = false; });
+
+    if (totalErrors === 0) {
+        statusEl.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> '
+            + totalTxns + ' transaction' + (totalTxns === 1 ? '' : 's') + ' categorized.</span>';
+    } else {
+        statusEl.innerHTML = '<span class="text-danger"><i class="fa fa-times-circle"></i> '
+            + totalErrors + ' update' + (totalErrors === 1 ? '' : 's') + ' failed.</span>';
+    }
+
+    updateSubmitBar();
+}
 
 // ─── Categories ────────────────────────────────────────────────────────────
 async function loadCategories() {
