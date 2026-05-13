@@ -259,9 +259,102 @@ body.dark-mode .btn-box-tool:hover {
     color: #fff;
 }
 
+/* Restore btn-primary text colour inside box headers.
+   darkmode.css sets .box>.box-header .btn { color: #bec5cb } which
+   makes btn-primary look greyed-out / disabled even when active. */
+body.dark-mode .box > .box-header .btn-primary {
+    color: #fff;
+}
+
+/* AI prompt/response <pre> blocks in dark mode.
+   darkmode.css sets pre { background: #1f2327 } but Bootstrap's
+   default color: #333 is never overridden, making text near-invisible. */
+body.dark-mode pre.detail-pre {
+    color: #c9d1d9;
+}
+
 /* Default label/badge — needs enough contrast against dark table rows (#272c30 / #373f45) */
 body.dark-mode .label-default {
     background-color: #55606a;
     color: #dde2e7;
     border: 1px solid #7a8794;
+}
+
+/* ── Flatpickr dark mode ──────────────────────────────────────────────── */
+body.dark-mode .flatpickr-calendar {
+    background: #353c42;
+    border: 1px solid #454e56;
+    box-shadow: 0 3px 13px rgba(0,0,0,.4);
+    color: #bec5cb;
+}
+
+body.dark-mode .flatpickr-calendar.arrowTop::before { border-bottom-color: #454e56; }
+body.dark-mode .flatpickr-calendar.arrowTop::after  { border-bottom-color: #353c42; }
+body.dark-mode .flatpickr-calendar.arrowBottom::before { border-top-color: #454e56; }
+body.dark-mode .flatpickr-calendar.arrowBottom::after  { border-top-color: #353c42; }
+
+body.dark-mode .flatpickr-months,
+body.dark-mode .flatpickr-weekdays,
+body.dark-mode span.flatpickr-weekday {
+    background: #272c30;
+    color: #85929e;
+    fill: #85929e;
+}
+
+body.dark-mode .flatpickr-current-month,
+body.dark-mode .flatpickr-current-month .flatpickr-monthDropdown-months {
+    background: #272c30;
+    color: #bec5cb;
+}
+
+body.dark-mode .flatpickr-current-month .numInputWrapper input,
+body.dark-mode .flatpickr-current-month .numInputWrapper span {
+    color: #bec5cb;
+}
+
+body.dark-mode .flatpickr-months .flatpickr-prev-month,
+body.dark-mode .flatpickr-months .flatpickr-next-month {
+    color: #bec5cb;
+    fill: #bec5cb;
+}
+
+body.dark-mode .flatpickr-months .flatpickr-prev-month:hover svg,
+body.dark-mode .flatpickr-months .flatpickr-next-month:hover svg {
+    fill: #fff;
+}
+
+body.dark-mode .flatpickr-day {
+    color: #bec5cb;
+    border-color: transparent;
+}
+
+body.dark-mode .flatpickr-day:hover,
+body.dark-mode .flatpickr-day:focus {
+    background: #454e56;
+    border-color: #454e56;
+    color: #fff;
+}
+
+body.dark-mode .flatpickr-day.today {
+    border-color: #3c8dbc;
+}
+
+body.dark-mode .flatpickr-day.today:hover {
+    background: #3c8dbc;
+    border-color: #3c8dbc;
+    color: #fff;
+}
+
+body.dark-mode .flatpickr-day.selected,
+body.dark-mode .flatpickr-day.selected:hover {
+    background: #3c8dbc;
+    border-color: #3c8dbc;
+    color: #fff;
+}
+
+body.dark-mode .flatpickr-day.flatpickr-disabled,
+body.dark-mode .flatpickr-day.flatpickr-disabled:hover,
+body.dark-mode .flatpickr-day.prevMonthDay,
+body.dark-mode .flatpickr-day.nextMonthDay {
+    color: #55606a;
 }

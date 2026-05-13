@@ -9,25 +9,19 @@ Automatically categorise transactions in [Firefly III](https://www.firefly-iii.o
   <img width="49.5%" alt="Settings page" src="https://github.com/user-attachments/assets/7e061547-65ac-402a-90be-6a3b1699a640" />
 </p>
 
-| Outcome | What happens | Tag applied |
-|---------|-------------|-------------|
-| **Classified** | High confidence — category set | `ai:classified` |
-| **Assumed** | Best guess — category set, assumption written to notes | `ai:assumed` |
-| **Needs Review** | Unable to classify — flagged for human review, no category set | `ai:needs-review` |
-
 ---
 
 ## Changes from the original
 
-The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), whose author has [invited others to fork it](https://github.com/bahuma20/firefly-iii-ai-categorize#please-fork-me). [openaccountants/firefly-iii-ai-categorize](https://github.com/openaccountants/firefly-iii-ai-categorize) forked it and introduced the three-outcome classification model. This project is a fork of that fork, rewritten from scratch in Go with a new UI and additional features:
+The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), whose author archived the project. [openaccountants/firefly-iii-ai-categorize](https://github.com/openaccountants/firefly-iii-ai-categorize) forked it and introduced the three-outcome classification model. This project is a fork of that fork, rewritten from scratch with a new UI and additional features:
 
-- **Rewritten in Go.** The Node.js/Express server has been replaced with a compiled Go binary, reducing resource usage and removing the Node.js runtime dependency.
-- **Web UI.** A built-in dashboard provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, and a full settings page.
+- **Web UI.** A built-in dashboard, that follows Firefly III design styles, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a page to review AI categorisation decisions, and a full settings page.
 - **Multiple AI providers.** Supports OpenAI (and any OpenAI-compatible endpoint such as Ollama or Azure OpenAI), Google Gemini, and DeepSeek — switchable from the settings page.
 - **Batch categorisation.** All uncategorised withdrawals can be classified in one operation from the UI or the command line.
 - **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level rather than silently guessing or doing nothing.
-- **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants.
+- **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants. Repeated transactions from the same vendor are categorised automatically, skipping the AI calls entirely.
 - **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts.
+- **Rewritten in Go.** The Node.js/Express server has been replaced with a compiled Go binary, reducing resource usage and removing the Node.js runtime dependency.
 
 ---
 
@@ -82,7 +76,7 @@ In the **Settings → AI Provider** section, choose a provider and enter your AP
 
 **OpenAI** — create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). The default model is `gpt-4o-mini`, which is fast and inexpensive.
 
-**Google Gemini** — go to [aistudio.google.com](https://aistudio.google.com), sign in, and click **Get API key**. The default model is `gemini-2.5-flash`.
+**Google Gemini** — go to [aistudio.google.com](https://aistudio.google.com), sign in, and click **Get API key**. The default model is `gemini-3.1-flash`.
 
 **DeepSeek** — create an account at [platform.deepseek.com](https://platform.deepseek.com), go to **API keys**, and generate a new key. The default model is `deepseek-chat`.
 
@@ -120,6 +114,12 @@ You can also select individaul transactions or *all* transactions on the **Trans
 <img width="100%" alt="Transactions page showing categorised results" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
 
 The **Transactions** tab lets you browse withdrawals, filter by date, and manually trigger re-classification on any selection.
+
+---
+
+### Manual Review
+
+The **Review** tab collects transactions the AI could not classify confidently — either flagged as **Needs Review** (no category set) or **AI Assumed** (a best guess that should be confirmed). Transactions are grouped by merchant, and for Assumed groups the AI's guess is pre-selected in the dropdown. Select a category for each group and click **Apply** to write them back to Firefly III. Use **Skip** to defer a group to the end of the queue without dismissing it.
 
 ---
 

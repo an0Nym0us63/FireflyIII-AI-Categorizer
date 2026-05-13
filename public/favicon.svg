@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="50mm"
+   height="50.000004mm"
+   viewBox="0 0 50 50.000004"
+   version="1.1"
+   id="svg1"
+   xml:space="preserve"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+     id="defs1"><linearGradient
+       id="linearGradient1"><stop
+         style="stop-color:#df6b45;stop-opacity:1;"
+         offset="0"
+         id="stop1" /><stop
+         style="stop-color:#f69474;stop-opacity:1;"
+         offset="1"
+         id="stop2" /></linearGradient><linearGradient
+       xlink:href="#linearGradient1"
+       id="linearGradient2"
+       x1="156.63223"
+       y1="174.49139"
+       x2="155.21898"
+       y2="124.88202"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(-0.13229167,0.396875)" /></defs><g
+     id="layer1"
+     transform="translate(-104.37702,-121.17785)"><g
+       id="g2"
+       transform="matrix(0.99378331,0,0,0.98425197,-27.222602,-1.6073123)"><path
+         style="fill:url(#linearGradient2);stroke:none;stroke-width:0.408001;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.998428"
+         d="m 132.42286,124.74973 29.71968,0.084 c 0,0 10.57709,5.21299 16.64731,16.40508 7.19464,13.26525 2.35073,34.28402 2.35073,34.28402 l -48.71665,0.0269 z"
+         id="path1" /><path
+         d="m 143.37302,141.80589 v 9.33322 c 0,1.0613 0.41828,2.0789 1.16744,2.82806 l 11.98648,11.98648 c 1.56073,1.56073 4.08914,1.56073 5.64986,0 l 9.33324,-9.33323 c 1.56073,-1.56073 1.56073,-4.08914 0,-5.64986 l -11.98649,-11.98649 c -0.74916,-0.7554 -1.76052,-1.17367 -2.82181,-1.17367 h -9.33323 c -2.20376,0 -3.99549,1.79171 -3.99549,3.99549 z m 6.99212,0.99888 c 1.105,0 1.99773,0.89273 1.99773,1.99774 0,1.105 -0.89273,1.99774 -1.99773,1.99774 -1.10501,0 -1.99776,-0.89274 -1.99776,-1.99774 0,-1.10501 0.89275,-1.99774 1.99776,-1.99774 z"
+         id="path1-2"
+         style="fill:#ffffff;fill-opacity:1;stroke-width:0.0624296" /></g></g></svg>

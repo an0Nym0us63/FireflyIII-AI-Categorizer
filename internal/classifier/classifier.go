@@ -14,10 +14,12 @@ const (
 )
 
 type HistoricalEntry struct {
+	TransactionID   string
 	DestinationName string
 	Description     string
 	CategoryName    string
-	GroupKey        string // effective lookup key — destination name, or description when destination is blank
+	GroupKey        string  // effective lookup key — destination name, or description when destination is blank
+	Amount          float64 // 0 means unknown; used for history-match confidence check
 }
 
 // GroupKey returns the field to use when grouping and looking up transaction

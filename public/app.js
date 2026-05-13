@@ -185,7 +185,14 @@ function buildDetailInner(j) {
     var html = '';
     if (j.reason) html += '<p><strong>Reason:</strong> ' + esc(j.reason) + '</p>';
     if (j.assumption) html += '<p><strong>Assumption:</strong> <em class="text-warning">' + esc(j.assumption) + '</em></p>';
-    if (j.error) html += '<div class="alert alert-danger" style="margin:0 0 8px"><i class="fa fa-warning"></i> ' + esc(j.error) + '</div>';
+    if (j.error) {
+        html += '<div style="display:flex;align-items:flex-start;gap:8px;margin:0 0 8px">'
+            + '<div class="alert alert-danger" style="margin:0;flex:1"><i class="fa fa-warning"></i> ' + esc(j.error) + '</div>'
+            + '<button class="btn btn-default btn-sm" style="white-space:nowrap;flex-shrink:0"'
+            + ' onclick="retryJob(\'' + j.id + '\',\'' + j.transaction_id + '\',this)">'
+            + '<i class="fa fa-refresh"></i> Retry</button>'
+            + '</div>';
+    }
     if (j.raw_prompt || j.raw_response) {
         html += '<div class="row">';
         if (j.raw_prompt) html += '<div class="col-md-6"><p class="text-muted" style="margin-bottom:4px;font-size:12px"><strong>Prompt</strong></p><pre class="detail-pre">' + esc(j.raw_prompt) + '</pre></div>';
@@ -216,6 +223,28 @@ function updateStats() {
     $('#stat-failed').text(vals.filter(function (j) {return j.status === 'failed';}).length);
     var running = vals.filter(function (j) {return j.status === 'in_progress';}).length;
     $('#jobs-running-badge').toggle(running > 0).text(running);
+}
+
+// ─── Retry failed job ──────────────────────────────────────────────────────
+async function retryJob(jobId, transactionId, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Retrying…';
+    try {
+        var res = await fetch('/batch/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filter: {transaction_ids: [transactionId]}, force: true})
+        });
+        if (res.status === 503) throw new Error('Not configured — check Settings.');
+        if (!res.ok) throw new Error(await res.text());
+        // New job will appear at the top via SSE; collapse the failed job's detail row.
+        toggleDetail(jobId);
+    } catch (e) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-refresh"></i> Retry';
+        var alertEl = btn.previousElementSibling;
+        if (alertEl) alertEl.innerHTML = '<i class="fa fa-warning"></i> Retry failed: ' + esc(e.message);
+    }
 }
 
 // ─── Batch ─────────────────────────────────────────────────────────────────
@@ -430,21 +459,22 @@ async function recategorizeSelected() {
         });
 }
 
-// Default date range: last 30 days
+// Initialise flatpickr on the transaction date range inputs.
+// Using flatpickr avoids the browser's native date picker, which in Firefox
+// renders weekend day numbers in red with no CSS override available.
 (function () {
     var end = new Date(), start = new Date();
     start.setDate(start.getDate() - 30);
-    document.getElementById('txn-end').value = end.toISOString().slice(0, 10);
-    document.getElementById('txn-start').value = start.toISOString().slice(0, 10);
+    var fpOpts = {dateFormat: 'Y-m-d', allowInput: true, disableMobile: true};
+    flatpickr('#txn-start', Object.assign({}, fpOpts, {defaultDate: start}));
+    flatpickr('#txn-end',   Object.assign({}, fpOpts, {defaultDate: end}));
 })();
 
 // ─── Review ────────────────────────────────────────────────────────────────
 var reviewCategories = [];
-var reviewPendingCount = 0;
 var reviewGroupCounter = 0;
-var allReviewGroups = [];
-var reviewBatchOffset = 0;
-var reviewCurrentBatchSize = 0;
+var reviewGroupMap = {}; // gi -> group object for the current rendered batch
+var allReviewGroups = []; // the live queue; submitted groups are removed, skipped groups cycle to end
 var REVIEW_BATCH_SIZE = 8;
 
 async function loadReview() {
@@ -452,6 +482,7 @@ async function loadReview() {
     var actionBar = document.getElementById('review-action-bar');
     body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     actionBar.style.display = 'none';
+    hideReviewProcessingBar();
     try {
         var catRes = fetch('/api/categories');
         var reviewRes = fetch('/api/review');
@@ -468,54 +499,67 @@ async function loadReview() {
         reviewCategories = await catRes.json();
         allReviewGroups = (await reviewRes.json()) || [];
 
-        reviewPendingCount = allReviewGroups.reduce(function (sum, g) {
-            return sum + (g.transactions || []).length;
-        }, 0);
-        $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
-
-        reviewBatchOffset = 0;
-        renderNextBatch();
+        updateReviewBadge();
+        renderCurrentBatch();
     } catch (e) {
         body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
     }
 }
 
-function renderNextBatch() {
+function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var batch = allReviewGroups.slice(reviewBatchOffset, reviewBatchOffset + REVIEW_BATCH_SIZE);
+    var batch = allReviewGroups.slice(0, REVIEW_BATCH_SIZE);
 
     if (!batch.length) {
         body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review &mdash; all caught up!</div>';
         actionBar.style.display = 'none';
-        $('#review-count-badge').hide();
+        updateReviewBadge();
         return;
     }
 
-    reviewCurrentBatchSize = batch.length;
     reviewGroupCounter = 0;
-    document.getElementById('review-submit-status').innerHTML = '';
+    reviewGroupMap = {};
     body.innerHTML = renderReviewGroups(batch);
     actionBar.style.display = '';
     updateSubmitBar();
     updateProgressIndicator();
 }
 
-function advanceToNextBatch() {
-    reviewBatchOffset += reviewCurrentBatchSize;
-    renderNextBatch();
-}
-
 function updateProgressIndicator() {
     var el = document.getElementById('review-progress');
     if (!el) return;
-    var total = allReviewGroups.length;
-    if (total > REVIEW_BATCH_SIZE) {
-        var batchEnd = Math.min(reviewBatchOffset + reviewCurrentBatchSize, total);
-        el.textContent = (reviewBatchOffset + 1) + '–' + batchEnd + ' of ' + total + ' groups';
+    var n = allReviewGroups.length;
+    el.textContent = n > REVIEW_BATCH_SIZE
+        ? 'Showing first ' + REVIEW_BATCH_SIZE + ' of ' + n + ' groups'
+        : '';
+}
+
+function updateReviewBadge() {
+    var n = allReviewGroups.length;
+    $('#review-count-badge').toggle(n > 0).text(n);
+}
+
+function showReviewProcessingBar(txnCount) {
+    document.getElementById('review-processing-status').innerHTML =
+        '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Applying '
+        + txnCount + ' transaction' + (txnCount === 1 ? '' : 's') + '&hellip;</span>';
+}
+
+function updateReviewProcessingBar(success, errors) {
+    var el = document.getElementById('review-processing-status');
+    if (errors === 0) {
+        el.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> '
+            + success + ' transaction' + (success === 1 ? '' : 's') + ' categorized.</span>';
     } else {
-        el.textContent = '';
+        el.innerHTML = '<span class="text-warning"><i class="fa fa-warning"></i> '
+            + success + ' categorized, ' + errors + ' failed.</span>';
     }
+    setTimeout(function () { el.innerHTML = ''; }, 5000);
+}
+
+function hideReviewProcessingBar() {
+    document.getElementById('review-processing-status').innerHTML = '';
 }
 
 function resolveGroupLabel(g) {
@@ -554,6 +598,7 @@ function renderReviewGroups(groups) {
 
 function renderReviewGroup(g, isAssumed) {
     var gi = reviewGroupCounter++;
+    reviewGroupMap[gi] = g;
     var resolved = resolveGroupLabel(g);
     var count = (g.transactions || []).length;
     var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
@@ -587,8 +632,8 @@ function renderReviewGroup(g, isAssumed) {
         + '<span class="review-group-title">' + esc(resolved.label) + sub
         + ' <span class="label ' + countBadgeCls + '" style="font-size:10px;font-weight:normal;margin-left:3px">'
         + count + '</span></span>'
-        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip">'
-        + '<i class="fa fa-times"></i>'
+        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — move to end of queue to review later">'
+        + '<i class="fa fa-clock-o"></i> Skip'
         + '</button>'
         + '</div>'
         + '<div class="box-body review-group-body">'
@@ -606,14 +651,21 @@ function renderReviewGroup(g, isAssumed) {
 function skipReviewGroup(gi) {
     var el = document.getElementById('review-group-' + gi);
     if (!el) return;
-    var count = parseInt(el.getAttribute('data-count'), 10) || 0;
-    reviewPendingCount = Math.max(0, reviewPendingCount - count);
-    $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
+    // Move group to end of queue so it reappears after all other groups are reviewed
+    var g = reviewGroupMap[gi];
+    if (g) {
+        var idx = allReviewGroups.indexOf(g);
+        if (idx !== -1) {
+            allReviewGroups.splice(idx, 1);
+            allReviewGroups.push(g);
+        }
+    }
     el.remove();
     if (!document.querySelector('.review-group')) {
-        advanceToNextBatch();
+        renderCurrentBatch();
     } else {
         updateSubmitBar();
+        updateProgressIndicator();
     }
 }
 
@@ -641,70 +693,47 @@ async function submitAllReview() {
     });
     if (!toSubmit.length) return;
 
-    var statusEl = document.getElementById('review-submit-status');
-    var btn = document.getElementById('btn-submit-all');
-    btn.disabled = true;
-    document.querySelectorAll('.review-group select, .review-group button').forEach(function (el) { el.disabled = true; });
-    statusEl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting&hellip;';
-
-    var totalErrors = 0;
-    var totalTxns = 0;
-
-    for (var i = 0; i < toSubmit.length; i++) {
-        var el = toSubmit[i];
+    // Capture data and remove submitted groups from the queue before touching the DOM
+    var submissions = toSubmit.map(function (el) {
         var gi = el.id.replace('review-group-', '');
         var sel = document.getElementById('review-cat-' + gi);
-        var categoryId = sel.value;
-        var ids = JSON.parse(el.getAttribute('data-ids'));
-        var count = parseInt(el.getAttribute('data-count'), 10);
-
-        var groupErrors = 0;
-        for (var j = 0; j < ids.length; j++) {
-            try {
-                var res = await fetch('/api/transactions/' + encodeURIComponent(ids[j]) + '/categorize', {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({category_id: categoryId})
-                });
-                if (!res.ok) groupErrors++;
-            } catch (e) {
-                groupErrors++;
-            }
+        var g = reviewGroupMap[gi];
+        if (g) {
+            var idx = allReviewGroups.indexOf(g);
+            if (idx !== -1) allReviewGroups.splice(idx, 1);
         }
+        return {ids: JSON.parse(el.getAttribute('data-ids')), categoryId: sel.value};
+    });
 
-        if (groupErrors === 0) {
-            totalTxns += count;
-            reviewPendingCount = Math.max(0, reviewPendingCount - count);
-            el.remove();
-        } else {
-            totalErrors += groupErrors;
-        }
-    }
+    // Remove submitted cards from DOM immediately
+    toSubmit.forEach(function (el) { el.remove(); });
+    updateReviewBadge();
 
-    $('#review-count-badge').toggle(reviewPendingCount > 0).text(reviewPendingCount);
+    // Show processing banner and advance to the next batch straight away
+    var totalTxns = submissions.reduce(function (sum, s) { return sum + s.ids.length; }, 0);
+    showReviewProcessingBar(totalTxns);
 
     if (!document.querySelector('.review-group')) {
-        if (totalErrors === 0) {
-            statusEl.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> '
-                + totalTxns + ' transaction' + (totalTxns === 1 ? '' : 's') + ' categorized.</span>';
-            setTimeout(advanceToNextBatch, 500);
-        } else {
-            advanceToNextBatch();
-        }
-        return;
-    }
-
-    document.querySelectorAll('.review-group select, .review-group button').forEach(function (el) { el.disabled = false; });
-
-    if (totalErrors === 0) {
-        statusEl.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> '
-            + totalTxns + ' transaction' + (totalTxns === 1 ? '' : 's') + ' categorized.</span>';
+        renderCurrentBatch();
     } else {
-        statusEl.innerHTML = '<span class="text-danger"><i class="fa fa-times-circle"></i> '
-            + totalErrors + ' update' + (totalErrors === 1 ? '' : 's') + ' failed.</span>';
+        updateSubmitBar();
+        updateProgressIndicator();
     }
 
-    updateSubmitBar();
+    // Fire all categorize calls in parallel
+    var allCalls = submissions.flatMap(function (s) {
+        return s.ids.map(function (id) {
+            return fetch('/api/transactions/' + encodeURIComponent(id) + '/categorize', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({category_id: s.categoryId})
+            }).then(function (res) { return res.ok; }).catch(function () { return false; });
+        });
+    });
+
+    var results = await Promise.all(allCalls);
+    var errors = results.filter(function (ok) { return !ok; }).length;
+    updateReviewProcessingBar(results.length - errors, errors);
 }
 
 // ─── Categories ────────────────────────────────────────────────────────────
@@ -739,10 +768,20 @@ async function loadCategories() {
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────────
+var savedConfig = {};
+
+// Ensures a URL has a protocol prefix, defaulting to https://.
+function normalizeURL(url) {
+    if (!url) return url;
+    if (!/^https?:\/\//i.test(url)) return 'https://' + url;
+    return url;
+}
+
 async function loadSettings() {
     settingsFlash('', '');
     try {
         var d = await (await fetch('/api/config')).json();
+        savedConfig = d;
         $('#cfg-firefly-url').val(d.firefly_url || '');
         $('#cfg-firefly-token').val('');
         $('#token-hint').toggle(!!d.firefly_token_set);
@@ -789,13 +828,35 @@ function onProviderChange() {
 }
 
 async function testConnection() {
+    // Normalize the URL in place before testing.
+    var url = normalizeURL($('#cfg-firefly-url').val().trim());
+    if (url) $('#cfg-firefly-url').val(url);
+    var token = $('#cfg-firefly-token').val();
+
     $('#btn-test').prop('disabled', true);
     $('#test-result').html('<i class="fa fa-spinner fa-spin"></i> Testing&hellip;').removeClass('text-success text-danger').addClass('text-muted');
     try {
-        var d = await (await fetch('/api/config/test')).json();
+        // Send current field values so the test works before saving.
+        var body = {};
+        if (url)   body.firefly_url   = url;
+        if (token) body.firefly_token = token;
+
+        var d = await (await fetch('/api/config/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        })).json();
+
         if (d.ok) {
-            $('#test-result').html('<i class="fa fa-check-circle"></i> Connected &mdash; ' + d.categories + ' categories found')
-                .removeClass('text-muted text-danger').addClass('text-success');
+            var msg = '<i class="fa fa-check-circle"></i> Connected &mdash; ' + d.categories + ' categories found';
+            // Prompt to save if the current values haven't been persisted yet.
+            var urlChanged   = url && url !== (savedConfig.firefly_url || '');
+            var tokenChanged = !!token;
+            if (urlChanged || tokenChanged) {
+                msg += ' &mdash; <a href="#" onclick="saveSettings();return false">'
+                    + '<i class="fa fa-floppy-o"></i> Save settings</a> to apply.';
+            }
+            $('#test-result').html(msg).removeClass('text-muted text-danger').addClass('text-success');
         } else {
             $('#test-result').html('<i class="fa fa-times-circle"></i> ' + esc(d.error))
                 .removeClass('text-muted text-success').addClass('text-danger');
@@ -811,8 +872,8 @@ async function testConnection() {
 async function saveSettings() {
     var p = $('#cfg-provider').val();
     var payload = {ai_provider: p};
-    var ffUrl = $('#cfg-firefly-url').val().trim(), ffToken = $('#cfg-firefly-token').val();
-    if (ffUrl) payload.firefly_url = ffUrl;
+    var ffUrl = normalizeURL($('#cfg-firefly-url').val().trim()), ffToken = $('#cfg-firefly-token').val();
+    if (ffUrl) { $('#cfg-firefly-url').val(ffUrl); payload.firefly_url = ffUrl; }
     if (ffToken) payload.firefly_token = ffToken;
     if (p === 'openai') {
         var k = $('#cfg-openai-key').val(), m = $('#cfg-openai-model').val().trim(), b = $('#cfg-openai-base-url').val().trim();

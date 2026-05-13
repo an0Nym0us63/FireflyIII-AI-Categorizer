@@ -75,7 +75,7 @@ func (h *Handler) Router() http.Handler {
 	// API endpoints for the UI
 	r.Get("/api/config", h.getConfig)
 	r.Put("/api/config", h.putConfig)
-	r.Get("/api/config/test", h.testFirefly)
+	r.Post("/api/config/test", h.testFirefly)
 	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
 	r.Get("/api/transactions", h.getTransactions)
@@ -410,8 +410,29 @@ func preferenceIsTruthy(val interface{}) bool {
 	return false
 }
 
+type testFireflyRequest struct {
+	FireflyURL   string `json:"firefly_url"`
+	FireflyToken string `json:"firefly_token"`
+}
+
 func (h *Handler) testFirefly(w http.ResponseWriter, r *http.Request) {
-	fc := h.getFC()
+	var req testFireflyRequest
+	// Body is optional — ignore decode errors so a bare POST still works.
+	json.NewDecoder(r.Body).Decode(&req)
+
+	var fc *firefly.Client
+	if req.FireflyURL != "" {
+		token := req.FireflyToken
+		if token == "" {
+			// No token supplied — fall back to the saved one so the user can
+			// test a new URL without re-entering their existing token.
+			token = h.effectiveConfig().FireflyToken
+		}
+		fc = firefly.New(req.FireflyURL, token, "")
+	} else {
+		fc = h.getFC()
+	}
+
 	if fc == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ok":    false,

@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -96,11 +97,14 @@ func (c *Cache) ensureFresh(ctx context.Context) error {
 	entries := make([]classifier.HistoricalEntry, 0, len(txns))
 	for _, txn := range txns {
 		for _, s := range txn.Splits {
+			amount, _ := strconv.ParseFloat(s.Amount, 64)
 			entries = append(entries, classifier.HistoricalEntry{
+				TransactionID:   txn.ID,
 				DestinationName: s.DestinationName,
 				Description:     s.Description,
 				CategoryName:    s.CategoryName,
 				GroupKey:        classifier.GroupKey(s.DestinationName, s.Description),
+				Amount:          amount,
 			})
 		}
 	}
