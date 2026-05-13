@@ -100,22 +100,43 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 
 // --- Webhook ---
 
+// flexString unmarshals a JSON string or number into a string value.
+// Firefly III sends integer IDs in webhook payloads but string IDs in the REST API.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*f = flexString(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	*f = flexString(n.String())
+	return nil
+}
+
 type webhookSplitData struct {
-	TransactionJournalID string   `json:"transaction_journal_id"`
-	Type                 string   `json:"type"`
-	Description          string   `json:"description"`
-	DestinationName      string   `json:"destination_name"`
-	Amount               string   `json:"amount"`
-	CategoryID           string   `json:"category_id"`
-	Tags                 []string `json:"tags"`
-	Notes                string   `json:"notes"`
+	TransactionJournalID flexString `json:"transaction_journal_id"`
+	Type                 string     `json:"type"`
+	Description          string     `json:"description"`
+	DestinationName      string     `json:"destination_name"`
+	Amount               string     `json:"amount"`
+	CategoryID           string     `json:"category_id"`
+	Tags                 []string   `json:"tags"`
+	Notes                string     `json:"notes"`
 }
 
 type webhookPayload struct {
 	Trigger  string `json:"trigger"`
 	Response string `json:"response"`
 	Content  struct {
-		ID           string             `json:"id"`
+		ID           flexString         `json:"id"`
 		Transactions []webhookSplitData `json:"transactions"`
 	} `json:"content"`
 }
@@ -167,7 +188,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	splits := make([]firefly.Split, len(payload.Content.Transactions))
 	for i, t := range payload.Content.Transactions {
 		splits[i] = firefly.Split{
-			JournalID:       t.TransactionJournalID,
+			JournalID:       string(t.TransactionJournalID),
 			Type:            t.Type,
 			Description:     t.Description,
 			DestinationName: t.DestinationName,
@@ -179,8 +200,8 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(payload.Content.ID, "", first.DestinationName, first.Description, amount)
-	transactionID := payload.Content.ID
+	j := h.registry.Create(string(payload.Content.ID), "", first.DestinationName, first.Description, amount)
+	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
 		JobID: j.ID,
