@@ -121,6 +121,8 @@ The **Transactions** tab lets you browse withdrawals, filter by date, and manual
 
 The **Review** tab collects transactions the AI could not classify confidently — either flagged as **Needs Review** (no category set) or **AI Assumed** (a best guess that should be confirmed). Transactions are grouped by merchant, and for Assumed groups the AI's guess is pre-selected in the dropdown. Select a category for each group and click **Apply** to write them back to Firefly III. Use **Skip** to defer a group to the end of the queue without dismissing it.
 
+<img width="1861" height="1199" alt="image" src="https://github.com/user-attachments/assets/4c7448f9-6d2e-403e-9ccc-eb5804faf75b" />
+
 ---
 
 ## How it works
