@@ -26,7 +26,7 @@ type Config struct {
 	DeepseekKey   string
 	DeepseekModel string
 
-	TagPrefix          string
+	TagPrefix           string
 	CustomSystemContext string
 
 	HistoryCacheTTL     time.Duration
@@ -139,6 +139,12 @@ func (c *Config) IsConfigured() bool {
 	}
 	switch c.AIProvider {
 	case "openai":
+		// If an OpenAI-compatible Base URL is provided (e.g. local Ollama),
+		// an API key may be intentionally left blank. Treat that as configured
+		// when a BaseURL is present.
+		if c.OpenAIBaseURL != "" {
+			return true
+		}
 		return c.OpenAIKey != ""
 	case "gemini":
 		return c.GeminiKey != ""
