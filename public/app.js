@@ -109,9 +109,12 @@ applyTheme();
 
 // ─── Initial config check ──────────────────────────────────────────────────
 // Navigate to Settings automatically on first load if credentials are missing.
+// Also populates savedConfig so other pages (Review, Categories) can access
+// feature flags without needing to visit Settings first.
 (async function () {
     try {
         var d = await (await fetch('/api/config')).json();
+        savedConfig = d;
         if (!d.configured) switchTab('settings');
     } catch (e) { }
 })();
@@ -649,9 +652,15 @@ function renderReviewGroup(g, isAssumed) {
     // Destination account controls (only when enabled).
     var destHtml = '';
     if (reviewAccounts.length) {
+        // Determine the current destination to pre-select.
+        var currentDestID = g.destination_account_id || '';
+        // Check if the current ID exists in the account list.
+        var currentDestInList = currentDestID && reviewAccounts.some(function (a) { return a.id === currentDestID; });
+
         var acctOptions = '<option value="">— keep current destination —</option>'
             + reviewAccounts.map(function (a) {
-                return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+                var sel = (a.id === currentDestID) ? ' selected' : '';
+                return '<option value="' + esc(a.id) + '"' + sel + '>' + esc(a.name) + '</option>';
             }).join('')
             + '<option value="__CREATE__">+ Create new destination…</option>';
 

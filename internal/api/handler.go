@@ -503,12 +503,13 @@ type reviewTxn struct {
 }
 
 type reviewGroup struct {
-	Outcome         string      `json:"outcome"`
-	Description     string      `json:"description"`
-	DestinationName string      `json:"destination_name"`
-	CategoryName    string      `json:"category_name,omitempty"`
-	CategoryID      string      `json:"category_id,omitempty"`
-	Transactions    []reviewTxn `json:"transactions"`
+	Outcome              string      `json:"outcome"`
+	Description          string      `json:"description"`
+	DestinationName      string      `json:"destination_name"`
+	CategoryName         string      `json:"category_name,omitempty"`
+	CategoryID           string      `json:"category_id,omitempty"`
+	DestinationAccountID string      `json:"destination_account_id,omitempty"`
+	Transactions         []reviewTxn `json:"transactions"`
 }
 
 func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
@@ -551,9 +552,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 
 		if _, ok := groups[key]; !ok {
 			g := &reviewGroup{
-				Outcome:         outcome,
-				Description:     s.Description,
-				DestinationName: s.DestinationName,
+				Outcome:              outcome,
+				Description:          s.Description,
+				DestinationName:      s.DestinationName,
+				DestinationAccountID: s.DestinationID,
 			}
 			if outcome == "ASSUMED" {
 				g.CategoryName = s.CategoryName
