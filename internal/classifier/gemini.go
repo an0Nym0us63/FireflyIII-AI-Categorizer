@@ -30,7 +30,7 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 	m.Temperature = &temp
 	m.ResponseMIMEType = "application/json"
 	m.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(BuildSystemPrompt(c.customContext))},
+		Parts: []genai.Part{genai.Text(BuildSystemPrompt(c.customContext, req.DestinationMatching))},
 	}
 
 	resp, err := m.GenerateContent(ctx, genai.Text(prompt))
@@ -47,5 +47,5 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 		return Result{}, fmt.Errorf("gemini: unexpected response part type")
 	}
 
-	return parseResponse(string(text), prompt, req.Categories), nil
+	return parseResponse(string(text), prompt, req.Categories, req.ExpenseAccounts, req.DestinationMatching), nil
 }

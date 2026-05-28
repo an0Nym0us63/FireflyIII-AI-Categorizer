@@ -149,9 +149,18 @@ function buildJobRow(j) {
     var amount = j.amount != null ? parseFloat(j.amount).toFixed(2) : '&mdash;';
     var t = new Intl.DateTimeFormat(undefined, {dateStyle: 'short', timeStyle: 'short'}).format(new Date(j.created_at));
 
+    // Show AI-assigned destination account when present, otherwise the original payee name.
+    var dest = j.destination_account || j.destination_name || '&mdash;';
+    var destHtml = '<strong>' + esc(dest) + '</strong>';
+    if (j.destination_account && j.destination_action === 'MATCH') {
+        destHtml += ' <i class="fa fa-link text-muted" title="Matched to existing account" style="font-size:11px"></i>';
+    } else if (j.destination_account && j.destination_action === 'CREATE') {
+        destHtml += ' <i class="fa fa-plus-circle text-success" title="Account created" style="font-size:11px"></i>';
+    }
+
     tr.innerHTML =
         '<td style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
-        + '<td><strong>' + esc(j.destination_name || '&mdash;') + '</strong></td>'
+        + '<td>' + destHtml + '</td>'
         + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + '</td>'
         + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
         + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
@@ -183,6 +192,12 @@ function toggleDetail(id) {
 
 function buildDetailInner(j) {
     var html = '';
+    if (j.destination_account) {
+        var dLabel = j.destination_action === 'CREATE'
+            ? '<i class="fa fa-plus-circle text-success"></i> Created account'
+            : '<i class="fa fa-link"></i> Matched account';
+        html += '<p><strong>Destination:</strong> ' + dLabel + ' <strong>' + esc(j.destination_account) + '</strong></p>';
+    }
     if (j.reason) html += '<p><strong>Reason:</strong> ' + esc(j.reason) + '</p>';
     if (j.assumption) html += '<p><strong>Assumption:</strong> <em class="text-warning">' + esc(j.assumption) + '</em></p>';
     if (j.error) {
@@ -472,6 +487,7 @@ async function recategorizeSelected() {
 
 // ─── Review ────────────────────────────────────────────────────────────────
 var reviewCategories = [];
+var reviewAccounts = [];     // expense accounts for destination matching (empty when disabled)
 var reviewGroupCounter = 0;
 var reviewGroupMap = {}; // gi -> group object for the current rendered batch
 var allReviewGroups = []; // the live queue; submitted groups are removed, skipped groups cycle to end
@@ -486,8 +502,11 @@ async function loadReview() {
     try {
         var catRes = fetch('/api/categories');
         var reviewRes = fetch('/api/review');
+        var destMatch = savedConfig.destination_match_enabled;
+        var acctRes = destMatch ? fetch('/api/accounts') : null;
         catRes = await catRes;
         reviewRes = await reviewRes;
+        if (acctRes) acctRes = await acctRes;
 
         if (catRes.status === 503 || reviewRes.status === 503) {
             body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
@@ -498,6 +517,7 @@ async function loadReview() {
 
         reviewCategories = await catRes.json();
         allReviewGroups = (await reviewRes.json()) || [];
+        reviewAccounts = (destMatch && acctRes && acctRes.ok) ? (await acctRes.json()) || [] : [];
 
         updateReviewBadge();
         renderCurrentBatch();
@@ -626,6 +646,24 @@ function renderReviewGroup(g, isAssumed) {
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
         }).join('');
 
+    // Destination account controls (only when enabled).
+    var destHtml = '';
+    if (reviewAccounts.length) {
+        var acctOptions = '<option value="">— keep current destination —</option>'
+            + reviewAccounts.map(function (a) {
+                return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+            }).join('')
+            + '<option value="__CREATE__">+ Create new destination…</option>';
+
+        destHtml = '<div style="margin-top:8px">'
+            + '<select class="form-control input-sm review-dest-select" id="review-dest-' + gi + '" onchange="onDestChange(' + gi + ')">'
+            + acctOptions
+            + '</select>'
+            + '<input type="text" class="form-control input-sm review-dest-create" id="review-dest-name-' + gi + '"'
+            + ' placeholder="New destination account name" style="margin-top:4px;display:none" oninput="updateSubmitBar()">'
+            + '</div>';
+    }
+
     return '<div class="box box-default review-group" id="review-group-' + gi + '"'
         + ' data-ids="' + esc(idsJson) + '" data-count="' + count + '">'
         + '<div class="box-header with-border review-group-header">'
@@ -644,8 +682,19 @@ function renderReviewGroup(g, isAssumed) {
         + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar()">'
         + catOptions
         + '</select>'
+        + destHtml
         + '</div>'
         + '</div>';
+}
+
+// Show/hide the "create new destination" text input based on dropdown selection.
+function onDestChange(gi) {
+    var sel = document.getElementById('review-dest-' + gi);
+    var inp = document.getElementById('review-dest-name-' + gi);
+    if (sel && inp) {
+        inp.style.display = (sel.value === '__CREATE__') ? '' : 'none';
+    }
+    updateSubmitBar();
 }
 
 function skipReviewGroup(gi) {
@@ -702,7 +751,23 @@ async function submitAllReview() {
             var idx = allReviewGroups.indexOf(g);
             if (idx !== -1) allReviewGroups.splice(idx, 1);
         }
-        return {ids: JSON.parse(el.getAttribute('data-ids')), categoryId: sel.value};
+        var sub = {ids: JSON.parse(el.getAttribute('data-ids')), categoryId: sel.value};
+        // Capture destination info when available.
+        var destSel = document.getElementById('review-dest-' + gi);
+        if (destSel && destSel.value) {
+            if (destSel.value === '__CREATE__') {
+                var destNameInput = document.getElementById('review-dest-name-' + gi);
+                var destName = destNameInput ? destNameInput.value.trim() : '';
+                if (destName) {
+                    sub.destination_action = 'CREATE';
+                    sub.destination_name = destName;
+                }
+            } else {
+                sub.destination_action = 'MATCH';
+                sub.destination_id = destSel.value;
+            }
+        }
+        return sub;
     });
 
     // Remove submitted cards from DOM immediately
@@ -723,10 +788,16 @@ async function submitAllReview() {
     // Fire all categorize calls in parallel
     var allCalls = submissions.flatMap(function (s) {
         return s.ids.map(function (id) {
+            var body = {category_id: s.categoryId};
+            if (s.destination_action) {
+                body.destination_action = s.destination_action;
+                if (s.destination_action === 'MATCH') body.destination_id = s.destination_id;
+                if (s.destination_action === 'CREATE') body.destination_name = s.destination_name;
+            }
             return fetch('/api/transactions/' + encodeURIComponent(id) + '/categorize', {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({category_id: s.categoryId})
+                body: JSON.stringify(body)
             }).then(function (res) { return res.ok; }).catch(function () { return false; });
         });
     });
@@ -738,32 +809,72 @@ async function submitAllReview() {
 
 // ─── Categories ────────────────────────────────────────────────────────────
 async function loadCategories() {
-    var body = document.getElementById('cat-body');
-    body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    // Always load categories.
+    var catBody = document.getElementById('cat-body');
+    catBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+
+    // Load expense accounts only when destination matching is enabled.
+    var destMatch = savedConfig.destination_match_enabled;
+    var acctBody = document.getElementById('acct-body');
+    var acctRow = document.getElementById('row-destination-accounts');
+    if (destMatch) {
+        acctRow.style.display = '';
+        acctBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    } else {
+        acctRow.style.display = 'none';
+    }
+
     try {
+        // Fetch categories.
         var res = await fetch('/api/categories');
         if (res.status === 503) {
-            body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            catBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            if (destMatch) acctBody.innerHTML = '<p class="text-muted">Firefly III is not configured.</p>';
             return;
         }
         if (!res.ok) throw new Error(await res.text());
         var cats = await res.json();
         if (!cats || !cats.length) {
-            body.innerHTML = '<p class="text-muted">No categories found in Firefly III.</p>';
-            return;
+            catBody.innerHTML = '<p class="text-muted">No categories found in Firefly III.</p>';
+        } else {
+            var html = '<div style="margin-bottom:12px">';
+            cats.forEach(function (c) {
+                html += '<span class="cat-chip"><i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>'
+                    + esc(c.name)
+                    + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
+                    + '</span>';
+            });
+            html += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
+                + cats.length + ' categories available to the AI.</small></p>';
+            catBody.innerHTML = html;
         }
-        var html = '<div style="margin-bottom:12px">';
-        cats.forEach(function (c) {
-            html += '<span class="cat-chip"><i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>'
-                + esc(c.name)
-                + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
-                + '</span>';
-        });
-        html += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
-            + cats.length + ' categories available to the AI.</small></p>';
-        body.innerHTML = html;
+
+        // Fetch expense accounts if destination matching is on.
+        if (destMatch) {
+            try {
+                var ar = await fetch('/api/accounts');
+                if (!ar.ok) throw new Error(await ar.text());
+                var accts = await ar.json();
+                if (!accts || !accts.length) {
+                    acctBody.innerHTML = '<p class="text-muted">No expense accounts found in Firefly III. The AI will only be able to create new accounts.</p>';
+                } else {
+                    var ahtml = '<div style="margin-bottom:12px">';
+                    accts.forEach(function (a) {
+                        ahtml += '<span class="cat-chip"><i class="fa fa-building-o" style="color:#3c8dbc;margin-right:5px"></i>'
+                            + esc(a.name) + '</span>';
+                    });
+                    ahtml += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
+                        + accts.length + ' expense account' + (accts.length === 1 ? '' : 's')
+                        + ' that the AI can match against.</small></p>';
+                    acctBody.innerHTML = ahtml;
+                }
+            } catch (e) {
+                acctBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Could not load accounts: ' + esc(e.message) + '</div>';
+            }
+        }
     } catch (e) {
-        body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+        catBody.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+        if (destMatch) acctBody.innerHTML = '<p class="text-muted">Could not load accounts due to errors above.</p>';
     }
 }
 
@@ -798,6 +909,7 @@ async function loadSettings() {
         $('#cfg-deepseek-model').val(d.deepseek_model || '');
         $('#cfg-tag-prefix').val(d.tag_prefix || '');
         $('#cfg-custom-context').val(d.custom_system_context || '');
+        $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
         $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
         $('#cfg-history-lookback-days').val(d.history_lookback_days || '');
         $('#cfg-worker-concurrency').val(d.worker_concurrency || '');
@@ -893,6 +1005,7 @@ async function saveSettings() {
     if (tag) payload.tag_prefix = tag;
     // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
     payload.custom_system_context = $('#cfg-custom-context').val();
+    payload.destination_match_enabled = $('#cfg-destination-match').prop('checked');
     var hcl = parseInt($('#cfg-history-context-limit').val(), 10);
     if (!isNaN(hcl) && hcl > 0) payload.history_context_limit = hcl;
     var hld = parseInt($('#cfg-history-lookback-days').val(), 10);

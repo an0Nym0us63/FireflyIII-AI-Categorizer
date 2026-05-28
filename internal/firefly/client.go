@@ -39,6 +39,64 @@ func (c *Client) GetPreference(ctx context.Context, name string) (interface{}, e
 	return resp.Data.Attributes.Data, nil
 }
 
+// GetExpenseAccounts fetches all expense accounts, paginating through all pages.
+// Used for destination account matching when DESTINATION_MATCH_ENABLED is true.
+func (c *Client) GetExpenseAccounts(ctx context.Context) ([]Account, error) {
+	var accounts []Account
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/accounts?type=expense&page=%d", c.baseURL, page)
+		var resp accountsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("get expense accounts page %d: %w", page, err)
+		}
+		for _, item := range resp.Data {
+			accounts = append(accounts, Account{
+				ID:   item.ID,
+				Name: item.Attributes.Name,
+			})
+		}
+		if page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return accounts, nil
+}
+
+// CreateExpenseAccount creates a new expense account via the Firefly III API.
+func (c *Client) CreateExpenseAccount(ctx context.Context, name string) (Account, error) {
+	u := fmt.Sprintf("%s/api/v1/accounts", c.baseURL)
+	body := map[string]string{"name": name, "type": "expense"}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return Account{}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(data))
+	if err != nil {
+		return Account{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return Account{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return Account{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+	}
+
+	var ar accountResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ar); err != nil {
+		return Account{}, fmt.Errorf("decode create account response: %w", err)
+	}
+	return Account{ID: ar.Data.ID, Name: ar.Data.Attributes.Name}, nil
+}
+
 // GetCategories fetches all categories, paginating through all pages.
 func (c *Client) GetCategories(ctx context.Context) ([]Category, error) {
 	var categories []Category
@@ -105,7 +163,8 @@ func (c *Client) GetAssumedWithdrawals(ctx context.Context) ([]Transaction, erro
 
 // ApplyHumanCategory sets a category on a previously-flagged transaction.
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
-func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID string) error {
+// When destinationID is non-empty, it also sets the destination expense account.
+func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
 	aiOutcomeTags := map[string]bool{
 		c.tagPrefix + ":needs-review": true,
 		c.tagPrefix + ":assumed":      true,
@@ -116,6 +175,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		TransactionJournalID string   `json:"transaction_journal_id"`
 		Tags                 []string `json:"tags"`
 		CategoryID           string   `json:"category_id,omitempty"`
+		DestinationID        string   `json:"destination_id,omitempty"`
 	}
 	type body struct {
 		ApplyRules   bool          `json:"apply_rules"`
@@ -134,11 +194,15 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		if !contains(tags, reviewedTag) {
 			tags = append(tags, reviewedTag)
 		}
-		b.Transactions = append(b.Transactions, splitUpdate{
+		su := splitUpdate{
 			TransactionJournalID: s.JournalID,
 			Tags:                 tags,
 			CategoryID:           categoryID,
-		})
+		}
+		if destinationID != "" {
+			su.DestinationID = destinationID
+		}
+		b.Transactions = append(b.Transactions, su)
 	}
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
@@ -214,6 +278,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		TransactionJournalID string   `json:"transaction_journal_id"`
 		Tags                 []string `json:"tags"`
 		CategoryID           string   `json:"category_id,omitempty"`
+		DestinationID        string   `json:"destination_id,omitempty"`
 		Notes                string   `json:"notes,omitempty"`
 	}
 	type body struct {
@@ -233,6 +298,9 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
 		if outcome.Outcome != "NEEDS_REVIEW" && outcome.CategoryID != "" {
 			su.CategoryID = outcome.CategoryID
+		}
+		if outcome.DestinationID != "" {
+			su.DestinationID = outcome.DestinationID
 		}
 		if notes := buildNotes(s.Notes, outcome); notes != "" {
 			su.Notes = notes
@@ -314,6 +382,7 @@ func toTransaction(item transactionData) Transaction {
 			Date:            s.Date,
 			Description:     s.Description,
 			DestinationName: s.DestinationName,
+			DestinationID:   s.DestinationID,
 			Amount:          s.Amount,
 			CategoryID:      s.CategoryID,
 			CategoryName:    s.CategoryName,
@@ -411,12 +480,31 @@ type categoriesResponse struct {
 	Meta meta           `json:"meta"`
 }
 
+type accountAttributes struct {
+	Name string `json:"name"`
+}
+
+type accountData struct {
+	ID         string            `json:"id"`
+	Attributes accountAttributes `json:"attributes"`
+}
+
+type accountsResponse struct {
+	Data []accountData `json:"data"`
+	Meta meta          `json:"meta"`
+}
+
+type accountResponse struct {
+	Data accountData `json:"data"`
+}
+
 type splitData struct {
 	TransactionJournalID string   `json:"transaction_journal_id"`
 	Type                 string   `json:"type"`
 	Date                 string   `json:"date"`
 	Description          string   `json:"description"`
 	DestinationName      string   `json:"destination_name"`
+	DestinationID        string   `json:"destination_id"`
 	Amount               string   `json:"amount"`
 	CategoryID           string   `json:"category_id"`
 	CategoryName         string   `json:"category_name"`

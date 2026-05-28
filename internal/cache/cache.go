@@ -99,12 +99,13 @@ func (c *Cache) ensureFresh(ctx context.Context) error {
 		for _, s := range txn.Splits {
 			amount, _ := strconv.ParseFloat(s.Amount, 64)
 			entries = append(entries, classifier.HistoricalEntry{
-				TransactionID:   txn.ID,
-				DestinationName: s.DestinationName,
-				Description:     s.Description,
-				CategoryName:    s.CategoryName,
-				GroupKey:        classifier.GroupKey(s.DestinationName, s.Description),
-				Amount:          amount,
+				TransactionID:        txn.ID,
+				DestinationName:      s.DestinationName,
+				Description:          s.Description,
+				CategoryName:         s.CategoryName,
+				GroupKey:             classifier.GroupKey(s.DestinationName, s.Description),
+				Amount:               amount,
+				DestinationAccountID: s.DestinationID,
 			})
 		}
 	}

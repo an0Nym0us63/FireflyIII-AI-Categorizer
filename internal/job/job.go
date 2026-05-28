@@ -31,5 +31,8 @@ type Job struct {
 	RawPrompt   string `json:"raw_prompt,omitempty"`
 	RawResponse string `json:"raw_response,omitempty"`
 
+	DestinationAccount string `json:"destination_account,omitempty"`
+	DestinationAction  string `json:"destination_action,omitempty"` // "MATCH" or "CREATE"
+
 	Error string `json:"error,omitempty"`
 }

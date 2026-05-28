@@ -78,6 +78,7 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/config/test", h.testFirefly)
 	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
+	r.Get("/api/accounts", h.getAccounts)
 	r.Get("/api/transactions", h.getTransactions)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
@@ -295,6 +296,8 @@ type configResponse struct {
 	CustomSystemContext string `json:"custom_system_context"`
 	Configured          bool   `json:"configured"`
 
+	DestinationMatchEnabled bool `json:"destination_match_enabled"`
+
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
 	WorkerConcurrency   int `json:"worker_concurrency"`
@@ -317,6 +320,9 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		TagPrefix:           cfg.TagPrefix,
 		CustomSystemContext: cfg.CustomSystemContext,
 		Configured:          cfg.IsConfigured(),
+
+		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
+
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
 		WorkerConcurrency:   cfg.WorkerConcurrency,
@@ -340,6 +346,8 @@ type configUpdateRequest struct {
 	DeepseekModel *string `json:"deepseek_model"`
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
+
+	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -470,6 +478,22 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cats)
 }
 
+// --- Accounts ---
+
+func (h *Handler) getAccounts(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	accts, err := fc.GetExpenseAccounts(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch expense accounts: %v", err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, accts)
+}
+
 // --- Review ---
 
 type reviewTxn struct {
@@ -553,7 +577,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 }
 
 type categorizeRequest struct {
-	CategoryID string `json:"category_id"`
+	CategoryID         string `json:"category_id"`
+	DestinationAction  string `json:"destination_action,omitempty"`  // "MATCH", "CREATE", or ""
+	DestinationName    string `json:"destination_name,omitempty"`    // for CREATE
+	DestinationID      string `json:"destination_id,omitempty"`      // for MATCH
 }
 
 func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) {
@@ -580,7 +607,25 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID); err != nil {
+	destID := ""
+	switch req.DestinationAction {
+	case "MATCH":
+		destID = req.DestinationID
+	case "CREATE":
+		if req.DestinationName == "" {
+			http.Error(w, "destination_name is required for CREATE", http.StatusBadRequest)
+			return
+		}
+		created, err := fc.CreateExpenseAccount(r.Context(), req.DestinationName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to create destination account: %v", err), http.StatusBadGateway)
+			return
+		}
+		destID = created.ID
+		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
+	}
+
+	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID, destID); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -751,7 +796,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -813,6 +858,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.CustomSystemContext != nil {
 		existing.CustomSystemContext = *req.CustomSystemContext
+	}
+	if req.DestinationMatchEnabled != nil {
+		existing.DestinationMatchEnabled = req.DestinationMatchEnabled
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

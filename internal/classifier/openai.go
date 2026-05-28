@@ -31,7 +31,7 @@ func (c *OpenAIClassifier) Classify(ctx context.Context, req Request) (Result, e
 	resp, err := c.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: BuildSystemPrompt(c.customContext)},
+			{Role: openai.ChatMessageRoleSystem, Content: BuildSystemPrompt(c.customContext, req.DestinationMatching)},
 			{Role: openai.ChatMessageRoleUser, Content: prompt},
 		},
 		ResponseFormat: &openai.ChatCompletionResponseFormat{
@@ -44,5 +44,5 @@ func (c *OpenAIClassifier) Classify(ctx context.Context, req Request) (Result, e
 	}
 
 	raw := resp.Choices[0].Message.Content
-	return parseResponse(raw, prompt, req.Categories), nil
+	return parseResponse(raw, prompt, req.Categories, req.ExpenseAccounts, req.DestinationMatching), nil
 }
