@@ -31,7 +31,13 @@ function switchTab(name) {
     document.getElementById('breadcrumb-leaf').textContent = m.title;
     if (name === 'settings') loadSettings();
     if (name === 'categories') loadCategories();
-    if (name === 'review') loadReview();
+    if (name === 'review') {
+        // Show the transfer box immediately when destination matching is enabled,
+        // before the async loadReview completes.
+        document.getElementById('row-transfers').style.display =
+            savedConfig.destination_match_enabled ? '' : 'none';
+        loadReview();
+    }
     return false;
 }
 
@@ -493,6 +499,8 @@ var reviewCategories = [];
 var reviewAccounts = [];     // expense accounts for destination matching (empty when disabled)
 var reviewGroupCounter = 0;
 var reviewGroupMap = {}; // gi -> group object for the current rendered batch
+var reviewDestFocused = {}; // gi -> bool, tracks which destination fields have been focused for the first time
+var pendingAccounts = []; // [{name}], new accounts typed on this page (not yet saved to Firefly)
 var allReviewGroups = []; // the live queue; submitted groups are removed, skipped groups cycle to end
 var REVIEW_BATCH_SIZE = 8;
 
@@ -502,6 +510,8 @@ async function loadReview() {
     body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     actionBar.style.display = 'none';
     hideReviewProcessingBar();
+    var transferBody = document.getElementById('transfer-body');
+    transferBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     try {
         var catRes = fetch('/api/categories');
         var reviewRes = fetch('/api/review');
@@ -532,27 +542,59 @@ async function loadReview() {
 function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var batch = allReviewGroups.slice(0, REVIEW_BATCH_SIZE);
+    var transferBody = document.getElementById('transfer-body');
+    var transferRow = document.getElementById('row-transfers');
 
-    if (!batch.length) {
-        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review &mdash; all caught up!</div>';
-        actionBar.style.display = 'none';
-        updateReviewBadge();
-        return;
-    }
+    // Split groups by outcome.
+    var reviewGroups = allReviewGroups.filter(function (g) {
+        return g.outcome !== 'TRANSFER_CATEGORY';
+    });
+    var transferGroups = allReviewGroups.filter(function (g) {
+        return g.outcome === 'TRANSFER_CATEGORY';
+    });
+    var batch = reviewGroups.slice(0, REVIEW_BATCH_SIZE);
 
     reviewGroupCounter = 0;
     reviewGroupMap = {};
-    body.innerHTML = renderReviewGroups(batch);
-    actionBar.style.display = '';
-    updateSubmitBar();
+    reviewDestFocused = {};
+    pendingAccounts = [];
+
+    // Review section.
+    if (batch.length) {
+        body.innerHTML = renderReviewGroups(batch);
+        actionBar.style.display = '';
+        updateSubmitBar();
+    } else if (transferGroups.length) {
+        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review!</div>';
+        actionBar.style.display = 'none';
+    } else {
+        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review &mdash; all caught up!</div>';
+        actionBar.style.display = 'none';
+    }
+
+    // Transfer section — always visible when destination matching is enabled.
+    var destMatch = savedConfig.destination_match_enabled;
+    if (transferGroups.length) {
+        transferRow.style.display = '';
+        transferBody.innerHTML = renderTransferSection(transferGroups);
+    } else if (destMatch) {
+        transferRow.style.display = '';
+        transferBody.innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
+    } else {
+        transferRow.style.display = 'none';
+    }
+
     updateProgressIndicator();
+    updateReviewBadge();
+    populateTransferDestinations();
 }
 
 function updateProgressIndicator() {
     var el = document.getElementById('review-progress');
     if (!el) return;
-    var n = allReviewGroups.length;
+    var n = allReviewGroups.filter(function (g) {
+        return g.outcome !== 'TRANSFER_CATEGORY';
+    }).length;
     el.textContent = n > REVIEW_BATCH_SIZE
         ? 'Showing first ' + REVIEW_BATCH_SIZE + ' of ' + n + ' groups'
         : '';
@@ -619,6 +661,267 @@ function renderReviewGroups(groups) {
     return html;
 }
 
+// Render the transfer conversion section. Uses the same counter/map as
+// renderReviewGroups so gi values are unique across both sections.
+function renderTransferSection(groups) {
+    if (!groups.length) return '';
+    return '<p class="review-section-header">'
+        + '<i class="fa fa-exchange text-info"></i> <strong>Categorized as &quot;Transfers&quot;</strong>'
+        + ' <span class="text-muted">&mdash; Convert to actual transfer transactions by selecting a destination asset account.</span></p>'
+        + '<div class="review-groups-grid" id="grid-transfers">'
+        + groups.map(function (g) { return renderTransferGroup(g); }).join('')
+        + '</div>';
+}
+
+function renderTransferGroup(g) {
+    var gi = reviewGroupCounter++;
+    reviewGroupMap[gi] = g;
+    var resolved = resolveGroupLabel(g);
+    var count = (g.transactions || []).length;
+    var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+
+    var txnRows = (g.transactions || []).map(function (t, idx) {
+        var date = t.date ? t.date.substring(0, 10) : '—';
+        var amount = isNaN(parseFloat(t.amount)) ? '—' : parseFloat(t.amount).toFixed(2);
+        return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;padding:3px 6px">' + esc(date) + '</td>'
+            + '<td class="text-right" style="font-size:12px;padding:3px 6px">' + amount + '</td>'
+            + '</tr>';
+    }).join('');
+
+    // Individual transaction rows for expanded view.
+    var indivRows = (g.transactions || []).map(function (t, idx) {
+        var date = t.date ? t.date.substring(0, 10) : '—';
+        var amount = isNaN(parseFloat(t.amount)) ? '—' : parseFloat(t.amount).toFixed(2);
+        return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;padding:3px 6px">' + esc(date) + '</td>'
+            + '<td class="text-right" style="font-size:12px;padding:3px 6px">' + amount + '</td>'
+            + '<td style="padding:3px 6px;width:100%">'
+            + '<select class="form-control input-sm" id="transfer-dest-' + gi + '-' + idx + '"'
+            + ' data-txn-id="' + esc(t.id) + '" onchange="updateTransferButtons()">'
+            + '<option value="">— select —</option>'
+            + '</select>'
+            + '</td>'
+            + '</tr>';
+    }).join('');
+
+    var sub = resolved.sub
+        ? ' <small style="font-weight:normal;color:#999">' + esc(resolved.sub) + '</small>' : '';
+
+    var hasMultiple = count > 1;
+
+    return '<div class="box box-info review-group" id="review-group-' + gi + '"'
+        + ' data-ids="' + esc(idsJson) + '" data-count="' + count + '"'
+        + ' data-desc="' + esc(g.description || g.destination_name || '') + '">'
+        + '<div class="box-header with-border review-group-header">'
+        + '<span class="review-group-title">' + esc(resolved.label) + sub
+        + ' <span class="label label-info" style="font-size:10px;font-weight:normal;margin-left:3px">'
+        + count + '</span></span>'
+        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — review later">'
+        + '<i class="fa fa-clock-o"></i> Skip'
+        + '</button>'
+        + '</div>'
+        + '<div class="box-body review-group-body">'
+        // Collapsed view: summary table + single destination input.
+        + '<div id="transfer-collapsed-' + gi + '">'
+        + '<table class="table table-condensed" style="margin-bottom:6px">'
+        + '<tbody>' + txnRows + '</tbody>'
+        + '</table>'
+        + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:180px">'
+        + '<select class="form-control input-sm" id="transfer-dest-' + gi + '" onchange="updateTransferButtons()">'
+        + '<option value="">— select destination account —</option>'
+        + '</select>'
+        + '</div>'
+        + '<span id="suggest-result-' + gi + '" style="font-size:12px"></span>'
+        + '</div>'
+        + (hasMultiple ? '<div style="margin-top:4px"><a href="#" style="font-size:12px" onclick="toggleTransferExpand(' + gi + ');return false"><i class="fa fa-list-ul"></i> Set destinations individually</a></div>' : '')
+        + '<div style="margin-top:8px">'
+        + '<button type="button" class="btn btn-primary btn-sm" onclick="convertToTransfer(' + gi + ')"'
+        + ' id="btn-convert-' + gi + '" disabled>'
+        + '<i class="fa fa-exchange"></i> Convert to Transfer'
+        + '</button>'
+        + '<span id="convert-status-' + gi + '" style="margin-left:8px;font-size:12px"></span>'
+        + '</div>'
+        + '</div>'
+        // Expanded view: individual destinations per transaction.
+        + (hasMultiple ? '<div id="transfer-expanded-' + gi + '" style="display:none">'
+        + '<table class="table table-condensed" style="margin-bottom:6px">'
+        + '<thead><tr><th>Date</th><th class="text-right">Amount</th><th>Destination Account</th></tr></thead>'
+        + '<tbody>' + indivRows + '</tbody>'
+        + '</table>'
+        + '<div style="margin-top:4px"><a href="#" style="font-size:12px" onclick="toggleTransferExpand(' + gi + ');return false"><i class="fa fa-compress"></i> Use same destination for all</a></div>'
+        + '<div style="margin-top:8px">'
+        + '<button type="button" class="btn btn-primary btn-sm" onclick="convertToTransfer(' + gi + ')"'
+        + ' id="btn-convert-exp-' + gi + '" disabled>'
+        + '<i class="fa fa-exchange"></i> Convert to Transfer'
+        + '</button>'
+        + '<span id="convert-status-exp-' + gi + '" style="margin-left:8px;font-size:12px"></span>'
+        + '</div>'
+        + '</div>' : '')
+        + '</div>'
+        + '</div>';
+}
+
+// Toggle between grouped and individual destination mode for a transfer group.
+function toggleTransferExpand(gi) {
+    var collapsed = document.getElementById('transfer-collapsed-' + gi);
+    var expanded = document.getElementById('transfer-expanded-' + gi);
+    if (!collapsed || !expanded) return;
+    var showing = collapsed.style.display !== 'none';
+    collapsed.style.display = showing ? 'none' : '';
+    expanded.style.display = showing ? '' : 'none';
+    if (showing) {
+        // Copy the main select value to all individual selects.
+        var mainSel = document.getElementById('transfer-dest-' + gi);
+        if (mainSel) {
+            var sels = document.querySelectorAll('[id^="transfer-dest-' + gi + '-"]');
+            sels.forEach(function (s) {
+                if (!s.value) s.value = mainSel.value;
+            });
+        }
+    }
+    updateTransferButtons();
+}
+
+// Populate transfer destination dropdowns with asset accounts and auto-suggest.
+function populateTransferDestinations() {
+    var groups = document.querySelectorAll('[id^="review-group-"][data-desc]');
+    if (!groups.length) return;
+    fetch('/api/accounts?type=asset')
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (accts) {
+            var optionsHtml = accts.map(function (a) {
+                return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+            }).join('');
+
+            // Populate all transfer destination selects.
+            var selects = document.querySelectorAll('[id^="transfer-dest-"]');
+            selects.forEach(function (sel) {
+                var currentVal = sel.value;
+                sel.innerHTML = '<option value="">— select —</option>' + optionsHtml;
+                sel.value = currentVal;
+            });
+
+            // Auto-suggest for each group.
+            groups.forEach(function (el) {
+                var gi = el.id.replace('review-group-', '');
+                var desc = el.getAttribute('data-desc');
+                if (desc) autoSuggestTransfer(gi, desc);
+            });
+        });
+}
+
+// Auto-suggest in the background (no button click needed).
+async function autoSuggestTransfer(gi, desc) {
+    var result = document.getElementById('suggest-result-' + gi);
+    if (!result) return;
+    result.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Suggesting&hellip;';
+    try {
+        var res = await fetch('/api/transfers/suggest?description=' + encodeURIComponent(desc));
+        if (!res.ok) throw new Error(await res.text());
+        var s = await res.json();
+        if (s.account_id && s.account_name) {
+            var sel = document.getElementById('transfer-dest-' + gi);
+            if (sel && !sel.value) {
+                sel.value = s.account_id;
+            }
+            // Also pre-fill individual selects in expanded view.
+            var indivSels = document.querySelectorAll('[id^="transfer-dest-' + gi + '-"]');
+            indivSels.forEach(function (s2) {
+                if (!s2.value) s2.value = s.account_id;
+            });
+            result.innerHTML = '<span class="text-success" style="font-size:11px"><i class="fa fa-check-circle"></i> '
+                + (s.source === 'history' ? 'History: ' : 'AI: ')
+                + '<strong>' + esc(s.account_name) + '</strong></span>';
+        } else {
+            result.innerHTML = '<span class="text-muted" style="font-size:11px">Could not determine.</span>';
+        }
+    } catch (e) {
+        result.innerHTML = '<span class="text-muted" style="font-size:11px">Suggestion unavailable.</span>';
+    }
+    updateTransferButtons();
+}
+
+function updateTransferButtons() {
+    document.querySelectorAll('[id^="transfer-dest-"]').forEach(function (sel) {
+        var idParts = sel.id.replace('transfer-dest-', '').split('-');
+        var gi = idParts[0];
+        var btn = document.getElementById('btn-convert-' + gi);
+        var mainSel = document.getElementById('transfer-dest-' + gi);
+        if (btn) btn.disabled = !(mainSel && mainSel.value);
+        var btnExp = document.getElementById('btn-convert-exp-' + gi);
+        if (btnExp) {
+            var allFilled = true;
+            var indivSels = document.querySelectorAll('[id^="transfer-dest-' + gi + '-"]');
+            indivSels.forEach(function (s) { if (!s.value) allFilled = false; });
+            btnExp.disabled = !allFilled;
+        }
+    });
+}
+
+async function convertToTransfer(gi) {
+    var el = document.getElementById('review-group-' + gi);
+    var ids = JSON.parse(el.getAttribute('data-ids') || '[]');
+    var expanded = document.getElementById('transfer-expanded-' + gi);
+    var isExpanded = expanded && expanded.style.display !== 'none';
+
+    var destMap = {}; // txnID → accountID (the select values ARE the account IDs)
+    if (isExpanded) {
+        var indivSels = document.querySelectorAll('[id^="transfer-dest-' + gi + '-"]');
+        indivSels.forEach(function (sel) {
+            var txnID = sel.getAttribute('data-txn-id');
+            destMap[txnID] = sel.value;
+        });
+    } else {
+        var mainSel = document.getElementById('transfer-dest-' + gi);
+        var destID = mainSel ? mainSel.value : '';
+        ids.forEach(function (id) { destMap[id] = destID; });
+    }
+
+    var btnId = isExpanded ? 'btn-convert-exp-' + gi : 'btn-convert-' + gi;
+    var statusId = isExpanded ? 'convert-status-exp-' + gi : 'convert-status-' + gi;
+    var btn = document.getElementById(btnId);
+    var status = document.getElementById(statusId);
+
+    btn.disabled = true;
+    status.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Converting&hellip;';
+
+    var errors = 0;
+    for (var i = 0; i < ids.length; i++) {
+        var destID = destMap[ids[i]];
+        if (!destID) { errors++; continue; }
+        try {
+            var res = await fetch('/api/transactions/' + encodeURIComponent(ids[i]) + '/convert-to-transfer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({destination_id: destID})
+            });
+            if (!res.ok) { errors++; }
+        } catch (e) { errors++; }
+    }
+
+    if (errors === 0) {
+        status.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> Converted ' + ids.length + ' transaction(s).</span>';
+        var g = reviewGroupMap[gi];
+        if (g) {
+            var idx = allReviewGroups.indexOf(g);
+            if (idx !== -1) allReviewGroups.splice(idx, 1);
+        }
+        setTimeout(function () {
+            el.remove();
+            updateReviewBadge();
+            // Hide the transfer box if no more transfer groups remain.
+            if (!document.querySelector('#grid-transfers .review-group')) {
+                document.getElementById('row-transfers').style.display = 'none';
+            }
+        }, 1500);
+    } else {
+        status.innerHTML = '<span class="text-danger"><i class="fa fa-times"></i> ' + errors + ' of ' + ids.length + ' failed.</span>';
+    }
+    btn.disabled = false;
+}
+
 function renderReviewGroup(g, isAssumed) {
     var gi = reviewGroupCounter++;
     reviewGroupMap[gi] = g;
@@ -643,7 +946,7 @@ function renderReviewGroup(g, isAssumed) {
             + '<i class="fa fa-magic"></i> AI guessed: <strong>' + esc(g.category_name) + '</strong></p>'
         : '';
 
-    var catOptions = '<option value="">— category —</option>'
+    var catOptions = '<option value="" disabled selected hidden>—</option>'
         + reviewCategories.map(function (c) {
             var sel = (isAssumed && g.category_id && c.id === g.category_id) ? ' selected' : '';
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
@@ -652,24 +955,48 @@ function renderReviewGroup(g, isAssumed) {
     // Destination account controls (only when enabled).
     var destHtml = '';
     if (reviewAccounts.length) {
-        // Determine the current destination to pre-select.
+        // Find the current destination name for pre-filling.
         var currentDestID = g.destination_account_id || '';
-        // Check if the current ID exists in the account list.
-        var currentDestInList = currentDestID && reviewAccounts.some(function (a) { return a.id === currentDestID; });
+        var currentDestName = '';
+        if (currentDestID) {
+            for (var i = 0; i < reviewAccounts.length; i++) {
+                if (reviewAccounts[i].id === currentDestID) {
+                    currentDestName = reviewAccounts[i].name;
+                    break;
+                }
+            }
+        }
 
-        var acctOptions = '<option value="">— keep current destination —</option>'
-            + reviewAccounts.map(function (a) {
-                var sel = (a.id === currentDestID) ? ' selected' : '';
-                return '<option value="' + esc(a.id) + '"' + sel + '>' + esc(a.name) + '</option>';
-            }).join('')
-            + '<option value="__CREATE__">+ Create new destination…</option>';
+        // Pre-set data-matched-id if the current destination matches an existing account.
+        var matchedAttr = '';
+        if (currentDestID) {
+            matchedAttr = ' data-matched-id="' + esc(currentDestID) + '"';
+        }
 
-        destHtml = '<div style="margin-top:8px">'
-            + '<select class="form-control input-sm review-dest-select" id="review-dest-' + gi + '" onchange="onDestChange(' + gi + ')">'
-            + acctOptions
-            + '</select>'
-            + '<input type="text" class="form-control input-sm review-dest-create" id="review-dest-name-' + gi + '"'
-            + ' placeholder="New destination account name" style="margin-top:4px;display:none" oninput="updateSubmitBar()">'
+        var acctDataOptions = reviewAccounts.map(function (a) {
+            return '<option value="' + esc(a.name) + '" data-id="' + esc(a.id) + '">';
+        }).join('')
+            + pendingAccounts.map(function (a) {
+                return '<option value="' + esc(a.name) + '" data-id="new:' + esc(a.name) + '">';
+            }).join('');
+
+        destHtml = '<div style="margin-top:8px" class="review-dest-container">'
+            + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+            + '<i class="fa fa-building-o"></i> Destination Account'
+            + ' <span style="font-weight:400;color:#848484">(expense / payee)</span></label>'
+            + '<div style="display:flex;gap:6px;align-items:center">'
+            + '<input type="text" class="form-control input-sm" id="review-dest-' + gi + '"'
+            + ' list="review-dest-list-' + gi + '" placeholder="Search or type a new account…"'
+            + ' value="' + esc(currentDestName) + '"' + matchedAttr
+            + ' onfocus="onReviewDestFocus(' + gi + ')"'
+            + ' oninput="onReviewDestInput(' + gi + ')"'
+            + ' onblur="onReviewDestBlur(' + gi + ')"'
+            + ' style="flex:1">'
+            + '<datalist id="review-dest-list-' + gi + '">' + acctDataOptions + '</datalist>'
+            + '<span id="review-dest-badge-' + gi + '" class="label label-info"'
+            + ' style="display:none;flex-shrink:0;font-size:10px;white-space:nowrap">'
+            + '<i class="fa fa-plus-circle"></i> NEW</span>'
+            + '</div>'
             + '</div>';
     }
 
@@ -688,7 +1015,9 @@ function renderReviewGroup(g, isAssumed) {
         + '<table class="table table-condensed" style="margin-bottom:6px">'
         + '<tbody>' + txnRows + '</tbody>'
         + '</table>'
-        + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar()">'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+        + '<i class="fa fa-bookmark-o"></i> Category</label>'
+        + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar();onReviewCatChange(' + gi + ')">'
         + catOptions
         + '</select>'
         + destHtml
@@ -696,14 +1025,106 @@ function renderReviewGroup(g, isAssumed) {
         + '</div>';
 }
 
-// Show/hide the "create new destination" text input based on dropdown selection.
-function onDestChange(gi) {
-    var sel = document.getElementById('review-dest-' + gi);
-    var inp = document.getElementById('review-dest-name-' + gi);
-    if (sel && inp) {
-        inp.style.display = (sel.value === '__CREATE__') ? '' : 'none';
+// On first focus: clear any pre-filled value so the user can start fresh.
+// Subsequent focuses on the same field leave the user's input intact.
+function onReviewDestFocus(gi) {
+    var badge = document.getElementById('review-dest-badge-' + gi);
+    if (badge) badge.style.display = 'none';
+    if (!reviewDestFocused[gi]) {
+        reviewDestFocused[gi] = true;
+        var input = document.getElementById('review-dest-' + gi);
+        if (input && input.value.trim()) {
+            input.value = '';
+            input.removeAttribute('data-matched-id');
+        }
     }
     updateSubmitBar();
+}
+
+// On input: check if the typed name exactly matches an existing account and
+// record its ID for later submission. The datalist provides native suggestions.
+// The NEW badge is hidden while the user is typing.
+function onReviewDestInput(gi) {
+    var input = document.getElementById('review-dest-' + gi);
+    var badge = document.getElementById('review-dest-badge-' + gi);
+    if (!input) return;
+
+    if (badge) badge.style.display = 'none';
+
+    var val = input.value.trim();
+    // Check if the typed name exactly matches an account in the datalist.
+    var matchedID = '';
+    var list = document.getElementById('review-dest-list-' + gi);
+    if (list && val) {
+        var options = list.querySelectorAll('option');
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].value.toLowerCase() === val.toLowerCase()) {
+                matchedID = options[i].getAttribute('data-id');
+                break;
+            }
+        }
+    }
+
+    if (matchedID) {
+        input.setAttribute('data-matched-id', matchedID);
+    } else {
+        input.removeAttribute('data-matched-id');
+    }
+    updateSubmitBar();
+}
+
+// On blur: if the user typed a value that doesn't match any existing account,
+// show the NEW badge and add it to pending accounts so other groups can use it.
+function onReviewDestBlur(gi) {
+    var input = document.getElementById('review-dest-' + gi);
+    var badge = document.getElementById('review-dest-badge-' + gi);
+    if (!input) return;
+    var val = input.value.trim();
+    var matchedID = input.getAttribute('data-matched-id');
+
+    if (!val || matchedID) {
+        // Empty or exact match — hide badge.
+        if (badge) badge.style.display = 'none';
+    } else {
+        // No match — show NEW badge and add to pending accounts.
+        if (badge) badge.style.display = '';
+        // Avoid duplicates in pendingAccounts.
+        var exists = pendingAccounts.some(function (a) {
+            return a.name.toLowerCase() === val.toLowerCase();
+        });
+        if (!exists) {
+            pendingAccounts.push({name: val});
+            refreshDatalists();
+        }
+    }
+    updateSubmitBar();
+}
+
+// Refresh all destination datalists to include pending (not-yet-saved) accounts.
+function refreshDatalists() {
+    var pendingHTML = pendingAccounts.map(function (a) {
+        return '<option value="' + esc(a.name) + '" data-id="new:' + esc(a.name) + '">';
+    }).join('');
+    var lists = document.querySelectorAll('[id^="review-dest-list-"]');
+    lists.forEach(function (list) {
+        // Remove stale pending options, then append fresh ones.
+        var old = list.querySelectorAll('option[data-id^="new:"]');
+        for (var i = 0; i < old.length; i++) { old[i].remove(); }
+        list.insertAdjacentHTML('beforeend', pendingHTML);
+    });
+}
+
+// When the category changes on a review card, hide the destination controls
+// if "Transfers" is selected (transfers are handled in the Transfers section).
+function onReviewCatChange(gi) {
+    var sel = document.getElementById('review-cat-' + gi);
+    if (!sel) return;
+    var el = document.getElementById('review-group-' + gi);
+    if (!el) return;
+    var selectedText = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    var destContainer = el.querySelector('.review-dest-container');
+    if (!destContainer) return;
+    destContainer.style.display = (selectedText.toLowerCase() === 'transfers') ? 'none' : '';
 }
 
 function skipReviewGroup(gi) {
@@ -719,6 +1140,10 @@ function skipReviewGroup(gi) {
         }
     }
     el.remove();
+    // Hide transfer box if the skipped group was the last transfer.
+    if (!document.querySelector('#grid-transfers .review-group')) {
+        document.getElementById('row-transfers').style.display = 'none';
+    }
     if (!document.querySelector('.review-group')) {
         renderCurrentBatch();
     } else {
@@ -728,7 +1153,8 @@ function skipReviewGroup(gi) {
 }
 
 function updateSubmitBar() {
-    var groups = document.querySelectorAll('.review-group');
+    // Only count review groups (needs-review + assumed), not transfers.
+    var groups = document.querySelectorAll('#review-body .review-group');
     var total = groups.length;
     var categorized = 0;
     groups.forEach(function (el) {
@@ -744,7 +1170,7 @@ function updateSubmitBar() {
 }
 
 async function submitAllReview() {
-    var toSubmit = Array.from(document.querySelectorAll('.review-group')).filter(function (el) {
+    var toSubmit = Array.from(document.querySelectorAll('#review-body .review-group')).filter(function (el) {
         var gi = el.id.replace('review-group-', '');
         var sel = document.getElementById('review-cat-' + gi);
         return sel && sel.value;
@@ -761,19 +1187,21 @@ async function submitAllReview() {
             if (idx !== -1) allReviewGroups.splice(idx, 1);
         }
         var sub = {ids: JSON.parse(el.getAttribute('data-ids')), categoryId: sel.value};
-        // Capture destination info when available.
-        var destSel = document.getElementById('review-dest-' + gi);
-        if (destSel && destSel.value) {
-            if (destSel.value === '__CREATE__') {
-                var destNameInput = document.getElementById('review-dest-name-' + gi);
-                var destName = destNameInput ? destNameInput.value.trim() : '';
-                if (destName) {
-                    sub.destination_action = 'CREATE';
-                    sub.destination_name = destName;
-                }
-            } else {
+        // Capture destination info from the single searchable field.
+        var destInput = document.getElementById('review-dest-' + gi);
+        if (destInput) {
+            var matchedID = destInput.getAttribute('data-matched-id');
+            var destName = destInput.value.trim();
+            if (matchedID && matchedID.indexOf('new:') === 0) {
+                // Pending account — treat as CREATE with the name.
+                sub.destination_action = 'CREATE';
+                sub.destination_name = matchedID.substring(4);
+            } else if (matchedID) {
                 sub.destination_action = 'MATCH';
-                sub.destination_id = destSel.value;
+                sub.destination_id = matchedID;
+            } else if (destName) {
+                sub.destination_action = 'CREATE';
+                sub.destination_name = destName;
             }
         }
         return sub;
@@ -848,7 +1276,12 @@ async function loadCategories() {
         } else {
             var html = '<div style="margin-bottom:12px">';
             cats.forEach(function (c) {
-                html += '<span class="cat-chip"><i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>'
+                var isTransfer = c.name.toLowerCase() === 'transfers';
+                var chipCls = isTransfer ? ' cat-chip-transfer' : '';
+                var icon = isTransfer
+                    ? '<i class="fa fa-exchange" style="margin-right:5px"></i>'
+                    : '<i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>';
+                html += '<span class="cat-chip' + chipCls + '">' + icon
                     + esc(c.name)
                     + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
                     + '</span>';

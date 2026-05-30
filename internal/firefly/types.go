@@ -19,6 +19,8 @@ type Split struct {
 	Type            string
 	Date            string // ISO 8601
 	Description     string
+	SourceName      string // asset account name (for withdrawals)
+	SourceID        string // asset account ID
 	DestinationName string
 	DestinationID   string // expense/revenue account ID (may be empty)
 	Amount          string // Firefly returns amounts as decimal strings

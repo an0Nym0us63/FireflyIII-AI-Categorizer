@@ -48,6 +48,16 @@ pre.detail-pre {
     font-size: 12px;
 }
 
+/* Transfer category chip — distinct from the default grey chip */
+.cat-chip-transfer {
+    background: #c5dcf0;
+    border-color: #9cc4e4;
+}
+
+.cat-chip-transfer .fa {
+    color: #1b5a8c;
+}
+
 /* Selected transaction row */
 #txn-tbody tr.selected td {
     background-color: #d9edf7 !important;
@@ -93,6 +103,11 @@ pre.detail-pre {
 }
 
 /* ── Review page ─────────────────────────────────────────────────────── */
+
+/* Reduce box spacing inside the review tab so the two boxes sit closer. */
+#tab-review .box {
+    margin-bottom: 8px;
+}
 
 #review-action-bar {
     padding-bottom: 10px;
@@ -212,6 +227,16 @@ body.dark-mode .cat-chip {
 
 body.dark-mode .cat-chip .cat-notes {
     color: #b0b8c0;
+}
+
+body.dark-mode .cat-chip-transfer {
+    background: #1a3a5c;
+    border-color: #2a5a8c;
+    color: #8ec8f2;
+}
+
+body.dark-mode .cat-chip-transfer .fa {
+    color: #6db3d8;
 }
 
 /* Alerts — Bootstrap's defaults are unreadable on dark backgrounds */

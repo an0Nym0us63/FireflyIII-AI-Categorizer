@@ -74,6 +74,10 @@ type Request struct {
 	// DestinationMatching signals to the classifier that the system prompt
 	// and response parsing should include destination-account logic.
 	DestinationMatching bool
+
+	// SystemPromptOverride replaces the built-in system prompt when non-empty.
+	// Used for special-purpose LLM calls like transfer destination suggestion.
+	SystemPromptOverride string
 }
 
 type Result struct {
