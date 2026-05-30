@@ -14,12 +14,13 @@ const (
 )
 
 type HistoricalEntry struct {
-	TransactionID   string
-	DestinationName string
-	Description     string
-	CategoryName    string
-	GroupKey        string  // effective lookup key — destination name, or description when destination is blank
-	Amount          float64 // 0 means unknown; used for history-match confidence check
+	TransactionID        string
+	DestinationName      string
+	Description          string
+	CategoryName         string
+	GroupKey             string  // effective lookup key — destination name, or description when destination is blank
+	Amount               float64 // 0 means unknown; used for history-match confidence check
+	DestinationAccountID string  // expense account ID from a previous classification (empty if unknown)
 }
 
 // GroupKey returns the field to use when grouping and looking up transaction
@@ -47,12 +48,36 @@ type Category struct {
 	Notes string
 }
 
+// AccountCandidate is an expense account that the LLM can match or decide to create.
+type AccountCandidate struct {
+	ID   string
+	Name string
+}
+
+// DestinationResult captures the LLM's decision about the destination account.
+type DestinationResult struct {
+	Name       string // desired account name
+	Action     string // "MATCH" or "CREATE"
+	Confidence string // "CLASSIFIED" or "ASSUMED"
+}
+
 type Request struct {
 	Categories      []Category
 	DestinationName string
 	Description     string
 	Amount          *float64
 	History         []HistoricalEntry
+
+	// ExpenseAccounts is set when destination-account matching is enabled.
+	ExpenseAccounts []AccountCandidate
+
+	// DestinationMatching signals to the classifier that the system prompt
+	// and response parsing should include destination-account logic.
+	DestinationMatching bool
+
+	// SystemPromptOverride replaces the built-in system prompt when non-empty.
+	// Used for special-purpose LLM calls like transfer destination suggestion.
+	SystemPromptOverride string
 }
 
 type Result struct {
@@ -62,6 +87,10 @@ type Result struct {
 	Assumption  string // non-empty only when Assumed
 	RawPrompt   string
 	RawResponse string
+
+	// Destination is set when destination-account matching was enabled
+	// and the LLM returned a valid destination suggestion.
+	Destination *DestinationResult
 }
 
 type Classifier interface {

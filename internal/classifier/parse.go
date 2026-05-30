@@ -6,16 +6,24 @@ import (
 	"strings"
 )
 
+type rawDestination struct {
+	Name       string `json:"name"`
+	Action     string `json:"action"`
+	Confidence string `json:"confidence"`
+}
+
 type rawResponse struct {
-	Outcome    string  `json:"outcome"`
-	Category   *string `json:"category"`
-	Reason     string  `json:"reason"`
-	Assumption *string `json:"assumption"`
+	Outcome     string          `json:"outcome"`
+	Category    *string         `json:"category"`
+	Reason      string          `json:"reason"`
+	Assumption  *string         `json:"assumption"`
+	Destination *rawDestination `json:"destination"`
 }
 
 // parseResponse validates and converts a raw JSON string into a Result.
 // It falls back to NeedsReview on any structural or validation error.
-func parseResponse(raw, prompt string, categories []Category) Result {
+// When destinationMatching is true, the destination field is also parsed.
+func parseResponse(raw, prompt string, categories []Category, expenseAccounts []AccountCandidate, destinationMatching bool) Result {
 	cleaned := stripMarkdown(raw)
 
 	var r rawResponse
@@ -56,6 +64,26 @@ func parseResponse(raw, prompt string, categories []Category) Result {
 		assumption = *r.Assumption
 	}
 
+	var dest *DestinationResult
+	if destinationMatching && r.Destination != nil && r.Destination.Name != "" {
+		d := r.Destination
+		dest = &DestinationResult{
+			Name:       d.Name,
+			Action:     d.Action,
+			Confidence: d.Confidence,
+		}
+		if dest.Action != "MATCH" && dest.Action != "CREATE" {
+			dest = nil // invalid action → ignore
+		}
+		if dest.Confidence != "CLASSIFIED" && dest.Confidence != "ASSUMED" {
+			dest = nil // invalid confidence → ignore
+		}
+		if dest != nil && dest.Action == "MATCH" && !accountNameIn(dest.Name, expenseAccounts) {
+			// MATCH requires the name to exist in the provided list.
+			dest = nil
+		}
+	}
+
 	return Result{
 		Outcome:     outcome,
 		Category:    category,
@@ -63,12 +91,22 @@ func parseResponse(raw, prompt string, categories []Category) Result {
 		Assumption:  assumption,
 		RawPrompt:   prompt,
 		RawResponse: raw,
+		Destination: dest,
 	}
 }
 
 func categoryNameIn(cats []Category, name string) bool {
 	for _, c := range cats {
 		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func accountNameIn(name string, accounts []AccountCandidate) bool {
+	for _, a := range accounts {
+		if strings.EqualFold(a.Name, name) {
 			return true
 		}
 	}

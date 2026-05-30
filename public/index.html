@@ -384,6 +384,26 @@
                         </div>
                     </div>
 
+                    <div class="row" id="row-transfers" style="display:none;margin-top:0">
+                        <div class="col-md-12">
+                            <div class="box box-info">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-exchange"></i> Convert to Transfers</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
+                                            <i class="fa fa-minus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="box-body">
+                                    <div id="transfer-body">
+                                        <p class="text-muted">Click Refresh to load transactions that should be converted to transfers.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div><!-- /tab-review -->
 
                 <!-- ─────────────────── CATEGORIES ─────────────────── -->
@@ -401,6 +421,18 @@
                                 </div>
                                 <div class="box-body" id="cat-body">
                                     <p class="text-muted">Click Refresh to load categories from Firefly III.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row" id="row-destination-accounts" style="display:none">
+                        <div class="col-md-12">
+                            <div class="box box-default">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-building-o"></i> Expense Accounts (Destination Matching)</h3>
+                                </div>
+                                <div class="box-body" id="acct-body">
+                                    <p class="text-muted">Click Refresh to load accounts from Firefly III.</p>
                                 </div>
                             </div>
                         </div>
@@ -583,6 +615,21 @@
                                                     Use it to describe your financial situation, rule out irrelevant
                                                     categories,
                                                     or clarify ambiguous merchant names.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <div class="col-sm-offset-4 col-sm-8">
+                                                <div class="checkbox">
+                                                    <label>
+                                                        <input type="checkbox" id="cfg-destination-match">
+                                                        <strong>Set destination account automatically</strong>
+                                                    </label>
+                                                </div>
+                                                <p class="help-block" style="margin-top:2px">
+                                                    When enabled, the AI will also try to match or create the
+                                                    expense account (payee) for each withdrawal. This requires an
+                                                    extra API call to fetch your existing expense accounts.
                                                 </p>
                                             </div>
                                         </div>

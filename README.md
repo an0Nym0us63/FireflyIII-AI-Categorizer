@@ -22,6 +22,7 @@ The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/
 - **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants. Repeated transactions from the same vendor are categorised automatically, skipping the AI calls entirely.
 - **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts.
 - **Rewritten in Go.** The Node.js/Express server has been replaced with a compiled Go binary, reducing resource usage and removing the Node.js runtime dependency.
+- **Destination account matching.** When enabled, the AI can match withdrawals to existing expense accounts or create new ones automatically. The Review page provides a searchable dropdown to correct or create destination accounts manually, and transactions miscategorised as "Transfers" can be converted into real transfer transactions between asset accounts.
 
 ---
 
@@ -230,6 +231,19 @@ Transaction descriptions, destination names, and amounts are sent to the configu
 ## License
 
 AGPL-3.0 — same as the original project.
+
+## Destination account matching
+
+When you enable **Set destination account automatically** in Settings → Behaviour, the AI will also attempt to match or create the expense account (payee) for each withdrawal:
+
+- **MATCH** — the AI finds an existing expense account that corresponds to the merchant.
+- **CREATE** — the AI is confident a new account is needed and creates it in Firefly III automatically.
+
+This requires an extra API call to fetch your expense accounts, modestly increasing latency and AI token usage. When disabled, the AI only determines the category and the expense account is left untouched.
+
+On the **Review** page, when enabled, each group card gains a searchable Destination Account field so you can correct or set the payee manually during review. Typing a name that doesn't match any existing account shows a **NEW** badge, indicating a new expense account will be created when you apply.
+
+Additionally, transactions that the AI categorised as "Transfers" appear in a **Convert to Transfers** box below the review cards. These are withdrawals that should actually be transfers between your own asset accounts. Select a destination asset account, and the categorizer deletes the withdrawal and creates a proper transfer in its place.
 
 ## Credits
 

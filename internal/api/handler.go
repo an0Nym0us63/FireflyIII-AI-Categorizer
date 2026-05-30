@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,10 @@ type Handler struct {
 	fc        *firefly.Client
 	histCache *cache.Cache
 	pipe      *pipeline.Pipeline
+
+	// Transfer conversion history: description → asset account ID.
+	transferHistory   map[string]string
+	transferHistoryMu sync.RWMutex
 }
 
 func New(
@@ -45,11 +50,12 @@ func New(
 	webhookPool, batchPool *worker.Pool,
 ) (*Handler, error) {
 	h := &Handler{
-		baseCfg:     baseCfg,
-		store:       store,
-		registry:    reg,
-		webhookPool: webhookPool,
-		batchPool:   batchPool,
+		baseCfg:         baseCfg,
+		store:           store,
+		registry:        reg,
+		webhookPool:     webhookPool,
+		batchPool:       batchPool,
+		transferHistory: make(map[string]string),
 	}
 	// Best-effort: if not configured yet, server still starts.
 	if err := h.reloadClients(); err != nil {
@@ -78,9 +84,12 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/config/test", h.testFirefly)
 	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
+	r.Get("/api/accounts", h.getAccounts)
 	r.Get("/api/transactions", h.getTransactions)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
+	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
+	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
 	// SSE
 	r.Get("/events", h.events)
@@ -316,6 +325,8 @@ type configResponse struct {
 	CustomSystemContext string `json:"custom_system_context"`
 	Configured          bool   `json:"configured"`
 
+	DestinationMatchEnabled bool `json:"destination_match_enabled"`
+
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
 	WorkerConcurrency   int `json:"worker_concurrency"`
@@ -338,6 +349,9 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		TagPrefix:           cfg.TagPrefix,
 		CustomSystemContext: cfg.CustomSystemContext,
 		Configured:          cfg.IsConfigured(),
+
+		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
+
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
 		WorkerConcurrency:   cfg.WorkerConcurrency,
@@ -361,6 +375,8 @@ type configUpdateRequest struct {
 	DeepseekModel *string `json:"deepseek_model"`
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
+
+	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -491,6 +507,31 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cats)
 }
 
+// --- Accounts ---
+
+func (h *Handler) getAccounts(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	acctType := r.URL.Query().Get("type")
+	var (
+		accts []firefly.Account
+		err   error
+	)
+	if acctType == "asset" {
+		accts, err = fc.GetAssetAccounts(r.Context())
+	} else {
+		accts, err = fc.GetExpenseAccounts(r.Context())
+	}
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch accounts: %v", err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, accts)
+}
+
 // --- Review ---
 
 type reviewTxn struct {
@@ -500,12 +541,13 @@ type reviewTxn struct {
 }
 
 type reviewGroup struct {
-	Outcome         string      `json:"outcome"`
-	Description     string      `json:"description"`
-	DestinationName string      `json:"destination_name"`
-	CategoryName    string      `json:"category_name,omitempty"`
-	CategoryID      string      `json:"category_id,omitempty"`
-	Transactions    []reviewTxn `json:"transactions"`
+	Outcome              string      `json:"outcome"`
+	Description          string      `json:"description"`
+	DestinationName      string      `json:"destination_name"`
+	CategoryName         string      `json:"category_name,omitempty"`
+	CategoryID           string      `json:"category_id,omitempty"`
+	DestinationAccountID string      `json:"destination_account_id,omitempty"`
+	Transactions         []reviewTxn `json:"transactions"`
 }
 
 func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
@@ -525,9 +567,16 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to fetch assumed transactions: %v", err), http.StatusBadGateway)
 		return
 	}
+	transfers, err := fc.GetTransferCategoryWithdrawals(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch transfer-category transactions: %v", err), http.StatusBadGateway)
+		return
+	}
 
-	result := buildReviewGroups("NEEDS_REVIEW", needsReview)
+	var result []*reviewGroup
+	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
+	result = append(result, buildReviewGroups("TRANSFER_CATEGORY", transfers)...)
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -548,9 +597,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 
 		if _, ok := groups[key]; !ok {
 			g := &reviewGroup{
-				Outcome:         outcome,
-				Description:     s.Description,
-				DestinationName: s.DestinationName,
+				Outcome:              outcome,
+				Description:          s.Description,
+				DestinationName:      s.DestinationName,
+				DestinationAccountID: s.DestinationID,
 			}
 			if outcome == "ASSUMED" {
 				g.CategoryName = s.CategoryName
@@ -574,7 +624,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 }
 
 type categorizeRequest struct {
-	CategoryID string `json:"category_id"`
+	CategoryID         string `json:"category_id"`
+	DestinationAction  string `json:"destination_action,omitempty"`  // "MATCH", "CREATE", or ""
+	DestinationName    string `json:"destination_name,omitempty"`    // for CREATE
+	DestinationID      string `json:"destination_id,omitempty"`      // for MATCH
 }
 
 func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) {
@@ -601,12 +654,218 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID); err != nil {
+	destID := ""
+	switch req.DestinationAction {
+	case "MATCH":
+		destID = req.DestinationID
+	case "CREATE":
+		if req.DestinationName == "" {
+			http.Error(w, "destination_name is required for CREATE", http.StatusBadRequest)
+			return
+		}
+		created, err := fc.CreateExpenseAccount(r.Context(), req.DestinationName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to create destination account: %v", err), http.StatusBadGateway)
+			return
+		}
+		destID = created.ID
+		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
+	}
+
+	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID, destID); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Transfer conversion ---
+
+type suggestTransferResponse struct {
+	AccountID   string `json:"account_id"`
+	AccountName string `json:"account_name"`
+	Source      string `json:"source"` // "history" or "llm"
+}
+
+// suggestTransferDestination suggests a destination asset account for a
+// transfer conversion. It checks transfer history first, then falls back
+// to the LLM with the list of asset accounts.
+func (h *Handler) suggestTransferDestination(w http.ResponseWriter, r *http.Request) {
+	pipe := h.getPipe()
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	desc := r.URL.Query().Get("description")
+	if desc == "" {
+		http.Error(w, "description query param is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check transfer history first.
+	h.transferHistoryMu.RLock()
+	histID, hasHist := h.transferHistory[strings.ToLower(desc)]
+	h.transferHistoryMu.RUnlock()
+
+	if hasHist && histID != "" {
+		accts, err := fc.GetAssetAccounts(r.Context())
+		if err == nil {
+			for _, a := range accts {
+				if a.ID == histID {
+					writeJSON(w, http.StatusOK, suggestTransferResponse{
+						AccountID:   a.ID,
+						AccountName: a.Name,
+						Source:      "history",
+					})
+					return
+				}
+			}
+		}
+		// History ID no longer valid, fall through to LLM.
+	}
+
+	if pipe == nil {
+		writeJSON(w, http.StatusOK, suggestTransferResponse{})
+		return
+	}
+
+	accts, err := fc.GetAssetAccounts(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch asset accounts: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	// Use a simple LLM prompt to pick the best destination account.
+	clAccts := make([]classifier.AccountCandidate, len(accts))
+	for i, a := range accts {
+		clAccts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
+	}
+
+	result, err := pipe.SuggestTransfer(r.Context(), desc, clAccts)
+	if err != nil {
+		slog.Error("transfer suggest failed", "error", err)
+		writeJSON(w, http.StatusOK, suggestTransferResponse{})
+		return
+	}
+
+	// Validate the LLM's suggestion.
+	for _, a := range accts {
+		if strings.EqualFold(a.Name, result.AccountName) {
+			writeJSON(w, http.StatusOK, suggestTransferResponse{
+				AccountID:   a.ID,
+				AccountName: a.Name,
+				Source:      "llm",
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, suggestTransferResponse{})
+}
+
+type convertToTransferRequest struct {
+	DestinationID string `json:"destination_id"`
+}
+
+// convertToTransfer deletes a withdrawal and creates a transfer in its place.
+func (h *Handler) convertToTransfer(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	var req convertToTransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.DestinationID == "" {
+		http.Error(w, "destination_id is required", http.StatusBadRequest)
+		return
+	}
+
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+
+	txn := txns[0]
+	if len(txn.Splits) == 0 {
+		http.Error(w, "transaction has no splits", http.StatusBadRequest)
+		return
+	}
+
+	s := txn.Splits[0]
+	if s.SourceID == "" {
+		http.Error(w, "transaction has no source account", http.StatusBadRequest)
+		return
+	}
+
+	// Build tags: keep existing tags, remove AI outcome tags, add transfer tag.
+	tagPrefix := h.effectiveConfig().TagPrefix
+	aiOutcomeTags := map[string]bool{
+		tagPrefix + ":needs-review": true,
+		tagPrefix + ":assumed":      true,
+		tagPrefix + ":classified":   true,
+	}
+	var tags []string
+	for _, t := range s.Tags {
+		if !aiOutcomeTags[t] {
+			tags = append(tags, t)
+		}
+	}
+	transferTag := tagPrefix + ":transfer"
+	if !containsTag(tags, transferTag) {
+		tags = append(tags, transferTag)
+	}
+
+	// Preserve AI notes but prepend the transfer note.
+	notes := "Converted from withdrawal (AI categorized as Transfers)."
+	if s.Notes != "" {
+		notes = notes + "\n\n" + s.Notes
+	}
+
+	_, err = fc.CreateTransfer(r.Context(), firefly.CreateTransferParams{
+		Date:          s.Date,
+		Amount:        s.Amount,
+		Description:   s.Description,
+		SourceID:      s.SourceID,
+		DestinationID: req.DestinationID,
+		Notes:         notes,
+		Tags:          tags,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to create transfer: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	// Delete the original withdrawal.
+	if err := fc.DeleteTransaction(r.Context(), id); err != nil {
+		slog.Error("transfer converted but failed to delete original", "id", id, "error", err)
+	}
+
+	// Record in transfer history for future suggestions.
+	h.transferHistoryMu.Lock()
+	h.transferHistory[strings.ToLower(s.Description)] = req.DestinationID
+	h.transferHistoryMu.Unlock()
+
+	slog.Info("converted withdrawal to transfer", "old_id", id, "description", s.Description)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func containsTag(tags []string, tag string) bool {
+	for _, t := range tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Transactions list ---
@@ -772,7 +1031,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -834,6 +1093,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.CustomSystemContext != nil {
 		existing.CustomSystemContext = *req.CustomSystemContext
+	}
+	if req.DestinationMatchEnabled != nil {
+		existing.DestinationMatchEnabled = req.DestinationMatchEnabled
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

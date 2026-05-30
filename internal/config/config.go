@@ -33,6 +33,8 @@ type Config struct {
 	HistoryLookbackDays int
 	HistoryContextLimit int
 
+	DestinationMatchEnabled bool
+
 	WorkerConcurrency int
 	BatchConcurrency  int
 }
@@ -56,10 +58,11 @@ func Load() (*Config, *Store, error) {
 		DeepseekKey:         getEnv("DEEPSEEK_API_KEY", ""),
 		DeepseekModel:       getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
 		TagPrefix:           getEnv("TAG_PREFIX", "ai"),
-		HistoryContextLimit: getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
-		HistoryLookbackDays: getEnvInt("HISTORY_LOOKBACK_DAYS", 90),
-		WorkerConcurrency:   getEnvInt("WORKER_CONCURRENCY", 1),
-		BatchConcurrency:    getEnvInt("BATCH_CONCURRENCY", 5),
+		HistoryContextLimit:     getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
+		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 90),
+		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
+		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
+		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 5),
 	}
 
 	ttlStr := getEnv("HISTORY_CACHE_TTL", "10m")
@@ -129,6 +132,12 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.BatchConcurrency > 0 {
 		cfg.BatchConcurrency = sc.BatchConcurrency
+	}
+	// DestinationMatchEnabled is a bool toggle; the stored value overrides
+	// the env var only when explicitly set (distinct from zero-value).
+	// We track this via a pointer so the store can signal "was configured".
+	if sc.DestinationMatchEnabled != nil {
+		cfg.DestinationMatchEnabled = *sc.DestinationMatchEnabled
 	}
 }
 

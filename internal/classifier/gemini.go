@@ -25,12 +25,17 @@ func NewGemini(apiKey, model, customContext string) (*GeminiClassifier, error) {
 func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, error) {
 	prompt := buildUserPrompt(req)
 
+	sysPrompt := BuildSystemPrompt(c.customContext, req.DestinationMatching)
+	if req.SystemPromptOverride != "" {
+		sysPrompt = req.SystemPromptOverride
+	}
+
 	m := c.client.GenerativeModel(c.model)
 	temp := float32(0.1)
 	m.Temperature = &temp
 	m.ResponseMIMEType = "application/json"
 	m.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(BuildSystemPrompt(c.customContext))},
+		Parts: []genai.Part{genai.Text(sysPrompt)},
 	}
 
 	resp, err := m.GenerateContent(ctx, genai.Text(prompt))
@@ -47,5 +52,5 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 		return Result{}, fmt.Errorf("gemini: unexpected response part type")
 	}
 
-	return parseResponse(string(text), prompt, req.Categories), nil
+	return parseResponse(string(text), prompt, req.Categories, req.ExpenseAccounts, req.DestinationMatching), nil
 }
