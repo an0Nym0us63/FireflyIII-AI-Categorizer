@@ -120,6 +120,21 @@ pre.detail-pre {
     font-size: 13px;
 }
 
+.review-section-heading {
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #eee;
+    font-size: 15px;
+    font-weight: 600;
+    color: #555;
+}
+
+.review-section-heading small {
+    font-weight: 400;
+    color: #999;
+    margin-left: 8px;
+}
+
 .review-groups-grid {
     column-count: 2;
     column-gap: 14px;
@@ -275,6 +290,12 @@ body.dark-mode #txn-select-all-bar a {
     color: #5fa4cc;
 }
 
+/* Filter row in transactions page */
+.txn-filter-row {
+    margin-left: 0;
+    margin-right: 0;
+}
+
 /* Box collapse buttons */
 body.dark-mode .btn-box-tool {
     color: #b0b8c0;
@@ -303,6 +324,46 @@ body.dark-mode .label-default {
     background-color: #55606a;
     color: #dde2e7;
     border: 1px solid #7a8794;
+}
+
+/* Review section headings (app-specific) */
+body.dark-mode .review-section-heading {
+    border-bottom-color: #353c42;
+    color: #bec5cb;
+}
+
+body.dark-mode .review-section-heading small {
+    color: #85929e;
+}
+
+/* Transaction filter row */
+body.dark-mode .txn-filter-row label {
+    color: #85929e;
+}
+
+body.dark-mode .txn-filter-row .checkbox label {
+    color: #bec5cb;
+}
+
+/* Dropdown inside box-header must have visible items.
+   darkmode.css sets .skin-firefly-iii .box>.box-header .btn { color: #bec5cb }
+   but that doesn't reach dropdown <li><a> children. The darkmode.css rules for
+   .skin-firefly-iii .dropdown-menu handle the dropdown background and link
+   colour, but they are scoped to .skin-firefly-iii which is only on <body>.
+   We add a rule specifically for dropdowns opened by box-header buttons so
+   the menu items are readable. */
+body.dark-mode .box-header .dropdown-menu > li > a {
+    color: #bec5cb !important;
+}
+
+body.dark-mode .box-header .dropdown-menu > li > a:hover,
+body.dark-mode .box-header .dropdown-menu > li > a:focus {
+    color: #fff !important;
+    background-color: #404950;
+}
+
+body.dark-mode .box-header .dropdown-menu > .divider {
+    background-color: #454e56;
 }
 
 /* ── Flatpickr dark mode ──────────────────────────────────────────────── */

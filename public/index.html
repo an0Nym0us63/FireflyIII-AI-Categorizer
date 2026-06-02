@@ -95,12 +95,20 @@
                             </span>
                         </a>
                     </li>
+                    <li class="header">CLASSIFICATIONS</li>
                     <li id="nav-categories">
                         <a href="#" onclick="return switchTab('categories')">
                             <i class="fa fa-bookmark-o"></i>
                             <span>Categories</span>
                         </a>
                     </li>
+                    <li id="nav-accounts">
+                        <a href="#" onclick="return switchTab('accounts')">
+                            <i class="fa fa-building-o"></i>
+                            <span>Accounts</span>
+                        </a>
+                    </li>
+                    <li class="header">OPTIONS</li>
                     <li id="nav-settings">
                         <a href="#" onclick="return switchTab('settings')">
                             <i class="fa fa-cog"></i>
@@ -190,31 +198,6 @@
 
                     <div class="row">
                         <div class="col-md-12">
-                            <div class="box box-default">
-                                <div class="box-header with-border">
-                                    <h3 class="box-title"><i class="fa fa-bolt"></i> Batch Classification</h3>
-                                </div>
-                                <div class="box-body">
-                                    <p class="text-muted" style="margin-bottom:14px">
-                                        Classify all uncategorized withdrawal transactions in Firefly III using the
-                                        configured AI provider.
-                                    </p>
-                                    <button type="button" class="btn btn-default" id="btn-dry-run" onclick="dryRun()">
-                                        <i class="fa fa-search"></i> Check uncategorized
-                                    </button>
-                                    &nbsp;
-                                    <button type="button" class="btn btn-primary" id="btn-batch" disabled
-                                        onclick="confirmBatch()">
-                                        <i class="fa fa-play"></i> Run batch
-                                    </button>
-                                    &nbsp;&nbsp;<span id="batch-status"></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-12">
                             <div class="box box-primary">
                                 <div class="box-header with-border">
                                     <h3 class="box-title">Classification Jobs</h3>
@@ -261,32 +244,63 @@
                         <div class="col-md-12">
                             <div class="box box-default">
                                 <div class="box-header with-border">
-                                    <h3 class="box-title"><i class="fa fa-filter"></i> Filter</h3>
+                                    <h3 class="box-title"><i class="fa fa-filter"></i> Filters</h3>
                                 </div>
                                 <div class="box-body">
-                                    <form class="form-inline" onsubmit="loadTransactions();return false">
-                                        <div class="form-group">
-                                            <label class="sr-only">From</label>
+                                    <div class="row txn-filter-row">
+                                        <div class="col-sm-3 col-md-2">
+                                            <label style="font-size:12px;font-weight:600;display:block">Date
+                                                range</label>
                                             <div class="input-group input-group-sm">
                                                 <span class="input-group-addon">From</span>
                                                 <input type="text" class="form-control" id="txn-start"
                                                     placeholder="YYYY-MM-DD" readonly>
                                             </div>
-                                        </div>
-                                        &nbsp;
-                                        <div class="form-group">
-                                            <label class="sr-only">To</label>
-                                            <div class="input-group input-group-sm">
+                                            <div class="input-group input-group-sm" style="margin-top:4px">
                                                 <span class="input-group-addon">To</span>
                                                 <input type="text" class="form-control" id="txn-end"
                                                     placeholder="YYYY-MM-DD" readonly>
                                             </div>
                                         </div>
-                                        &nbsp;&nbsp;
-                                        <button type="submit" class="btn btn-default btn-sm">
-                                            <i class="fa fa-refresh"></i> Load
-                                        </button>
-                                    </form>
+                                        <div class="col-sm-3 col-md-2">
+                                            <label style="font-size:12px;font-weight:600;display:block">Category</label>
+                                            <select class="form-control input-sm" id="txn-filter-category"
+                                                onchange="loadTransactions()">
+                                                <option value="">— all —</option>
+                                            </select>
+                                            <div class="checkbox" style="margin:8px 0 0">
+                                                <label style="font-size:12px">
+                                                    <input type="checkbox" id="txn-filter-missing-cat"
+                                                        onchange="onMissingCatChange();loadTransactions()">
+                                                    Missing category
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-3 col-md-2">
+                                            <label
+                                                style="font-size:12px;font-weight:600;display:block">Destination</label>
+                                            <input type="text" class="form-control input-sm" id="txn-filter-dest"
+                                                placeholder="e.g. Amazon, (no name)…" onchange="loadTransactions()">
+                                            <div class="checkbox" style="margin:8px 0 0">
+                                                <label style="font-size:12px">
+                                                    <input type="checkbox" id="txn-filter-missing-dest"
+                                                        onchange="onMissingDestChange();loadTransactions()">
+                                                    Missing destination
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-3 col-md-2">
+                                            <label style="font-size:12px;font-weight:600;display:block">&nbsp;</label>
+                                            <button type="button" class="btn btn-default btn-sm"
+                                                onclick="loadTransactions()" style="margin-bottom:8px">
+                                                <i class="fa fa-refresh"></i> Load
+                                            </button>
+                                            <br>
+                                            <a href="#" onclick="clearTxnFilters();return false" style="font-size:12px">
+                                                <i class="fa fa-eraser"></i> Clear
+                                            </a>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -302,10 +316,23 @@
                                     <div class="box-tools pull-right">
                                         <span class="label label-primary" id="txn-sel-badge"
                                             style="display:none;margin-right:8px"></span>
-                                        <button type="button" class="btn btn-primary btn-sm" id="btn-recategorize"
-                                            disabled onclick="recategorizeSelected()">
-                                            <i class="fa fa-magic"></i> Re-categorize selected
-                                        </button>
+                                        <div class="btn-group" style="margin-right:8px">
+                                            <button type="button" class="btn btn-primary btn-sm dropdown-toggle"
+                                                id="btn-recategorize" disabled data-toggle="dropdown"
+                                                aria-haspopup="true" aria-expanded="false">
+                                                <i class="fa fa-magic"></i> Actions <span class="caret"></span>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-right">
+                                                <li><a href="#" onclick="recategorizeSelected('classify');return false">
+                                                        <i class="fa fa-bookmark-o"></i> Set Category</a></li>
+                                                <li><a href="#"
+                                                        onclick="recategorizeSelected('destination');return false">
+                                                        <i class="fa fa-building-o"></i> Set Destination</a></li>
+                                                <li role="separator" class="divider"></li>
+                                                <li><a href="#" onclick="recategorizeSelected('both');return false">
+                                                        <i class="fa fa-magic"></i> Set Both</a></li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="txn-select-all-bar">
@@ -355,9 +382,9 @@
 
                     <div class="row">
                         <div class="col-md-12">
-                            <div class="box box-warning">
+                            <div class="box box-default">
                                 <div class="box-header with-border">
-                                    <h3 class="box-title"><i class="fa fa-flag-o"></i> Transactions Needing Review</h3>
+                                    <h3 class="box-title"><i class="fa fa-flag-o"></i> Review</h3>
                                     <div class="box-tools pull-right">
                                         <button type="button" class="btn btn-default btn-sm" onclick="loadReview()">
                                             <i class="fa fa-refresh"></i> Refresh
@@ -375,29 +402,39 @@
                                         &nbsp;
                                         <span id="review-processing-status" style="font-size:13px"></span>
                                     </div>
-                                    <div id="review-body">
-                                        <p class="text-muted">Click Refresh to load transactions flagged for human
-                                            review.</p>
+                                    <!-- ── Subheading: Review Categories ── -->
+                                    <div id="review-section-categories">
+                                        <h4 class="review-section-heading">
+                                            <i class="fa fa-bookmark-o"></i> Review Categories
+                                            <small>Assign or correct category classifications</small>
+                                        </h4>
+                                        <div id="review-body">
+                                            <p class="text-muted">Click Refresh to load transactions flagged for human
+                                                review.</p>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row" id="row-transfers" style="display:none;margin-top:0">
-                        <div class="col-md-12">
-                            <div class="box box-info">
-                                <div class="box-header with-border">
-                                    <h3 class="box-title"><i class="fa fa-exchange"></i> Convert to Transfers</h3>
-                                    <div class="box-tools pull-right">
-                                        <button type="button" class="btn btn-box-tool" data-widget="collapse">
-                                            <i class="fa fa-minus"></i>
-                                        </button>
+                                    <!-- ── Subheading: Review Destination Account ── -->
+                                    <div id="review-section-destination" style="display:none">
+                                        <h4 class="review-section-heading" style="margin-top:18px">
+                                            <i class="fa fa-building-o"></i> Review Destination Account
+                                            <small>Match or create expense accounts for transactions</small>
+                                        </h4>
+                                        <div id="review-dest-body">
+                                            <p class="text-muted">Destination account review cards will appear here when
+                                                destination matching is enabled.</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="box-body">
-                                    <div id="transfer-body">
-                                        <p class="text-muted">Click Refresh to load transactions that should be converted to transfers.</p>
+                                    <!-- ── Subheading: Convert to Transfers ── -->
+                                    <div id="review-section-transfers" style="display:none">
+                                        <h4 class="review-section-heading" style="margin-top:18px">
+                                            <i class="fa fa-exchange"></i> Review Conversion to Transfer
+                                            <small>Convert withdrawals categorized as "Transfers" to actual transfer
+                                                transactions</small>
+                                        </h4>
+                                        <div id="transfer-body">
+                                            <p class="text-muted">Click Refresh to load transactions that should be
+                                                converted to transfers.</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -425,19 +462,31 @@
                             </div>
                         </div>
                     </div>
-                    <div class="row" id="row-destination-accounts" style="display:none">
+                </div><!-- /tab-categories -->
+
+                <!-- ─────────────────── ACCOUNTS ─────────────────── -->
+                <div id="tab-accounts" style="display:none">
+                    <div class="row">
                         <div class="col-md-12">
-                            <div class="box box-default">
+                            <div class="box box-primary">
                                 <div class="box-header with-border">
-                                    <h3 class="box-title"><i class="fa fa-building-o"></i> Expense Accounts (Destination Matching)</h3>
+                                    <h3 class="box-title"><i class="fa fa-building-o"></i> Expense Accounts (Destination
+                                        Matching)</h3>
+                                    <div class="box-tools pull-right">
+                                        <button type="button" class="btn btn-default btn-sm" onclick="loadAccounts()">
+                                            <i class="fa fa-refresh"></i> Refresh
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="box-body" id="acct-body">
-                                    <p class="text-muted">Click Refresh to load accounts from Firefly III.</p>
+                                    <p class="text-muted">Click Refresh to load expense accounts from Firefly III. These
+                                        are the accounts the AI can match payees against when destination matching is
+                                        enabled.</p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div><!-- /tab-categories -->
+                </div><!-- /tab-accounts -->
 
                 <!-- ─────────────────── SETTINGS ─────────────────── -->
                 <div id="tab-settings" style="display:none">

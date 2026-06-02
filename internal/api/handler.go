@@ -211,7 +211,8 @@ type batchFilter struct {
 type batchRequest struct {
 	Filter batchFilter `json:"filter"`
 	DryRun bool        `json:"dry_run"`
-	Force  bool        `json:"force"` // when true, re-classify even if category is set
+	Force  bool        `json:"force"`  // when true, re-classify even if category is set
+	Mode   string      `json:"mode"`   // "classify" (default), "destination", "both"
 }
 
 func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
@@ -243,6 +244,17 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		txns, err = fc.GetUncategorizedWithdrawals(ctx)
 	}
 
+	// Resolve pipeline run options from the request mode.
+	pipeOpts := pipeline.RunOptions{ClassifyCategory: true, MatchDestination: pipe.DestinationMatchEnabled()}
+	switch req.Mode {
+	case "destination":
+		pipeOpts = pipeline.RunOptions{ClassifyCategory: false, MatchDestination: true}
+	case "both":
+		pipeOpts = pipeline.RunOptions{ClassifyCategory: true, MatchDestination: true}
+	case "classify", "":
+		// Use defaults from config (already set above).
+	}
+
 	if err != nil {
 		slog.Error("batch: failed to fetch transactions", "error", err)
 		http.Error(w, "failed to fetch transactions from Firefly", http.StatusInternalServerError)
@@ -272,10 +284,11 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		splits := txn.Splits
 		localPipe := pipe
 
+		localOpts := pipeOpts
 		h.batchPool.Submit(worker.Task{
 			JobID: j.ID,
 			Execute: func(ctx context.Context) error {
-				return localPipe.Run(ctx, j, txnID, splits)
+				return localPipe.RunWithOptions(ctx, j, txnID, splits, localOpts)
 			},
 		})
 		enqueued++
@@ -622,8 +635,9 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if req.CategoryID == "" {
-		http.Error(w, "category_id is required", http.StatusBadRequest)
+	// category_id is optional — allowing destination-only updates.
+	if req.CategoryID == "" && req.DestinationAction == "" {
+		http.Error(w, "at least one of category_id or destination_action is required", http.StatusBadRequest)
 		return
 	}
 
@@ -859,6 +873,79 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	start := q.Get("start")
 	end := q.Get("end")
+	missingCategory := q.Get("missing_category") == "true"
+	missingDestination := q.Get("missing_destination") == "true"
+	destFilter := q.Get("destination")
+	categoryFilter := q.Get("category")
+
+	// When filtering is active, we must fetch all pages, filter, and re-paginate.
+	if missingCategory || missingDestination || destFilter != "" || categoryFilter != "" {
+		// ids_only mode with filters — collect all matching IDs.
+		if q.Get("ids_only") == "true" {
+			var ids []string
+			for page := 1; ; page++ {
+				result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
+					return
+				}
+				for _, row := range result.Data {
+					if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+						ids = append(ids, row.ID)
+					}
+				}
+				if page >= result.TotalPages {
+					break
+				}
+			}
+			writeJSON(w, http.StatusOK, ids)
+			return
+		}
+
+		// Normal paged mode with filters.
+		pageNum := queryInt(q.Get("page"), 1)
+		limit := queryInt(q.Get("limit"), 50)
+		var allFiltered []firefly.TransactionRow
+		for page := 1; ; page++ {
+			result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
+				return
+			}
+			for _, row := range result.Data {
+				if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+					allFiltered = append(allFiltered, row)
+				}
+			}
+			if page >= result.TotalPages {
+				break
+			}
+		}
+
+		// Paginate filtered results.
+		total := len(allFiltered)
+		totalPages := (total + limit - 1) / limit
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		startIdx := (pageNum - 1) * limit
+		endIdx := startIdx + limit
+		if startIdx > total {
+			startIdx = total
+		}
+		if endIdx > total {
+			endIdx = total
+		}
+		pageData := allFiltered[startIdx:endIdx]
+
+		writeJSON(w, http.StatusOK, firefly.TransactionsPage{
+			Data:       pageData,
+			Page:       pageNum,
+			TotalPages: totalPages,
+			Total:      total,
+		})
+		return
+	}
 
 	// ids_only=true: return all matching IDs across all pages (used for select-all)
 	if q.Get("ids_only") == "true" {
@@ -889,6 +976,33 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// matchesTxnFilter checks whether a transaction row matches the active UI filters.
+func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter string) bool {
+	if missingCategory && row.CategoryName != "" {
+		return false
+	}
+	if categoryFilter != "" && !strings.EqualFold(row.CategoryName, categoryFilter) {
+		return false
+	}
+	if missingDestination {
+		dn := strings.TrimSpace(row.DestinationName)
+		if dn != "" && !strings.EqualFold(dn, "(no name)") {
+			return false
+		}
+	}
+	if destFilter != "" {
+		dn := strings.TrimSpace(row.DestinationName)
+		if destFilter == "(no name)" {
+			if dn != "" && !strings.EqualFold(dn, "(no name)") {
+				return false
+			}
+		} else if !strings.EqualFold(dn, destFilter) {
+			return false
+		}
+	}
+	return true
 }
 
 // --- Job endpoints ---
