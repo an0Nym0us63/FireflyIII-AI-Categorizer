@@ -11,18 +11,21 @@ Automatically categorise transactions in [Firefly III](https://www.firefly-iii.o
 
 ---
 
-## Changes from the original
+## Features
 
 The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), whose author archived the project. [openaccountants/firefly-iii-ai-categorize](https://github.com/openaccountants/firefly-iii-ai-categorize) forked it and introduced the three-outcome classification model. This project is a fork of that fork, rewritten from scratch with a new UI and additional features:
 
-- **Web UI.** A built-in dashboard, that follows Firefly III design styles, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a page to review AI categorisation decisions, and a full settings page.
+- **Web UI.** A built-in dashboard, styled to match Firefly III's AdminLTE theme with light and dark mode support, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a review page for AI decisions, and a full settings page.
 - **Multiple AI providers.** Supports OpenAI (and any OpenAI-compatible endpoint such as Ollama or Azure OpenAI), Google Gemini, and DeepSeek — switchable from the settings page.
 - **Batch categorisation.** All uncategorised withdrawals can be classified in one operation from the UI or the command line.
-- **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level rather than silently guessing or doing nothing.
+- **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level (`CLASSIFIED`, `ASSUMED`, `NEEDS_REVIEW`) rather than silently guessing or doing nothing.
 - **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants. Repeated transactions from the same vendor are categorised automatically, skipping the AI calls entirely.
-- **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts.
+- **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts. A custom context field lets you provide additional guidance to the AI (e.g., "I have no business expenses").
+- **Destination account matching.** When enabled, the AI matches withdrawals to existing expense accounts or creates new ones automatically, with independent confidence levels for category and destination. The Review page provides a searchable dropdown to correct or create destination accounts manually. Transactions miscategorised as "Transfers" can be converted into real asset-account transfers.
+- **Manual review workflow.** The Review tab groups unconfident classifications by merchant, with the AI's best guess pre-selected in a dropdown. Apply, skip, or correct per group — and when destination matching is on, set or create the payee alongside the category.
+- **Transaction converter.** Withdrawals the AI flags as potential transfers between your own asset accounts appear in a "Convert to Transfers" panel on the Review page. Select a destination asset account and the categorizer deletes the withdrawal and creates a proper transfer — preserving the amount, date, and description.
+- **In-app help page.** A built-in documentation tab walks through setup, features, and configuration with step-by-step instructions and screenshots, so you don't need to leave the app.
 - **Rewritten in Go.** The Node.js/Express server has been replaced with a compiled Go binary, reducing resource usage and removing the Node.js runtime dependency.
-- **Destination account matching.** When enabled, the AI can match withdrawals to existing expense accounts or create new ones automatically. The Review page provides a searchable dropdown to correct or create destination accounts manually, and transactions miscategorised as "Transfers" can be converted into real transfer transactions between asset accounts.
 
 ---
 
