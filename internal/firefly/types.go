@@ -38,12 +38,13 @@ type Transaction struct {
 
 // UpdateOutcome carries classification results needed to update a transaction.
 type UpdateOutcome struct {
-	Outcome       string // "CLASSIFIED" | "ASSUMED" | "NEEDS_REVIEW"
-	Category      string
-	CategoryID    string
-	DestinationID string // non-empty when destination account was matched or created
-	Reason        string
-	Assumption    string
+	Outcome        string // "CLASSIFIED" | "ASSUMED" | "NEEDS_REVIEW"
+	Category       string
+	CategoryID     string
+	DestinationID  string // non-empty when destination account was matched or created
+	DestConfidence string // "CLASSIFIED" | "ASSUMED" — destination confidence (independent of Outcome)
+	Reason         string
+	Assumption     string
 }
 
 // TransactionRow is a flat summary used by the UI transactions list.

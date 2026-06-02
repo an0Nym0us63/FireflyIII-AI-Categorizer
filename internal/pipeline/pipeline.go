@@ -168,6 +168,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			DestinationID: historyMatchDestID,
 			Reason:        reason,
 		}
+		if historyMatchDestID != "" {
+			outcome.DestConfidence = "CLASSIFIED"
+		}
 		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 			p.registry.SetFailed(j.ID, err.Error())
 			return fmt.Errorf("update transaction: %w", err)
@@ -272,6 +275,8 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				slog.Warn("destination MATCH failed to find account", "name", result.Destination.Name)
 				destAccount = ""
 				destAction = ""
+			} else {
+				outcome.DestConfidence = result.Destination.Confidence
 			}
 		case "CREATE":
 			if result.Destination.Confidence != "CLASSIFIED" {
@@ -289,6 +294,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				break
 			}
 			outcome.DestinationID = created.ID
+			outcome.DestConfidence = result.Destination.Confidence
 			slog.Info("created expense account", "name", created.Name, "id", created.ID)
 
 			// Append to in-memory cache so subsequent jobs in the same batch
@@ -303,6 +309,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// (or produced a weaker one) but history has a confident match.
 	if historyMatchDestID != "" && outcome.DestinationID == "" {
 		outcome.DestinationID = historyMatchDestID
+		outcome.DestConfidence = "CLASSIFIED"
 		destAction = "MATCH"
 		for _, a := range expenseAccounts {
 			if a.ID == historyMatchDestID {

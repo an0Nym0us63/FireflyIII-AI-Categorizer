@@ -536,6 +536,7 @@ type reviewGroup struct {
 	Outcome              string      `json:"outcome"`
 	Description          string      `json:"description"`
 	DestinationName      string      `json:"destination_name"`
+	SourceName           string      `json:"source_name,omitempty"`
 	CategoryName         string      `json:"category_name,omitempty"`
 	CategoryID           string      `json:"category_id,omitempty"`
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
@@ -559,6 +560,11 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to fetch assumed transactions: %v", err), http.StatusBadGateway)
 		return
 	}
+	destAssumed, err := fc.GetDestAssumedWithdrawals(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch dest-assumed transactions: %v", err), http.StatusBadGateway)
+		return
+	}
 	transfers, err := fc.GetTransferCategoryWithdrawals(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch transfer-category transactions: %v", err), http.StatusBadGateway)
@@ -568,6 +574,7 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	var result []*reviewGroup
 	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
+	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
 	result = append(result, buildReviewGroups("TRANSFER_CATEGORY", transfers)...)
 
 	writeJSON(w, http.StatusOK, result)
@@ -592,9 +599,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 				Outcome:              outcome,
 				Description:          s.Description,
 				DestinationName:      s.DestinationName,
+				SourceName:           s.SourceName,
 				DestinationAccountID: s.DestinationID,
 			}
-			if outcome == "ASSUMED" {
+			if outcome == "ASSUMED" || outcome == "DEST_ASSUMED" {
 				g.CategoryName = s.CategoryName
 				g.CategoryID = s.CategoryID
 			}

@@ -444,3 +444,162 @@ body.dark-mode .flatpickr-day.prevMonthDay,
 body.dark-mode .flatpickr-day.nextMonthDay {
     color: #55606a;
 }
+
+/* ── Help / Documentation tab ────────────────────────────────────── */
+.docs-container h2 {
+    margin-top: 36px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #3c8dbc;
+}
+
+.docs-container h3 {
+    margin-top: 24px;
+    color: #555;
+}
+
+body.dark-mode .docs-container h3 {
+    color: #bec5cb;
+}
+
+.docs-container p,
+.docs-container li {
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.docs-container ul {
+    padding-left: 20px;
+}
+
+.docs-container .step {
+    background: #fff;
+    border: 1px solid #d2d6de;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 12px 0;
+}
+
+body.dark-mode .docs-container .step {
+    background: #272c30;
+    border-color: #454e56;
+}
+
+.docs-container .step .step-num {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    background: #3c8dbc;
+    color: #fff;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 14px;
+    margin-right: 8px;
+}
+
+.docs-container blockquote {
+    font-size: 13px;
+    border-left-color: #3c8dbc;
+}
+
+.docs-container img {
+    max-width: 100%;
+    border: 1px solid #d2d6de;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+body.dark-mode .docs-container img {
+    border-color: #454e56;
+}
+
+.docs-container code {
+    background: #f4f4f5;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+body.dark-mode .docs-container code {
+    background: #1f2327;
+    color: #c9d1d9;
+}
+
+.docs-container pre {
+    background: #f4f4f5;
+    border: none;
+    font-size: 13px;
+}
+
+body.dark-mode .docs-container pre {
+    background: #1f2327;
+    color: #c9d1d9;
+}
+
+.docs-toc {
+    background: #fff;
+    border: 1px solid #d2d6de;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+}
+
+body.dark-mode .docs-toc {
+    background: #272c30;
+    border-color: #454e56;
+}
+
+.docs-toc ul {
+    margin-bottom: 0;
+}
+
+.docs-toc a {
+    font-size: 13px;
+}
+
+.docs-outcome {
+    display: flex;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.docs-outcome > div {
+    flex: 1;
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.outcome-classified {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+}
+
+.outcome-assumed {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+}
+
+.outcome-review {
+    background: #fce4ec;
+    border: 1px solid #ef9a9a;
+}
+
+body.dark-mode .outcome-classified {
+    background: #1a3c28;
+    border-color: #2e7d32;
+    color: #a5d6a7;
+}
+
+body.dark-mode .outcome-assumed {
+    background: #3d3008;
+    border-color: #9a7b1a;
+    color: #ffe082;
+}
+
+body.dark-mode .outcome-review {
+    background: #3d1a1a;
+    border-color: #9a2a2a;
+    color: #ef9a9a;
+}

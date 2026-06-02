@@ -12,6 +12,7 @@ var txnPage = 1, txnTotalPages = 1, txnTotal = 0;
 var selectedTxns = new Set();
 var cachedCategories = null; // {html, data} — rendered cache for instant display
 var cachedAccounts = null;   // {html, data} — rendered cache for instant display
+var reviewAccountsFetching = false; // prevents duplicate account fetches
 var reviewPollTimer = null;  // interval ID for background review polling
 
 // ─── Tab navigation ─────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ var TAB_META = {
     review: {title: 'Review', sub: 'Review categories, destinations, and conversions'},
     categories: {title: 'Categories', sub: 'Categories available to the AI'},
     accounts: {title: 'Accounts', sub: 'Expense accounts for destination matching'},
+    help: {title: 'Help', sub: 'Documentation and setup guide'},
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
 
@@ -45,10 +47,8 @@ function switchTab(name) {
     // Manage review auto-polling.
     if (reviewPollTimer) { clearInterval(reviewPollTimer); reviewPollTimer = null; }
     if (name === 'review') {
-        // Show destination and transfer sections immediately when applicable,
-        // before the async loadReview completes.
-        document.getElementById('review-section-destination').style.display =
-            savedConfig.destination_match_enabled ? '' : 'none';
+        // Show transfer section immediately.
+        document.getElementById('review-section-transfers').style.display = '';
         loadReview();
         // Poll every 30 seconds for new items to review.
         reviewPollTimer = setInterval(function () {
@@ -562,25 +562,21 @@ var REVIEW_BATCH_SIZE = 8;
 async function loadReview(silent) {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var destBody = document.getElementById('review-dest-body');
     var transferBody = document.getElementById('transfer-body');
-    var destSection = document.getElementById('review-section-destination');
     var transferSection = document.getElementById('review-section-transfers');
     if (!silent) {
         body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
         actionBar.style.display = 'none';
         hideReviewProcessingBar();
-        destBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
         transferBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     }
     try {
         var catRes = fetch('/api/categories');
         var reviewRes = fetch('/api/review');
-        var destMatch = savedConfig.destination_match_enabled;
-        var acctRes = destMatch ? fetch('/api/accounts') : null;
+        var acctRes = fetch('/api/accounts');
         catRes = await catRes;
         reviewRes = await reviewRes;
-        if (acctRes) acctRes = await acctRes;
+        acctRes = await acctRes;
 
         if (catRes.status === 503 || reviewRes.status === 503) {
             body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
@@ -591,7 +587,7 @@ async function loadReview(silent) {
 
         reviewCategories = await catRes.json();
         allReviewGroups = (await reviewRes.json()) || [];
-        reviewAccounts = (destMatch && acctRes && acctRes.ok) ? (await acctRes.json()) || [] : [];
+        reviewAccounts = (acctRes.ok) ? (await acctRes.json()) || [] : [];
 
         updateReviewBadge();
         renderCurrentBatch();
@@ -603,12 +599,10 @@ async function loadReview(silent) {
 function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var destBody = document.getElementById('review-dest-body');
-    var destSection = document.getElementById('review-section-destination');
     var transferBody = document.getElementById('transfer-body');
     var transferSection = document.getElementById('review-section-transfers');
 
-    // Split groups by outcome.
+    // Split groups by outcome. DEST_ASSUMED stays in the main review.
     var reviewGroups = allReviewGroups.filter(function (g) {
         return g.outcome !== 'TRANSFER_CATEGORY';
     });
@@ -622,36 +616,22 @@ function renderCurrentBatch() {
     reviewDestFocused = {};
     pendingAccounts = [];
 
-    // Review Categories section (always show, may be empty).
+    // Main Review section
     if (batch.length) {
         body.innerHTML = renderReviewGroups(batch);
         actionBar.style.display = '';
         updateSubmitBar();
-    } else if (transferGroups.length) {
-        body.innerHTML = '<p class="text-muted">No transactions need category review!</p>';
-        actionBar.style.display = 'none';
     } else {
-        body.innerHTML = '<p class="text-muted">No transactions need category review &mdash; all caught up!</p>';
+        body.innerHTML = '<p class="text-muted">No transactions need review &mdash; all caught up!</p>';
         actionBar.style.display = 'none';
     }
 
-    // Review Destination Account section — always shown when destination matching is enabled.
-    var destMatch = savedConfig.destination_match_enabled;
-    if (destMatch) {
-        destSection.style.display = '';
-        // Show destination-review cards: only groups where destination isn't set.
-        // For now, reuse the same cards but add a contextual message.
-        destBody.innerHTML = '<p class="text-muted">Destination accounts are reviewed together with categories above &mdash; each review card includes a destination field. Use the <strong>Set Destination</strong> action on the Transactions page to batch-assign destinations.</p>';
-    } else {
-        destSection.style.display = 'none';
-    }
-
-    // Transfer section — always visible when destination matching is enabled.
+    // Transfer section
     if (transferGroups.length) {
         transferSection.style.display = '';
         transferBody.innerHTML = renderTransferSection(transferGroups);
     } else {
-        transferSection.style.display = destMatch ? '' : 'none';
+        transferSection.style.display = '';
         transferBody.innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
     }
 
@@ -709,6 +689,7 @@ function resolveGroupLabel(g) {
 function renderReviewGroups(groups) {
     var needsReview = groups.filter(function (g) { return g.outcome === 'NEEDS_REVIEW'; });
     var assumed = groups.filter(function (g) { return g.outcome === 'ASSUMED'; });
+    var destAssumed = groups.filter(function (g) { return g.outcome === 'DEST_ASSUMED'; });
     var html = '';
 
     if (needsReview.length) {
@@ -729,6 +710,16 @@ function renderReviewGroups(groups) {
             + '</div>';
     }
 
+    if (destAssumed.length) {
+        var prev = needsReview.length || assumed.length;
+        html += '<p class="review-section-header"' + (prev ? ' style="margin-top:20px"' : '') + '>'
+            + '<i class="fa fa-building-o text-warning"></i> <strong>Destination Assumed</strong>'
+            + ' <span class="text-muted">&mdash; The AI assigned a destination but is not fully confident. Review and correct if needed.</span></p>'
+            + '<div class="review-groups-grid" id="grid-dest-assumed">'
+            + destAssumed.map(function (g) { return renderDestReviewGroup(g); }).join('')
+            + '</div>';
+    }
+
     return html;
 }
 
@@ -738,9 +729,99 @@ function renderTransferSection(groups) {
     if (!groups.length) return '';
     return '<p class="review-section-header">'
         + '<i class="fa fa-exchange text-info"></i> <strong>Categorized as &quot;Transfers&quot;</strong>'
-        + ' <span class="text-muted">&mdash; Convert to actual transfer transactions by selecting a destination asset account.</span></p>'
+        + ' <span class="text-muted">&mdash; Convert these withdrawals to actual transfer transactions by selecting a destination asset account. The source account is shown for each group.</span></p>'
         + '<div class="review-groups-grid" id="grid-transfers">'
         + groups.map(function (g) { return renderTransferGroup(g); }).join('')
+        + '</div>';
+}
+
+function renderDestReviewGroup(g) {
+    var gi = reviewGroupCounter++;
+    reviewGroupMap[gi] = g;
+    var resolved = resolveGroupLabel(g);
+    var count = (g.transactions || []).length;
+    var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+
+    var txnRows = (g.transactions || []).map(function (t) {
+        var date = t.date ? t.date.substring(0, 10) : '—';
+        var amount = isNaN(parseFloat(t.amount)) ? '—' : parseFloat(t.amount).toFixed(2);
+        return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;padding:3px 6px">' + esc(date) + '</td>'
+            + '<td class="text-right" style="font-size:12px;padding:3px 6px">' + amount + '</td>'
+            + '</tr>';
+    }).join('');
+
+    var sub = resolved.sub
+        ? ' <small style="font-weight:normal;color:#999">' + esc(resolved.sub) + '</small>' : '';
+
+    // AI's assumed destination guess (name from the expense account).
+    var currentDestID = g.destination_account_id || '';
+    var currentDestName = g.destination_name || '';
+    for (var i = 0; i < reviewAccounts.length; i++) {
+        if (reviewAccounts[i].id === currentDestID) {
+            currentDestName = reviewAccounts[i].name;
+            break;
+        }
+    }
+
+    var catOptions = '<option value="" disabled selected hidden>—</option>'
+        + reviewCategories.map(function (c) {
+            var sel = (g.category_id && c.id === g.category_id) ? ' selected' : '';
+            return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
+        }).join('');
+
+    // Build destination input.
+    var matchedAttr = currentDestID ? ' data-matched-id="' + esc(currentDestID) + '"' : '';
+    var acctDataOptions = reviewAccounts.map(function (a) {
+        return '<option value="' + esc(a.name) + '" data-id="' + esc(a.id) + '">';
+    }).join('')
+        + pendingAccounts.map(function (a) {
+            return '<option value="' + esc(a.name) + '" data-id="new:' + esc(a.name) + '">';
+        }).join('');
+
+    var destHint = currentDestName
+        ? '<p style="font-size:12px;margin:0 0 6px;color:#8a6d3b"><i class="fa fa-magic"></i> AI assumed destination: <strong>' + esc(currentDestName) + '</strong> &mdash; correct below if needed.</p>'
+        : '';
+
+    return '<div class="box box-default review-group" id="review-group-' + gi + '"'
+        + ' data-ids="' + esc(idsJson) + '" data-count="' + count + '">'
+        + '<div class="box-header with-border review-group-header">'
+        + '<span class="review-group-title">' + esc(resolved.label) + sub
+        + ' <span class="label label-warning" style="font-size:10px;font-weight:normal;margin-left:3px">'
+        + count + '</span></span>'
+        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — review later">'
+        + '<i class="fa fa-clock-o"></i> Skip'
+        + '</button>'
+        + '</div>'
+        + '<div class="box-body review-group-body">'
+        + destHint
+        + '<table class="table table-condensed" style="margin-bottom:6px">'
+        + '<tbody>' + txnRows + '</tbody>'
+        + '</table>'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+        + '<i class="fa fa-bookmark-o"></i> Category</label>'
+        + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar();onReviewCatChange(' + gi + ')">'
+        + catOptions
+        + '</select>'
+        + '<div style="margin-top:8px" class="review-dest-container">'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+        + '<i class="fa fa-building-o"></i> Destination Account'
+        + ' <span style="font-weight:400;color:#848484">(expense / payee)</span></label>'
+        + '<div style="display:flex;gap:6px;align-items:center">'
+        + '<input type="text" class="form-control input-sm" id="review-dest-' + gi + '"'
+        + ' list="review-dest-list-' + gi + '" placeholder="Search or type a new account…"'
+        + ' value="' + esc(currentDestName) + '"' + matchedAttr
+        + ' onfocus="onReviewDestFocus(' + gi + ')"'
+        + ' oninput="onReviewDestInput(' + gi + ')"'
+        + ' onblur="onReviewDestBlur(' + gi + ')"'
+        + ' style="flex:1">'
+        + '<datalist id="review-dest-list-' + gi + '">' + acctDataOptions + '</datalist>'
+        + '<span id="review-dest-badge-' + gi + '" class="label label-info"'
+        + ' style="display:none;flex-shrink:0;font-size:10px;white-space:nowrap">'
+        + '<i class="fa fa-plus-circle"></i> NEW</span>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
         + '</div>';
 }
 
@@ -750,6 +831,7 @@ function renderTransferGroup(g) {
     var resolved = resolveGroupLabel(g);
     var count = (g.transactions || []).length;
     var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+    var sourceName = g.source_name || '';
 
     var txnRows = (g.transactions || []).map(function (t, idx) {
         var date = t.date ? t.date.substring(0, 10) : '—';
@@ -793,6 +875,8 @@ function renderTransferGroup(g) {
         + '</button>'
         + '</div>'
         + '<div class="box-body review-group-body">'
+        + (sourceName ? '<p style="font-size:12px;margin:0 0 6px;color:#848484">'
+            + '<i class="fa fa-arrow-right"></i> From: <strong>' + esc(sourceName) + '</strong></p>' : '')
         // Collapsed view: summary table + single destination input.
         + '<div id="transfer-collapsed-' + gi + '">'
         + '<table class="table table-condensed" style="margin-bottom:6px">'
@@ -982,9 +1066,9 @@ async function convertToTransfer(gi) {
         setTimeout(function () {
             el.remove();
             updateReviewBadge();
-            // Hide the transfer box if no more transfer groups remain.
+            // Show empty message if no more transfer groups remain.
             if (!document.querySelector('#grid-transfers .review-group')) {
-                document.getElementById('review-section-transfers').style.display = 'none';
+                document.getElementById('transfer-body').innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
             }
         }, 1500);
     } else {
@@ -1023,9 +1107,19 @@ function renderReviewGroup(g, isAssumed) {
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
         }).join('');
 
-    // Destination account controls (only when enabled).
+    // Destination account controls — always available for manual review.
     var destHtml = '';
-    if (reviewAccounts.length) {
+    {
+        // Fetch accounts on demand if not loaded yet.
+        if (!reviewAccounts.length && !reviewAccountsFetching) {
+            reviewAccountsFetching = true;
+            fetch('/api/accounts').then(function (r) { return r.ok ? r.json() : []; }).then(function (accts) {
+                reviewAccounts = accts || [];
+                reviewAccountsFetching = false;
+                // Re-render the current batch to show the destination controls.
+                renderCurrentBatch();
+            }).catch(function () { reviewAccountsFetching = false; });
+        }
         // Find the current destination name for pre-filling.
         var currentDestID = g.destination_account_id || '';
         var currentDestName = '';
@@ -1211,9 +1305,9 @@ function skipReviewGroup(gi) {
         }
     }
     el.remove();
-    // Hide transfer section if the skipped group was the last transfer.
+    // Update transfer section content if the skipped group was the last transfer.
     if (!document.querySelector('#grid-transfers .review-group')) {
-        document.getElementById('review-section-transfers').style.display = 'none';
+        document.getElementById('transfer-body').innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
     }
     if (!document.querySelector('.review-group')) {
         renderCurrentBatch();

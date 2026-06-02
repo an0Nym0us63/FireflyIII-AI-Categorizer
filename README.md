@@ -2,11 +2,11 @@
 
 Automatically categorise transactions in [Firefly III](https://www.firefly-iii.org/) using an LLM — choose from OpenAI, Gemini, DeepSeek, or locally hosted. New withdrawals are classified into one of three outcomes and written back without any manual intervention. Process transactions automatically using a Firefly III webhook, or use the web interface to mass categorize transactions.
 
-<img width="100%" alt="Jobs page" src="https://github.com/user-attachments/assets/c6bdae2f-ff83-4c08-8c52-0aa100263e3d" />
+<img width="100%" alt="Jobs page" src="public/docs/images/jobs_page.webp" />
 
 <p>
-  <img width="49.5%" alt="Transactions page" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
-  <img width="49.5%" alt="Settings page" src="https://github.com/user-attachments/assets/7e061547-65ac-402a-90be-6a3b1699a640" />
+  <img width="49.5%" alt="Transactions page" src="public/docs/images/transactions_page.webp" />
+  <img width="49.5%" alt="Settings page" src="public/docs/images/settings_page.webp" />
 </p>
 
 ---
@@ -112,7 +112,7 @@ To classify existing uncategorised transactions, use the **Batch Classification*
 
 You can also select individaul transactions or *all* transactions on the **Transactions** page and force them to be re-categorized.
 
-<img width="100%" alt="Transactions page showing categorised results" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
+<img width="100%" alt="Transactions page showing categorised results" src="public/docs/images/transactions_page.webp" />
 
 The **Transactions** tab lets you browse withdrawals, filter by date, and manually trigger re-classification on any selection.
 
@@ -139,14 +139,29 @@ POST /webhook  (Firefly III sends new transaction)
   Fetch categories from Firefly III
         │
         ▼
+  (Optional) Fetch expense accounts (destination matching)
+        │
+        ▼
   Send to LLM with three-outcome prompt
         │
-        ├── CLASSIFIED   → set category + tag "ai:classified"
-        ├── ASSUMED      → set category + tag "ai:assumed" + assumption in notes
-        └── NEEDS_REVIEW → tag "ai:needs-review", no category set
+        ├── CLASSIFIED    → set category + tag "ai:classified"
+        │                    └── destination → MATCH existing or CREATE new
+        ├── ASSUMED       → set category + tag "ai:assumed" + assumption
+        │                    └── destination → MATCH existing or CREATE new
+        └── NEEDS_REVIEW  → tag "ai:needs-review", no category set
+                             └── destination → may still be assigned
 ```
 
-Results are written back to Firefly III with `fire_webhooks: false` to prevent re-triggering.
+Results are written back to Firefly III with `fire_webhooks: false` to prevent
+re-triggering. When destination matching is enabled, the flow also fetches
+expense accounts and the LLM attempts to match or create a destination account
+alongside the category. Destination confidence is independent of category
+confidence — a transaction can be CLASSIFIED for its category but ASSUMED for
+its destination, or vice versa.
+
+Repeated transactions from the same merchant benefit from **history-based
+matching**: when enough past transactions agree on the same category and
+destination, the AI call is skipped entirely, reducing latency and API costs.
 
 ---
 

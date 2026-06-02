@@ -18,13 +18,19 @@ You classify transactions using a three-outcome model:
 You MUST respond with valid JSON matching this schema:
 {
   "outcome": "CLASSIFIED" | "ASSUMED" | "NEEDS_REVIEW",
-  "category": "<exact category name from the list, or null if NEEDS_REVIEW>",
+  "category": {
+    "name": "<exact category name from the list>",
+    "confidence": "CLASSIFIED" | "ASSUMED"
+  } | null,
   "reason": "<one sentence explaining your classification>",
   "assumption": "<if ASSUMED: what you assumed and what the alternative is; otherwise null>"
 }
 
 Rules:
 - category MUST be an exact match from the provided list, or null
+- When outcome is CLASSIFIED, category.confidence must be CLASSIFIED
+- When outcome is ASSUMED, category.confidence must be ASSUMED
+- When outcome is NEEDS_REVIEW, category must be null
 - Never invent categories
 - When uncertain between two categories, pick the one that is less favorable to the user (conservative default)
 - If the description is too vague to even assume, use NEEDS_REVIEW
@@ -45,25 +51,33 @@ In addition to category classification, you also assign a destination (expense) 
 You MUST respond with valid JSON matching this schema:
 {
   "outcome": "CLASSIFIED" | "ASSUMED" | "NEEDS_REVIEW",
-  "category": "<exact category name from the list, or null if NEEDS_REVIEW>",
-  "reason": "<one sentence explaining your classification>",
-  "assumption": "<if ASSUMED: what you assumed and what the alternative is; otherwise null>",
+  "category": {
+    "name": "<exact category name from the list>",
+    "confidence": "CLASSIFIED" | "ASSUMED"
+  } | null,
   "destination": {
-    "name": "<exact account name, or null>",
+    "name": "<exact account name>",
     "action": "MATCH" | "CREATE",
     "confidence": "CLASSIFIED" | "ASSUMED"
-  } | null
+  } | null,
+  "reason": "<one sentence explaining your classification>",
+  "assumption": "<if ASSUMED: what you assumed and what the alternative is; otherwise null>"
 }
+
+Category rules:
+- category MUST be an exact match from the provided list, or null
+- When outcome is CLASSIFIED, category.confidence must be CLASSIFIED
+- When outcome is ASSUMED, category.confidence must be ASSUMED
+- When outcome is NEEDS_REVIEW, category must be null
 
 Destination account rules:
 - You MUST always attempt to assign a destination account, regardless of the outcome field.
-- Category confidence (outcome) and destination confidence are completely independent. Even if the outcome is ASSUMED or NEEDS_REVIEW, you still determine the best destination.
+- Category confidence and destination confidence are completely independent.
 - When an existing expense account clearly matches the payee, use MATCH with the exact account name from the list.
 - When you are confident the payee represents a new expense account not in the list, use CREATE with a reasonable, concise account name (e.g. "Amazon", "Netflix", "Delta Airlines"). Prefer the canonical business name.
 - Only set destination to null when the destination_name is truly ambiguous (e.g. generic names like "POS Purchase", "Transfer", or empty).
 
 Rules:
-- category MUST be an exact match from the provided list, or null
 - Never invent categories
 - When uncertain between two categories, pick the one that is less favorable to the user (conservative default)
 - If the description is too vague to even assume, use NEEDS_REVIEW
@@ -129,6 +143,10 @@ func buildUserPrompt(req Request) string {
 	if len(req.ExpenseAccounts) > 0 {
 		sb.WriteString("Existing expense accounts:\n")
 		for _, a := range req.ExpenseAccounts {
+			// Skip placeholder accounts like "(no name)".
+			if isBlankName(a.Name) {
+				continue
+			}
 			fmt.Fprintf(&sb, "  - %s\n", a.Name)
 		}
 		sb.WriteString("\n")
@@ -136,7 +154,13 @@ func buildUserPrompt(req Request) string {
 
 	fmt.Fprintf(&sb, "Available categories:%s\n\n", formatCategories(req.Categories))
 	sb.WriteString("Transaction to classify:\n")
-	fmt.Fprintf(&sb, "  Destination: %s\n", req.DestinationName)
+	// When destination is a blank placeholder, show description instead
+	// so the LLM still has useful context.
+	dest := req.DestinationName
+	if isBlankName(dest) && req.Description != "" {
+		dest = req.Description
+	}
+	fmt.Fprintf(&sb, "  Destination: %s\n", dest)
 	fmt.Fprintf(&sb, "  Description: %s\n", req.Description)
 	if req.Amount != nil {
 		fmt.Fprintf(&sb, "  Amount: %.2f\n", *req.Amount)

@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Documentation &raquo; Firefly III AI Categorizer</title>
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/AdminLTE.min.css">
+    <link rel="stylesheet" href="/lightmode.css">
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:400&display=swap">
+
+    <style>
+        body.docs-page {
+            background: #f9fafc;
+        }
+        body.dark-mode.docs-page {
+            background: #353c42;
+        }
+        .docs-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px 20px 60px;
+        }
+        .docs-container h2 {
+            margin-top: 36px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #3c8dbc;
+        }
+        .docs-container h3 {
+            margin-top: 24px;
+            color: #555;
+        }
+        body.dark-mode .docs-container h3 {
+            color: #bec5cb;
+        }
+        .docs-container p,
+        .docs-container li {
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .docs-container ul {
+            padding-left: 20px;
+        }
+        .docs-container .step {
+            background: #fff;
+            border: 1px solid #d2d6de;
+            border-radius: 4px;
+            padding: 14px 18px;
+            margin: 12px 0;
+        }
+        body.dark-mode .docs-container .step {
+            background: #272c30;
+            border-color: #454e56;
+        }
+        .docs-container .step .step-num {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            background: #3c8dbc;
+            color: #fff;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+        .docs-container blockquote {
+            font-size: 13px;
+            border-left-color: #3c8dbc;
+        }
+        .docs-container img {
+            max-width: 100%;
+            border: 1px solid #d2d6de;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        body.dark-mode .docs-container img {
+            border-color: #454e56;
+        }
+        .docs-container code {
+            background: #f4f4f5;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        body.dark-mode .docs-container code {
+            background: #1f2327;
+            color: #c9d1d9;
+        }
+        .docs-container pre {
+            background: #f4f4f5;
+            border: none;
+            font-size: 13px;
+        }
+        body.dark-mode .docs-container pre {
+            background: #1f2327;
+            color: #c9d1d9;
+        }
+        .docs-container table {
+            font-size: 13px;
+        }
+        .docs-toc {
+            background: #fff;
+            border: 1px solid #d2d6de;
+            border-radius: 4px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+        }
+        body.dark-mode .docs-toc {
+            background: #272c30;
+            border-color: #454e56;
+        }
+        .docs-toc ul {
+            margin-bottom: 0;
+        }
+        .docs-toc a {
+            font-size: 13px;
+        }
+        .docs-back {
+            margin-bottom: 20px;
+        }
+        .docs-outcome {
+            display: flex;
+            gap: 12px;
+            margin: 12px 0;
+        }
+        .docs-outcome > div {
+            flex: 1;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .outcome-classified {
+            background: #dff0d8;
+            border: 1px solid #c3e6cb;
+        }
+        .outcome-assumed {
+            background: #fcf8e3;
+            border: 1px solid #faebcc;
+        }
+        .outcome-review {
+            background: #f2dede;
+            border: 1px solid #ebccd1;
+        }
+        body.dark-mode .outcome-classified {
+            background: #0a2115;
+            border-color: #004726;
+            color: #bec5cb;
+        }
+        body.dark-mode .outcome-assumed {
+            background: #2e2408;
+            border-color: #6b5000;
+            color: #bec5cb;
+        }
+        body.dark-mode .outcome-review {
+            background: #250a0a;
+            border-color: #6b3030;
+            color: #bec5cb;
+        }
+    </style>
+</head>
+
+<body class="skin-firefly-iii sidebar-mini hold-transition docs-page">
+    <script>
+        // Apply cached theme synchronously before first paint.
+        (function () {
+            var t = localStorage.getItem('ff3ai_theme');
+            var dark = t === 'dark' || (t === 'browser' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (dark) {
+                document.body.classList.add('dark-mode');
+                var l = document.createElement('link');
+                l.id = 'dark-theme-css';
+                l.rel = 'stylesheet';
+                l.href = '/darkmode.css';
+                document.head.appendChild(l);
+            }
+        })();
+    </script>
+
+    <div class="wrapper">
+        <header class="main-header">
+            <a href="/" class="logo">
+                <span class="logo-mini"><b>AI</b></span>
+                <span class="logo-lg"><b>Firefly</b>III&nbsp;AI</span>
+            </a>
+            <nav class="navbar navbar-static-top" role="navigation">
+                <div class="navbar-custom-menu">
+                    <ul class="nav navbar-nav">
+                        <li><a href="/"><i class="fa fa-arrow-left"></i> Back to App</a></li>
+                    </ul>
+                </div>
+            </nav>
+        </header>
+
+        <div class="content-wrapper">
+            <div class="docs-container">
+
+                <h1 style="margin-top:0"><i class="fa fa-question-circle" style="color:#3c8dbc"></i> Documentation</h1>
+                <p class="text-muted">A guide to setting up and using the Firefly III AI Categorizer.</p>
+
+                <!-- ═══════════ TABLE OF CONTENTS ═══════════ -->
+                <div class="docs-toc">
+                    <strong>Contents</strong>
+                    <ul>
+                        <li><a href="#overview">Overview</a></li>
+                        <li><a href="#setup">Setup</a></li>
+                        <li><a href="#pages">Using the application</a></li>
+                        <li><a href="#outcomes">The three-outcome classification model</a></li>
+                        <li><a href="#destination">Destination account matching</a></li>
+                        <li><a href="#batch">Batch &amp; transaction operations</a></li>
+                        <li><a href="#architecture">How it works</a></li>
+                    </ul>
+                </div>
+
+                <!-- ═══════════ OVERVIEW ═══════════ -->
+                <h2 id="overview">Overview</h2>
+                <p>
+                    The Firefly III AI Categorizer automatically classifies withdrawal transactions using an LLM
+                    (OpenAI, Gemini, DeepSeek, or a locally hosted model via Ollama). When Firefly III records a new
+                    withdrawal, it sends a webhook to the categorizer, which determines the best category and writes
+                    it back — all without manual intervention.
+                </p>
+                <p>Key features:</p>
+                <ul>
+                    <li><strong>Real-time webhook processing</strong> — new withdrawals are classified automatically as they are created.</li>
+                    <li><strong>Multiple AI providers</strong> — OpenAI, Google Gemini, DeepSeek, or any OpenAI-compatible endpoint (Ollama, Azure, etc.).</li>
+                    <li><strong>Three-outcome model</strong> — the AI tells you whether it is confident (CLASSIFIED), unsure (ASSUMED), or cannot classify (NEEDS REVIEW).</li>
+                    <li><strong>Web UI dashboard</strong> — real-time job monitoring, transaction browser, review queue, and full settings management.</li>
+                    <li><strong>Batch operations</strong> — classify all uncategorised withdrawals at once, or re-classify any selection of transactions.</li>
+                    <li><strong>History-aware classification</strong> — past categorised transactions are sent to the AI as examples. Repeated transactions from the same merchant are auto-matched without an AI call.</li>
+                    <li><strong>Destination account matching</strong> — the AI can also set the expense account (payee) for each withdrawal, and transactions miscategorised as "Transfers" can be converted into real transfers.</li>
+                    <li><strong>In-UI configuration</strong> — no need to restart; settings are saved through the web interface and persist across restarts.</li>
+                </ul>
+
+                <div class="alert alert-warning">
+                    <i class="fa fa-warning"></i> <strong>Security note:</strong> This application has no built-in authentication.
+                    Do not expose it directly to the internet. Run it on a private network or behind a reverse proxy with
+                    authentication (e.g. Nginx basic auth over HTTPS).
+                </div>
+
+                <!-- ═══════════ SETUP ═══════════ -->
+                <h2 id="setup">Setup</h2>
+
+                <div class="step">
+                    <span class="step-num">1</span> <strong>Run the server</strong>
+                    <p style="margin-top:8px">The recommended way is Docker Compose:</p>
+                    <pre><code>services:
+  categorizer:
+    image: ghcr.io/openaccountants/firefly-iii-ai-categorize:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./categorizer-data:/data</code></pre>
+                    <pre><code>docker compose up -d</code></pre>
+                    <p>Then open <code>http://localhost:3000</code>. You will be taken to the Settings page.</p>
+                    <img src="/docs/images/setup-docker.webp" alt="Docker Compose setup" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+                </div>
+
+                <div class="step">
+                    <span class="step-num">2</span> <strong>Connect to Firefly III</strong>
+                    <p style="margin-top:8px">
+                        In <strong>Settings → Firefly III Connection</strong>, enter your Firefly III URL and a
+                        Personal Access Token. To create a token, go to your Firefly III profile, open the
+                        <strong>OAuth</strong> tab, scroll to <strong>Personal Access Tokens</strong>, and click
+                        <strong>Create new token</strong>. Give it a name and copy the token — it is shown only once.
+                    </p>
+                    <p>Click <strong>Test connection</strong> to verify, then <strong>Save settings</strong>.</p>
+                    <img src="/docs/images/setup-pat.webp" alt="Firefly III Personal Access Token" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+                </div>
+
+                <div class="step">
+                    <span class="step-num">3</span> <strong>Configure an AI provider</strong>
+                    <p style="margin-top:8px">In <strong>Settings → AI Provider</strong>, choose a provider and enter your API key.</p>
+                    <ul>
+                        <li><strong>OpenAI</strong> — create a key at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>. Default model: <code>gpt-4o-mini</code>.</li>
+                        <li><strong>Google Gemini</strong> — get a key at <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a>. Default model: <code>gemini-2.5-flash</code>.</li>
+                        <li><strong>DeepSeek</strong> — create a key at <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a>. Default model: <code>deepseek-chat</code>.</li>
+                        <li><strong>Local (Ollama)</strong> — select OpenAI as the provider, set the <strong>Base URL</strong> to your Ollama endpoint (e.g. <code>http://localhost:11434/v1</code>), leave the API key blank, and set the model name.</li>
+                    </ul>
+                    <p>Click <strong>Save settings</strong> when done.</p>
+                    <img src="/docs/images/setup-provider.webp" alt="AI provider settings" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+                </div>
+
+                <div class="step">
+                    <span class="step-num">4</span> <strong>Set up the Firefly III webhook</strong>
+                    <p style="margin-top:8px">
+                        In Firefly III, go to <strong>Automation → Webhooks</strong> and click
+                        <strong>Create new webhook</strong>. Set the URL to
+                        <code>http://&lt;host&gt;:3000/webhook</code> and save.
+                    </p>
+                    <p>
+                        <strong>Note:</strong> Only withdrawal transactions without an existing category are processed.
+                        All other events are acknowledged and ignored.
+                    </p>
+                    <img src="/docs/images/setup-webhook.webp" alt="Firefly III webhook setup" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+                </div>
+
+                <div class="step">
+                    <span class="step-num">5</span> <strong>(Optional) Enable destination account matching</strong>
+                    <p style="margin-top:8px">
+                        In <strong>Settings → Behaviour</strong>, check <strong>Set destination account automatically</strong>.
+                        When enabled, the AI will also attempt to match or create an expense account (payee) for each
+                        withdrawal processed via webhook. On the Transactions page you can always choose whether to
+                        classify categories, set destinations, or both — regardless of this setting.
+                    </p>
+                </div>
+
+                <!-- ═══════════ USING THE APP ═══════════ -->
+                <h2 id="pages">Using the application</h2>
+
+                <h3>Jobs</h3>
+                <p>
+                    The <strong>Jobs</strong> tab shows a live feed of all classification activity. Each row shows the
+                    destination, description, amount, assigned category, and outcome. Click any row to expand and see
+                    the AI's reasoning, the raw prompt and response, and any assumptions it made.
+                </p>
+                <p>The summary bar at the top shows counts for each outcome.</p>
+                <img src="/docs/images/jobs_page.webp" alt="Jobs page" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+
+                <h3>Transactions</h3>
+                <p>
+                    The <strong>Transactions</strong> tab lets you browse all withdrawals. Use the date range and
+                    filters to narrow the list. Select one or more transactions, then use the
+                    <strong>Actions</strong> dropdown to:
+                </p>
+                <ul>
+                    <li><strong>Set Category</strong> — run the AI classifier to determine the best category.</li>
+                    <li><strong>Set Destination</strong> — run the AI to match or create an expense account.</li>
+                    <li><strong>Set Both</strong> — classify the category and match the destination in one pass.</li>
+                </ul>
+                <p>
+                    Use <strong>Select all</strong> to operate on every transaction in the current date range.
+                </p>
+                <p>
+                    Filters let you narrow by missing category, missing destination, a specific category or destination
+                    name (e.g. <code>(no name)</code>).
+                </p>
+                <img src="/docs/images/transactions_page.webp" alt="Transactions page" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+
+                <h3>Review</h3>
+                <p>
+                    The <strong>Review</strong> tab collects transactions the AI could not handle confidently. It is
+                    split into three sections:
+                </p>
+                <ul>
+                    <li>
+                        <strong>Review Categories</strong> — transactions flagged as <em>Needs Review</em> (the AI could
+                        not classify them) or <em>AI Assumed</em> (a best guess that should be confirmed). Select a
+                        category and optional destination account for each group, then click <strong>Apply</strong>.
+                        Use <strong>Skip</strong> to defer a group to the end of the queue.
+                    </li>
+                    <li>
+                        <strong>Review Destination Account</strong> — transactions where the AI assigned a destination
+                        account but was not fully confident. Review and correct the destination if needed.
+                    </li>
+                    <li>
+                        <strong>Review Conversion to Transfer</strong> — transactions categorized as "Transfers" that
+                        should actually be transfers between your own asset accounts. Select the destination asset
+                        account and click <strong>Convert to Transfer</strong> — the categorizer deletes the withdrawal
+                        and creates a proper transfer.
+                    </li>
+                </ul>
+                <p>The Review tab auto-refreshes every 30 seconds while you are on it.</p>
+                <img src="/docs/images/review_page.webp" alt="Review page" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+
+                <h3>Categories</h3>
+                <p>
+                    The <strong>Categories</strong> tab shows all categories from Firefly III that are visible to the AI.
+                    Categories with notes show their descriptions. The "Transfers" category is highlighted — transactions
+                    assigned to it are flagged for conversion on the Review page.
+                </p>
+                <img src="/docs/images/categories_page.webp" alt="Categories page" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+
+                <h3>Accounts</h3>
+                <p>
+                    The <strong>Accounts</strong> tab shows your expense accounts from Firefly III. These are the
+                    accounts the AI can match payees against when destination matching is active. You can refresh
+                    the list with the button in the top-right corner.
+                </p>
+
+                <h3>Settings</h3>
+                <p>
+                    The <strong>Settings</strong> tab is where you configure everything. Changes are saved to disk
+                    and take effect immediately without restarting. The <strong>Behaviour</strong> section lets you
+                    customize the tag prefix, provide additional context to the AI (e.g. "I have no business expenses"),
+                    and toggle destination matching. The <strong>Advanced</strong> section exposes tuning parameters
+                    for history context, worker concurrency, and batch throughput.
+                </p>
+                <img src="/docs/images/settings_page.webp" alt="Settings page" style="display:none" onload="this.style.display=this.naturalWidth?'':'none'">
+
+                <!-- ═══════════ THREE-OUTCOME MODEL ═══════════ -->
+                <h2 id="outcomes">The three-outcome classification model</h2>
+                <p>Every classification produces one of three outcomes:</p>
+
+                <div class="docs-outcome">
+                    <div class="outcome-classified">
+                        <strong><i class="fa fa-check-circle"></i> CLASSIFIED</strong><br>
+                        The AI is confident. The category is set and the transaction is tagged
+                        <code>&lt;prefix&gt;:classified</code>.
+                    </div>
+                    <div class="outcome-assumed">
+                        <strong><i class="fa fa-question-circle"></i> ASSUMED</strong><br>
+                        The AI is unsure but applies a conservative default. The category is set, the transaction is
+                        tagged <code>&lt;prefix&gt;:assumed</code>, and the AI's assumption is written to the notes.
+                        These appear on the Review page for confirmation.
+                    </div>
+                    <div class="outcome-review">
+                        <strong><i class="fa fa-flag-o"></i> NEEDS REVIEW</strong><br>
+                        The AI cannot classify this transaction. No category is set. The transaction is tagged
+                        <code>&lt;prefix&gt;:needs-review</code> and appears on the Review page for manual
+                        categorization.
+                    </div>
+                </div>
+
+                <p>
+                    The AI follows a conservative principle: when in doubt between two categories, it picks the one
+                    that is less favourable to you (e.g. personal over business expense). This way an incorrect
+                    ASSUMED classification does not mistakenly claim a deduction.
+                </p>
+
+                <p>
+                    When destination matching is enabled, the destination confidence is <strong>independent</strong> of
+                    the category confidence. A transaction can be CLASSIFIED for its category but ASSUMED for its
+                    destination — or vice versa.
+                </p>
+
+                <!-- ═══════════ DESTINATION MATCHING ═══════════ -->
+                <h2 id="destination">Destination account matching</h2>
+                <p>
+                    When destination matching is active, the AI also determines the expense account (payee) for each
+                    withdrawal:
+                </p>
+                <ul>
+                    <li>
+                        <strong>MATCH</strong> — the AI finds an existing expense account that corresponds to the
+                        merchant and links the transaction to it.
+                    </li>
+                    <li>
+                        <strong>CREATE</strong> — the AI is confident a new account is needed and creates it in
+                        Firefly III automatically. CREATE is only attempted when the destination confidence is
+                        CLASSIFIED.
+                    </li>
+                </ul>
+                <p>
+                    On the <strong>Review</strong> page, each review card includes a searchable destination account
+                    field. Typing a name that does not match any existing account shows a <strong>NEW</strong> badge,
+                    indicating a new expense account will be created when you apply. Transactions where the AI
+                    assigned a destination with low confidence appear in the dedicated
+                    <strong>Review Destination Account</strong> section.
+                </p>
+                <p>
+                    The <strong>Review Conversion to Transfer</strong> section shows transactions categorized as
+                    "Transfers". These are withdrawals that should actually be transfers between your own asset
+                    accounts. Select the destination asset account and the categorizer converts the withdrawal into
+                    a proper transfer, showing the source account so you can verify the direction of the transfer.
+                </p>
+
+                <!-- ═══════════ BATCH OPERATIONS ═══════════ -->
+                <h2 id="batch">Batch &amp; transaction operations</h2>
+                <p>
+                    The <strong>Transactions</strong> page is the central place for bulk operations:
+                </p>
+                <ul>
+                    <li>Filter by date range, missing category, missing destination, or a specific category/destination name.</li>
+                    <li>Select individual transactions, a full page, or <strong>all</strong> transactions in the current period.</li>
+                    <li>Use the <strong>Actions</strong> dropdown to run the AI on the selection with your choice of category-only, destination-only, or both.</li>
+                    <li>Monitor progress on the <strong>Jobs</strong> tab — each transaction becomes a job tracked in real time.</li>
+                </ul>
+
+                <p>
+                    You can also run a one-off batch from the command line:
+                </p>
+                <pre><code>./firefly-ai-categorize --batch</code></pre>
+                <p>This classifies all uncategorised withdrawals and exits without starting the web server.</p>
+
+                <!-- ═══════════ ARCHITECTURE ═══════════ -->
+                <h2 id="architecture">How it works</h2>
+                <pre style="font-size:13px;line-height:1.6"><code>POST /webhook  (Firefly III sends new transaction)
+        │
+        ▼
+  Validate: withdrawal, no existing category
+        │
+        ▼
+  Fetch history: recent categorised transactions (few-shot examples)
+        │
+        ▼
+  Fetch categories from Firefly III
+        │
+        ▼
+  Send to LLM with three-outcome prompt
+        │
+        ├── CLASSIFIED    → set category + tag ":classified"
+        ├── ASSUMED       → set category + tag ":assumed" + assumption in notes
+        └── NEEDS_REVIEW  → tag ":needs-review", no category set</code></pre>
+
+                <p>
+                    Results are written back to Firefly III with <code>fire_webhooks: false</code> to prevent
+                    re-triggering. When destination matching is enabled, the flow also fetches expense accounts
+                    and includes destination assignment in the AI prompt.
+                </p>
+
+                <p>
+                    Repeated transactions from the same merchant benefit from <strong>history-based matching</strong>:
+                    when enough past transactions agree on the same category (and destination), the AI call is
+                    skipped entirely. This reduces latency and API costs for recurring payments.
+                </p>
+
+                <p style="margin-top:40px;text-align:center">
+                    <a href="/" class="btn btn-primary"><i class="fa fa-arrow-left"></i> Back to application</a>
+                </p>
+
+            </div>
+        </div>
+
+        <footer class="main-footer">
+            <strong><a href="https://github.com/firefly-iii/firefly-iii">Firefly III</a></strong>
+            AI Categorizer &mdash; automated transaction classification.
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/js/adminlte.min.js"></script>
+</body>
+
+</html>
