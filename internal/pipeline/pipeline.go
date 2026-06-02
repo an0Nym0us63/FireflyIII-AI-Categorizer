@@ -71,8 +71,28 @@ func New(
 	}
 }
 
+// DestinationMatchEnabled returns whether destination matching is enabled in config.
+func (p *Pipeline) DestinationMatchEnabled() bool {
+	return p.destinationMatch
+}
+
+// RunOptions controls which parts of the pipeline execute.
+type RunOptions struct {
+	ClassifyCategory bool // if true, run category classification
+	MatchDestination bool // if true, run destination matching
+}
+
 // Run executes the full classification pipeline for a queued job.
 func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, splits []firefly.Split) error {
+	return p.RunWithOptions(ctx, j, transactionID, splits, RunOptions{
+		ClassifyCategory: true,
+		MatchDestination: p.destinationMatch,
+	})
+}
+
+// RunWithOptions executes the classification pipeline with fine-grained control
+// over which parts (category classification vs destination matching) are active.
+func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID string, splits []firefly.Split, opts RunOptions) error {
 	p.registry.SetInProgress(j.ID)
 
 	categories, err := p.getCategories(ctx)
@@ -87,7 +107,7 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 	}
 
 	var expenseAccounts []firefly.Account
-	if p.destinationMatch {
+	if opts.MatchDestination {
 		var err error
 		expenseAccounts, err = p.getExpenseAccounts(ctx)
 		if err != nil {
@@ -131,7 +151,8 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 	}
 
 	// If both category and destination have history matches, skip the LLM entirely.
-	if historyMatchCat != "" && (historyMatchDestID != "" || !p.destinationMatch) {
+	// Also skip when we only care about destination and it has a history match.
+	if (!opts.ClassifyCategory || historyMatchCat != "") && (historyMatchDestID != "" || !opts.MatchDestination) {
 		categoryID := ""
 		for _, c := range categories {
 			if c.Name == historyMatchCat {
@@ -146,6 +167,9 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 			CategoryID:    categoryID,
 			DestinationID: historyMatchDestID,
 			Reason:        reason,
+		}
+		if historyMatchDestID != "" {
+			outcome.DestConfidence = "CLASSIFIED"
 		}
 		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 			p.registry.SetFailed(j.ID, err.Error())
@@ -194,7 +218,8 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 		Amount:               j.Amount,
 		History:              promptHistory,
 		ExpenseAccounts:      clAccounts,
-		DestinationMatching:  p.destinationMatch,
+		DestinationMatching:  opts.MatchDestination,
+		CategoryOnly:         opts.ClassifyCategory && !opts.MatchDestination,
 	})
 	if err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
@@ -219,7 +244,7 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 
 	// Override category with history match when available — the LLM was only
 	// needed for destination (or the other way around).
-	if historyMatchCat != "" {
+	if opts.ClassifyCategory && historyMatchCat != "" {
 		for _, c := range categories {
 			if c.Name == historyMatchCat {
 				outcome.CategoryID = c.ID
@@ -250,6 +275,8 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 				slog.Warn("destination MATCH failed to find account", "name", result.Destination.Name)
 				destAccount = ""
 				destAction = ""
+			} else {
+				outcome.DestConfidence = result.Destination.Confidence
 			}
 		case "CREATE":
 			if result.Destination.Confidence != "CLASSIFIED" {
@@ -267,6 +294,7 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 				break
 			}
 			outcome.DestinationID = created.ID
+			outcome.DestConfidence = result.Destination.Confidence
 			slog.Info("created expense account", "name", created.Name, "id", created.ID)
 
 			// Append to in-memory cache so subsequent jobs in the same batch
@@ -281,6 +309,7 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 	// (or produced a weaker one) but history has a confident match.
 	if historyMatchDestID != "" && outcome.DestinationID == "" {
 		outcome.DestinationID = historyMatchDestID
+		outcome.DestConfidence = "CLASSIFIED"
 		destAction = "MATCH"
 		for _, a := range expenseAccounts {
 			if a.ID == historyMatchDestID {
@@ -299,7 +328,12 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 	finishedOutcome := string(result.Outcome)
 	finishedCategory := result.Category
 	finishedReason := result.Reason
-	if historyMatchCat != "" {
+	if !opts.ClassifyCategory {
+		finishedOutcome = string(classifier.Classified)
+		finishedCategory = ""
+		finishedReason = "Destination-only matching (category not evaluated)."
+	}
+	if opts.ClassifyCategory && historyMatchCat != "" {
 		finishedOutcome = string(classifier.Classified)
 		finishedCategory = historyMatchCat
 		finishedReason = outcome.Reason
@@ -318,10 +352,10 @@ func (p *Pipeline) Run(ctx context.Context, j *job.Job, transactionID string, sp
 	)
 
 	cachedCategory := finishedCategory
-	if cachedCategory == "" {
+	if cachedCategory == "" && opts.ClassifyCategory {
 		cachedCategory = result.Category
 	}
-	if cachedCategory != "" {
+	if cachedCategory != "" || opts.MatchDestination {
 		p.cache.Append(classifier.HistoricalEntry{
 			TransactionID:        transactionID,
 			DestinationName:      j.DestinationName,

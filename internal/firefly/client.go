@@ -292,6 +292,15 @@ func (c *Client) GetAssumedWithdrawals(ctx context.Context) ([]Transaction, erro
 	})
 }
 
+// GetDestAssumedWithdrawals fetches all withdrawals tagged with the dest-assumed tag.
+func (c *Client) GetDestAssumedWithdrawals(ctx context.Context) ([]Transaction, error) {
+	params := url.Values{"type": {"withdrawal"}}
+	tag := c.tagPrefix + ":dest-assumed"
+	return c.fetchTransactions(ctx, params, func(s Split) bool {
+		return contains(s.Tags, tag)
+	})
+}
+
 // ApplyHumanCategory sets a category on a previously-flagged transaction.
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
 // When destinationID is non-empty, it also sets the destination expense account.
@@ -299,6 +308,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 	aiOutcomeTags := map[string]bool{
 		c.tagPrefix + ":needs-review": true,
 		c.tagPrefix + ":assumed":      true,
+		c.tagPrefix + ":dest-assumed": true,
 	}
 	reviewedTag := c.tagPrefix + ":reviewed"
 
@@ -424,6 +434,13 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		copy(tags, s.Tags)
 		if !contains(tags, tag) {
 			tags = append(tags, tag)
+		}
+		// When destination was assumed (not classified), tag it for human review.
+		if outcome.DestConfidence == "ASSUMED" && outcome.DestinationID != "" {
+			destTag := c.tagPrefix + ":dest-assumed"
+			if !contains(tags, destTag) {
+				tags = append(tags, destTag)
+			}
 		}
 
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}

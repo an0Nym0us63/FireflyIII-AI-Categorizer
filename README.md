@@ -2,27 +2,30 @@
 
 Automatically categorise transactions in [Firefly III](https://www.firefly-iii.org/) using an LLM — choose from OpenAI, Gemini, DeepSeek, or locally hosted. New withdrawals are classified into one of three outcomes and written back without any manual intervention. Process transactions automatically using a Firefly III webhook, or use the web interface to mass categorize transactions.
 
-<img width="100%" alt="Jobs page" src="https://github.com/user-attachments/assets/c6bdae2f-ff83-4c08-8c52-0aa100263e3d" />
+<img width="100%" alt="Jobs page" src="public/docs/images/jobs_page.webp" />
 
 <p>
-  <img width="49.5%" alt="Transactions page" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
-  <img width="49.5%" alt="Settings page" src="https://github.com/user-attachments/assets/7e061547-65ac-402a-90be-6a3b1699a640" />
+  <img width="49.5%" alt="Transactions page" src="public/docs/images/transactions_page.webp" />
+  <img width="49.5%" alt="Settings page" src="public/docs/images/settings_page.webp" />
 </p>
 
 ---
 
-## Changes from the original
+## Features
 
 The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), whose author archived the project. [openaccountants/firefly-iii-ai-categorize](https://github.com/openaccountants/firefly-iii-ai-categorize) forked it and introduced the three-outcome classification model. This project is a fork of that fork, rewritten from scratch with a new UI and additional features:
 
-- **Web UI.** A built-in dashboard, that follows Firefly III design styles, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a page to review AI categorisation decisions, and a full settings page.
+- **Web UI.** A built-in dashboard, styled to match Firefly III's AdminLTE theme with light and dark mode support, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a review page for AI decisions, and a full settings page.
 - **Multiple AI providers.** Supports OpenAI (and any OpenAI-compatible endpoint such as Ollama or Azure OpenAI), Google Gemini, and DeepSeek — switchable from the settings page.
 - **Batch categorisation.** All uncategorised withdrawals can be classified in one operation from the UI or the command line.
-- **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level rather than silently guessing or doing nothing.
+- **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level (`CLASSIFIED`, `ASSUMED`, `NEEDS_REVIEW`) rather than silently guessing or doing nothing.
 - **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants. Repeated transactions from the same vendor are categorised automatically, skipping the AI calls entirely.
-- **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts.
+- **In-UI configuration.** All settings, including credentials, are saved through the web interface and persisted to disk across restarts. A custom context field lets you provide additional guidance to the AI (e.g., "I have no business expenses").
+- **Destination account matching.** When enabled, the AI matches withdrawals to existing expense accounts or creates new ones automatically, with independent confidence levels for category and destination. The Review page provides a searchable dropdown to correct or create destination accounts manually. Transactions miscategorised as "Transfers" can be converted into real asset-account transfers.
+- **Manual review workflow.** The Review tab groups unconfident classifications by merchant, with the AI's best guess pre-selected in a dropdown. Apply, skip, or correct per group — and when destination matching is on, set or create the payee alongside the category.
+- **Transaction converter.** Withdrawals the AI flags as potential transfers between your own asset accounts appear in a "Convert to Transfers" panel on the Review page. Select a destination asset account and the categorizer deletes the withdrawal and creates a proper transfer — preserving the amount, date, and description.
+- **In-app help page.** A built-in documentation tab walks through setup, features, and configuration with step-by-step instructions and screenshots, so you don't need to leave the app.
 - **Rewritten in Go.** The Node.js/Express server has been replaced with a compiled Go binary, reducing resource usage and removing the Node.js runtime dependency.
-- **Destination account matching.** When enabled, the AI can match withdrawals to existing expense accounts or create new ones automatically. The Review page provides a searchable dropdown to correct or create destination accounts manually, and transactions miscategorised as "Transfers" can be converted into real transfer transactions between asset accounts.
 
 ---
 
@@ -112,7 +115,7 @@ To classify existing uncategorised transactions, use the **Batch Classification*
 
 You can also select individaul transactions or *all* transactions on the **Transactions** page and force them to be re-categorized.
 
-<img width="100%" alt="Transactions page showing categorised results" src="https://github.com/user-attachments/assets/911cd45b-8047-4c78-b297-c1b13e705e21" />
+<img width="100%" alt="Transactions page showing categorised results" src="public/docs/images/transactions_page.webp" />
 
 The **Transactions** tab lets you browse withdrawals, filter by date, and manually trigger re-classification on any selection.
 
@@ -141,14 +144,29 @@ POST /webhook  (Firefly III sends new transaction)
   Fetch categories from Firefly III
         │
         ▼
+  (Optional) Fetch expense accounts (destination matching)
+        │
+        ▼
   Send to LLM with three-outcome prompt
         │
-        ├── CLASSIFIED   → set category + tag "ai:classified"
-        ├── ASSUMED      → set category + tag "ai:assumed" + assumption in notes
-        └── NEEDS_REVIEW → tag "ai:needs-review", no category set
+        ├── CLASSIFIED    → set category + tag "ai:classified"
+        │                    └── destination → MATCH existing or CREATE new
+        ├── ASSUMED       → set category + tag "ai:assumed" + assumption
+        │                    └── destination → MATCH existing or CREATE new
+        └── NEEDS_REVIEW  → tag "ai:needs-review", no category set
+                             └── destination → may still be assigned
 ```
 
-Results are written back to Firefly III with `fire_webhooks: false` to prevent re-triggering.
+Results are written back to Firefly III with `fire_webhooks: false` to prevent
+re-triggering. When destination matching is enabled, the flow also fetches
+expense accounts and the LLM attempts to match or create a destination account
+alongside the category. Destination confidence is independent of category
+confidence — a transaction can be CLASSIFIED for its category but ASSUMED for
+its destination, or vice versa.
+
+Repeated transactions from the same merchant benefit from **history-based
+matching**: when enough past transactions agree on the same category and
+destination, the AI call is skipped entirely, reducing latency and API costs.
 
 ---
 

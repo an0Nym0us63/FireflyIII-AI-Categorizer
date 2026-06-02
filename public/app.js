@@ -8,16 +8,21 @@ $(document).on('expanded.pushMenu', function () {
 
 // ─── State ─────────────────────────────────────────────────────────────────
 var jobs = {};
-var pendingDryRunCount = 0;
 var txnPage = 1, txnTotalPages = 1, txnTotal = 0;
 var selectedTxns = new Set();
+var cachedCategories = null; // {html, data} — rendered cache for instant display
+var cachedAccounts = null;   // {html, data} — rendered cache for instant display
+var reviewAccountsFetching = false; // prevents duplicate account fetches
+var reviewPollTimer = null;  // interval ID for background review polling
 
 // ─── Tab navigation ─────────────────────────────────────────────────────────
 var TAB_META = {
     jobs: {title: 'Jobs', sub: 'Recent classification activity'},
     transactions: {title: 'Transactions', sub: 'Select and re-categorize transactions'},
-    review: {title: 'Review', sub: 'Transactions requiring human categorization'},
+    review: {title: 'Review', sub: 'Review categories, destinations, and conversions'},
     categories: {title: 'Categories', sub: 'Categories available to the AI'},
+    accounts: {title: 'Accounts', sub: 'Expense accounts for destination matching'},
+    help: {title: 'Help', sub: 'Documentation and setup guide'},
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
 
@@ -30,13 +35,30 @@ function switchTab(name) {
     document.getElementById('page-title').innerHTML = esc(m.title) + ' <small>' + esc(m.sub) + '</small>';
     document.getElementById('breadcrumb-leaf').textContent = m.title;
     if (name === 'settings') loadSettings();
-    if (name === 'categories') loadCategories();
+    if (name === 'transactions') populateTxnCatFilter();
+    if (name === 'categories') {
+        if (cachedCategories) { renderCachedCategories(); }
+        loadCategories();
+    }
+    if (name === 'accounts') {
+        if (cachedAccounts) { renderCachedAccounts(); }
+        loadAccounts();
+    }
+    // Manage review auto-polling.
+    if (reviewPollTimer) { clearInterval(reviewPollTimer); reviewPollTimer = null; }
     if (name === 'review') {
-        // Show the transfer box immediately when destination matching is enabled,
-        // before the async loadReview completes.
-        document.getElementById('row-transfers').style.display =
-            savedConfig.destination_match_enabled ? '' : 'none';
+        // Show transfer section immediately.
+        document.getElementById('review-section-transfers').style.display = '';
         loadReview();
+        // Poll every 30 seconds for new items to review.
+        reviewPollTimer = setInterval(function () {
+            if (document.getElementById('tab-review').style.display === 'none') {
+                clearInterval(reviewPollTimer);
+                reviewPollTimer = null;
+                return;
+            }
+            loadReview(true);
+        }, 30000);
     }
     return false;
 }
@@ -271,52 +293,58 @@ async function retryJob(jobId, transactionId, btn) {
     }
 }
 
-// ─── Batch ─────────────────────────────────────────────────────────────────
-async function dryRun() {
-    $('#btn-dry-run').prop('disabled', true);
-    $('#batch-status').html('<i class="fa fa-spinner fa-spin"></i> Checking&hellip;');
-    try {
-        var res = await fetch('/batch/run', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({filter: {uncategorized_only: true}, dry_run: true})
-        });
-        if (res.status === 503) {
-            $('#batch-status').html('<span class="text-warning"><i class="fa fa-warning"></i> Not configured &mdash; check Settings.</span>');
-            return;
-        }
-        var d = await res.json();
-        pendingDryRunCount = d.matching;
-        $('#batch-status').html('<span class="text-muted">' + d.matching + ' uncategorized transaction(s) found.</span>');
-        $('#btn-batch').prop('disabled', d.matching === 0);
-    } catch (e) {
-        $('#batch-status').html('<span class="text-danger">' + esc(e.message) + '</span>');
-    } finally {
-        $('#btn-dry-run').prop('disabled', false);
-    }
-}
-
-function confirmBatch() {
-    showModal('Run batch classification',
-        'Classify ' + pendingDryRunCount + ' uncategorized transaction(s) using the configured AI provider? This action cannot be undone.',
-        async function () {
-            $('#btn-batch').prop('disabled', true);
-            $('#batch-status').html('<i class="fa fa-spinner fa-spin"></i> Submitting&hellip;');
-            var res = await fetch('/batch/run', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filter: {uncategorized_only: true}})
-            });
-            var d = await res.json();
-            $('#batch-status').html('<span class="text-muted">' + d.enqueued + ' job(s) enqueued.</span>');
-        });
-}
-
 // ─── Transactions ──────────────────────────────────────────────────────────
 function txnFlash(msg, type) {
     var el = document.getElementById('txn-flash');
     if (!msg) {el.innerHTML = ''; return;}
     el.innerHTML = '<div class="row"><div class="col-md-12"><div class="alert alert-' + type + '">' + msg + '</div></div></div>';
+}
+
+// Populate the category filter dropdown from cached categories or fetch fresh.
+async function populateTxnCatFilter() {
+    var sel = document.getElementById('txn-filter-category');
+    var currentVal = sel.value;
+    try {
+        var res = await fetch('/api/categories');
+        if (!res.ok) return;
+        var cats = await res.json();
+        sel.innerHTML = '<option value="">— all categories —</option>';
+        cats.forEach(function (c) {
+            sel.innerHTML += '<option value="' + esc(c.name) + '">' + esc(c.name) + '</option>';
+        });
+        sel.value = currentVal;
+    } catch (e) {}
+}
+
+// Prevent conflicting destination filters: when "Missing destination" is
+// checked, disable the destination text input and clear it.
+function onMissingDestChange() {
+    var checked = $('#txn-filter-missing-dest').prop('checked');
+    var input = $('#txn-filter-dest');
+    if (checked) {
+        input.val('').prop('disabled', true);
+    } else {
+        input.prop('disabled', false);
+    }
+}
+
+// When "Missing category" is checked, disable the category select.
+function onMissingCatChange() {
+    var checked = $('#txn-filter-missing-cat').prop('checked');
+    var sel = $('#txn-filter-category');
+    if (checked) {
+        sel.val('').prop('disabled', true);
+    } else {
+        sel.prop('disabled', false);
+    }
+}
+
+function clearTxnFilters() {
+    $('#txn-filter-category').val('').prop('disabled', false);
+    $('#txn-filter-dest').val('').prop('disabled', false);
+    $('#txn-filter-missing-cat').prop('checked', false);
+    $('#txn-filter-missing-dest').prop('checked', false);
+    loadTransactions();
 }
 
 async function loadTransactions(page) {
@@ -326,6 +354,12 @@ async function loadTransactions(page) {
     var params = new URLSearchParams({page: page, limit: 50});
     if (start) params.set('start', start);
     if (end) params.set('end', end);
+    if ($('#txn-filter-missing-cat').prop('checked')) params.set('missing_category', 'true');
+    if ($('#txn-filter-missing-dest').prop('checked')) params.set('missing_destination', 'true');
+    var destFilter = $('#txn-filter-dest').val().trim();
+    if (destFilter) params.set('destination', destFilter);
+    var catFilter = $('#txn-filter-category').val();
+    if (catFilter) params.set('category', catFilter);
     txnFlash('', '');
     $('#txn-select-all-bar').hide();
     $('#txn-select-all').prop('checked', false);
@@ -413,11 +447,16 @@ function toggleSelectAll(master) {
         if (master.checked) {selectedTxns.add(id); $(this).closest('tr').addClass('selected'); pageIds.push(id);}
         else {selectedTxns.delete(id); $(this).closest('tr').removeClass('selected');}
     });
-    // Show "select all pages" banner when all visible rows are selected and there are more pages
+    // Reset bar to the initial "select all" prompt (not the post-selectAllPages state).
     if (master.checked && txnTotalPages > 1) {
         $('#txn-page-count').text(pageIds.length);
         $('#txn-all-count').text(txnTotal);
-        $('#txn-select-all-bar').show();
+        $('#txn-select-all-bar').html(
+            'All <strong id="txn-page-count">' + pageIds.length + '</strong> transactions on this page are selected.'
+            + ' &nbsp;<a href="#" onclick="selectAllPages();return false">Select all <strong id="txn-all-count">'
+            + txnTotal + '</strong> transactions in this period</a>'
+            + ' &nbsp;&mdash;&nbsp;<a href="#" onclick="clearSelection();return false">Clear selection</a>'
+        ).show();
     } else {
         $('#txn-select-all-bar').hide();
     }
@@ -429,6 +468,12 @@ async function selectAllPages() {
     var params = new URLSearchParams({ids_only: 'true'});
     if (start) params.set('start', start);
     if (end) params.set('end', end);
+    if ($('#txn-filter-missing-cat').prop('checked')) params.set('missing_category', 'true');
+    if ($('#txn-filter-missing-dest').prop('checked')) params.set('missing_destination', 'true');
+    var destFilter = $('#txn-filter-dest').val().trim();
+    if (destFilter) params.set('destination', destFilter);
+    var catFilter = $('#txn-filter-category').val();
+    if (catFilter) params.set('category', catFilter);
     $('#txn-select-all-bar').html('<i class="fa fa-spinner fa-spin"></i> Fetching all transaction IDs&hellip;');
     try {
         var res = await fetch('/api/transactions?' + params);
@@ -454,7 +499,12 @@ function clearSelection() {
     selectedTxns.clear();
     $('#txn-tbody input[type=checkbox]').prop('checked', false).closest('tr').removeClass('selected');
     $('#txn-select-all').prop('checked', false);
-    $('#txn-select-all-bar').hide();
+    $('#txn-select-all-bar').hide().html(
+        'All <strong id="txn-page-count"></strong> transactions on this page are selected.'
+        + ' &nbsp;<a href="#" onclick="selectAllPages();return false">Select all <strong id="txn-all-count">'
+        + '</strong> transactions in this period</a>'
+        + ' &nbsp;&mdash;&nbsp;<a href="#" onclick="clearSelection();return false">Clear selection</a>'
+    );
     updateTxnSel();
 }
 
@@ -464,17 +514,22 @@ function updateTxnSel() {
     $('#btn-recategorize').prop('disabled', n === 0);
 }
 
-async function recategorizeSelected() {
+async function recategorizeSelected(mode) {
+    if (!mode) mode = 'classify';
     var ids = Array.from(selectedTxns);
     if (!ids.length) return;
-    showModal('Re-categorize transactions',
-        'Run AI classification on ' + ids.length + ' selected transaction(s)? Existing categories will be replaced.',
+    var labels = {classify: 'Set Category', destination: 'Set Destination', both: 'Set Both'};
+    var desc = {classify: 'classify categories', destination: 'match destination accounts', both: 'classify categories and match destinations'};
+    var modeLabel = labels[mode] || 'Process';
+    var modeDesc = desc[mode] || 'process';
+    showModal(modeLabel + ' transactions',
+        'Run AI to ' + modeDesc + ' on ' + ids.length + ' selected transaction(s)? Existing data will be replaced.',
         async function () {
             txnFlash('<i class="fa fa-spinner fa-spin"></i> Submitting ' + ids.length + ' job(s)&hellip;', 'info');
             var res = await fetch('/batch/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filter: {transaction_ids: ids}, force: true})
+                body: JSON.stringify({filter: {transaction_ids: ids}, force: true, mode: mode})
             });
             if (!res.ok) {txnFlash('<i class="fa fa-times"></i> Error: ' + esc(await res.text()), 'danger'); return;}
             var d = await res.json();
@@ -504,22 +559,24 @@ var pendingAccounts = []; // [{name}], new accounts typed on this page (not yet 
 var allReviewGroups = []; // the live queue; submitted groups are removed, skipped groups cycle to end
 var REVIEW_BATCH_SIZE = 8;
 
-async function loadReview() {
+async function loadReview(silent) {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
-    actionBar.style.display = 'none';
-    hideReviewProcessingBar();
     var transferBody = document.getElementById('transfer-body');
-    transferBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    var transferSection = document.getElementById('review-section-transfers');
+    if (!silent) {
+        body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+        actionBar.style.display = 'none';
+        hideReviewProcessingBar();
+        transferBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    }
     try {
         var catRes = fetch('/api/categories');
         var reviewRes = fetch('/api/review');
-        var destMatch = savedConfig.destination_match_enabled;
-        var acctRes = destMatch ? fetch('/api/accounts') : null;
+        var acctRes = fetch('/api/accounts');
         catRes = await catRes;
         reviewRes = await reviewRes;
-        if (acctRes) acctRes = await acctRes;
+        acctRes = await acctRes;
 
         if (catRes.status === 503 || reviewRes.status === 503) {
             body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
@@ -530,7 +587,7 @@ async function loadReview() {
 
         reviewCategories = await catRes.json();
         allReviewGroups = (await reviewRes.json()) || [];
-        reviewAccounts = (destMatch && acctRes && acctRes.ok) ? (await acctRes.json()) || [] : [];
+        reviewAccounts = (acctRes.ok) ? (await acctRes.json()) || [] : [];
 
         updateReviewBadge();
         renderCurrentBatch();
@@ -543,9 +600,9 @@ function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
     var transferBody = document.getElementById('transfer-body');
-    var transferRow = document.getElementById('row-transfers');
+    var transferSection = document.getElementById('review-section-transfers');
 
-    // Split groups by outcome.
+    // Split groups by outcome. DEST_ASSUMED stays in the main review.
     var reviewGroups = allReviewGroups.filter(function (g) {
         return g.outcome !== 'TRANSFER_CATEGORY';
     });
@@ -559,29 +616,23 @@ function renderCurrentBatch() {
     reviewDestFocused = {};
     pendingAccounts = [];
 
-    // Review section.
+    // Main Review section
     if (batch.length) {
         body.innerHTML = renderReviewGroups(batch);
         actionBar.style.display = '';
         updateSubmitBar();
-    } else if (transferGroups.length) {
-        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review!</div>';
-        actionBar.style.display = 'none';
     } else {
-        body.innerHTML = '<div class="alert alert-success"><i class="fa fa-check-circle"></i> No transactions need review &mdash; all caught up!</div>';
+        body.innerHTML = '<p class="text-muted">No transactions need review &mdash; all caught up!</p>';
         actionBar.style.display = 'none';
     }
 
-    // Transfer section — always visible when destination matching is enabled.
-    var destMatch = savedConfig.destination_match_enabled;
+    // Transfer section
     if (transferGroups.length) {
-        transferRow.style.display = '';
+        transferSection.style.display = '';
         transferBody.innerHTML = renderTransferSection(transferGroups);
-    } else if (destMatch) {
-        transferRow.style.display = '';
-        transferBody.innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
     } else {
-        transferRow.style.display = 'none';
+        transferSection.style.display = '';
+        transferBody.innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
     }
 
     updateProgressIndicator();
@@ -638,6 +689,7 @@ function resolveGroupLabel(g) {
 function renderReviewGroups(groups) {
     var needsReview = groups.filter(function (g) { return g.outcome === 'NEEDS_REVIEW'; });
     var assumed = groups.filter(function (g) { return g.outcome === 'ASSUMED'; });
+    var destAssumed = groups.filter(function (g) { return g.outcome === 'DEST_ASSUMED'; });
     var html = '';
 
     if (needsReview.length) {
@@ -658,6 +710,16 @@ function renderReviewGroups(groups) {
             + '</div>';
     }
 
+    if (destAssumed.length) {
+        var prev = needsReview.length || assumed.length;
+        html += '<p class="review-section-header"' + (prev ? ' style="margin-top:20px"' : '') + '>'
+            + '<i class="fa fa-building-o text-warning"></i> <strong>Destination Assumed</strong>'
+            + ' <span class="text-muted">&mdash; The AI assigned a destination but is not fully confident. Review and correct if needed.</span></p>'
+            + '<div class="review-groups-grid" id="grid-dest-assumed">'
+            + destAssumed.map(function (g) { return renderDestReviewGroup(g); }).join('')
+            + '</div>';
+    }
+
     return html;
 }
 
@@ -667,9 +729,99 @@ function renderTransferSection(groups) {
     if (!groups.length) return '';
     return '<p class="review-section-header">'
         + '<i class="fa fa-exchange text-info"></i> <strong>Categorized as &quot;Transfers&quot;</strong>'
-        + ' <span class="text-muted">&mdash; Convert to actual transfer transactions by selecting a destination asset account.</span></p>'
+        + ' <span class="text-muted">&mdash; Convert these withdrawals to actual transfer transactions by selecting a destination asset account. The source account is shown for each group.</span></p>'
         + '<div class="review-groups-grid" id="grid-transfers">'
         + groups.map(function (g) { return renderTransferGroup(g); }).join('')
+        + '</div>';
+}
+
+function renderDestReviewGroup(g) {
+    var gi = reviewGroupCounter++;
+    reviewGroupMap[gi] = g;
+    var resolved = resolveGroupLabel(g);
+    var count = (g.transactions || []).length;
+    var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+
+    var txnRows = (g.transactions || []).map(function (t) {
+        var date = t.date ? t.date.substring(0, 10) : '—';
+        var amount = isNaN(parseFloat(t.amount)) ? '—' : parseFloat(t.amount).toFixed(2);
+        return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;padding:3px 6px">' + esc(date) + '</td>'
+            + '<td class="text-right" style="font-size:12px;padding:3px 6px">' + amount + '</td>'
+            + '</tr>';
+    }).join('');
+
+    var sub = resolved.sub
+        ? ' <small style="font-weight:normal;color:#999">' + esc(resolved.sub) + '</small>' : '';
+
+    // AI's assumed destination guess (name from the expense account).
+    var currentDestID = g.destination_account_id || '';
+    var currentDestName = g.destination_name || '';
+    for (var i = 0; i < reviewAccounts.length; i++) {
+        if (reviewAccounts[i].id === currentDestID) {
+            currentDestName = reviewAccounts[i].name;
+            break;
+        }
+    }
+
+    var catOptions = '<option value="" disabled selected hidden>—</option>'
+        + reviewCategories.map(function (c) {
+            var sel = (g.category_id && c.id === g.category_id) ? ' selected' : '';
+            return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
+        }).join('');
+
+    // Build destination input.
+    var matchedAttr = currentDestID ? ' data-matched-id="' + esc(currentDestID) + '"' : '';
+    var acctDataOptions = reviewAccounts.map(function (a) {
+        return '<option value="' + esc(a.name) + '" data-id="' + esc(a.id) + '">';
+    }).join('')
+        + pendingAccounts.map(function (a) {
+            return '<option value="' + esc(a.name) + '" data-id="new:' + esc(a.name) + '">';
+        }).join('');
+
+    var destHint = currentDestName
+        ? '<p style="font-size:12px;margin:0 0 6px;color:#8a6d3b"><i class="fa fa-magic"></i> AI assumed destination: <strong>' + esc(currentDestName) + '</strong> &mdash; correct below if needed.</p>'
+        : '';
+
+    return '<div class="box box-default review-group" id="review-group-' + gi + '"'
+        + ' data-ids="' + esc(idsJson) + '" data-count="' + count + '">'
+        + '<div class="box-header with-border review-group-header">'
+        + '<span class="review-group-title">' + esc(resolved.label) + sub
+        + ' <span class="label label-warning" style="font-size:10px;font-weight:normal;margin-left:3px">'
+        + count + '</span></span>'
+        + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — review later">'
+        + '<i class="fa fa-clock-o"></i> Skip'
+        + '</button>'
+        + '</div>'
+        + '<div class="box-body review-group-body">'
+        + destHint
+        + '<table class="table table-condensed" style="margin-bottom:6px">'
+        + '<tbody>' + txnRows + '</tbody>'
+        + '</table>'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+        + '<i class="fa fa-bookmark-o"></i> Category</label>'
+        + '<select class="form-control input-sm" id="review-cat-' + gi + '" onchange="updateSubmitBar();onReviewCatChange(' + gi + ')">'
+        + catOptions
+        + '</select>'
+        + '<div style="margin-top:8px" class="review-dest-container">'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px">'
+        + '<i class="fa fa-building-o"></i> Destination Account'
+        + ' <span style="font-weight:400;color:#848484">(expense / payee)</span></label>'
+        + '<div style="display:flex;gap:6px;align-items:center">'
+        + '<input type="text" class="form-control input-sm" id="review-dest-' + gi + '"'
+        + ' list="review-dest-list-' + gi + '" placeholder="Search or type a new account…"'
+        + ' value="' + esc(currentDestName) + '"' + matchedAttr
+        + ' onfocus="onReviewDestFocus(' + gi + ')"'
+        + ' oninput="onReviewDestInput(' + gi + ')"'
+        + ' onblur="onReviewDestBlur(' + gi + ')"'
+        + ' style="flex:1">'
+        + '<datalist id="review-dest-list-' + gi + '">' + acctDataOptions + '</datalist>'
+        + '<span id="review-dest-badge-' + gi + '" class="label label-info"'
+        + ' style="display:none;flex-shrink:0;font-size:10px;white-space:nowrap">'
+        + '<i class="fa fa-plus-circle"></i> NEW</span>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
         + '</div>';
 }
 
@@ -679,6 +831,7 @@ function renderTransferGroup(g) {
     var resolved = resolveGroupLabel(g);
     var count = (g.transactions || []).length;
     var idsJson = JSON.stringify((g.transactions || []).map(function (t) { return t.id; }));
+    var sourceName = g.source_name || '';
 
     var txnRows = (g.transactions || []).map(function (t, idx) {
         var date = t.date ? t.date.substring(0, 10) : '—';
@@ -722,6 +875,8 @@ function renderTransferGroup(g) {
         + '</button>'
         + '</div>'
         + '<div class="box-body review-group-body">'
+        + (sourceName ? '<p style="font-size:12px;margin:0 0 6px;color:#848484">'
+            + '<i class="fa fa-arrow-right"></i> From: <strong>' + esc(sourceName) + '</strong></p>' : '')
         // Collapsed view: summary table + single destination input.
         + '<div id="transfer-collapsed-' + gi + '">'
         + '<table class="table table-condensed" style="margin-bottom:6px">'
@@ -911,9 +1066,9 @@ async function convertToTransfer(gi) {
         setTimeout(function () {
             el.remove();
             updateReviewBadge();
-            // Hide the transfer box if no more transfer groups remain.
+            // Show empty message if no more transfer groups remain.
             if (!document.querySelector('#grid-transfers .review-group')) {
-                document.getElementById('row-transfers').style.display = 'none';
+                document.getElementById('transfer-body').innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
             }
         }, 1500);
     } else {
@@ -952,9 +1107,19 @@ function renderReviewGroup(g, isAssumed) {
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
         }).join('');
 
-    // Destination account controls (only when enabled).
+    // Destination account controls — always available for manual review.
     var destHtml = '';
-    if (reviewAccounts.length) {
+    {
+        // Fetch accounts on demand if not loaded yet.
+        if (!reviewAccounts.length && !reviewAccountsFetching) {
+            reviewAccountsFetching = true;
+            fetch('/api/accounts').then(function (r) { return r.ok ? r.json() : []; }).then(function (accts) {
+                reviewAccounts = accts || [];
+                reviewAccountsFetching = false;
+                // Re-render the current batch to show the destination controls.
+                renderCurrentBatch();
+            }).catch(function () { reviewAccountsFetching = false; });
+        }
         // Find the current destination name for pre-filling.
         var currentDestID = g.destination_account_id || '';
         var currentDestName = '';
@@ -1140,9 +1305,9 @@ function skipReviewGroup(gi) {
         }
     }
     el.remove();
-    // Hide transfer box if the skipped group was the last transfer.
+    // Update transfer section content if the skipped group was the last transfer.
     if (!document.querySelector('#grid-transfers .review-group')) {
-        document.getElementById('row-transfers').style.display = 'none';
+        document.getElementById('transfer-body').innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
     }
     if (!document.querySelector('.review-group')) {
         renderCurrentBatch();
@@ -1245,78 +1410,100 @@ async function submitAllReview() {
 }
 
 // ─── Categories ────────────────────────────────────────────────────────────
-async function loadCategories() {
-    // Always load categories.
-    var catBody = document.getElementById('cat-body');
-    catBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+function buildCategoriesHTML(cats) {
+    if (!cats || !cats.length) {
+        return '<p class="text-muted">No categories found in Firefly III.</p>';
+    }
+    var html = '<div style="margin-bottom:12px">';
+    cats.forEach(function (c) {
+        var isTransfer = c.name.toLowerCase() === 'transfers';
+        var chipCls = isTransfer ? ' cat-chip-transfer' : '';
+        var icon = isTransfer
+            ? '<i class="fa fa-exchange" style="margin-right:5px"></i>'
+            : '<i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>';
+        html += '<span class="cat-chip' + chipCls + '">' + icon
+            + esc(c.name)
+            + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
+            + '</span>';
+    });
+    html += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
+        + cats.length + ' categories available to the AI.</small></p>';
+    return html;
+}
 
-    // Load expense accounts only when destination matching is enabled.
-    var destMatch = savedConfig.destination_match_enabled;
-    var acctBody = document.getElementById('acct-body');
-    var acctRow = document.getElementById('row-destination-accounts');
-    if (destMatch) {
-        acctRow.style.display = '';
-        acctBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
-    } else {
-        acctRow.style.display = 'none';
+function renderCachedCategories() {
+    if (!cachedCategories) return;
+    document.getElementById('cat-body').innerHTML = cachedCategories.html;
+}
+
+async function loadCategories() {
+    var catBody = document.getElementById('cat-body');
+    // Only show spinner if nothing is rendered (first load).
+    if (!cachedCategories) {
+        catBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     }
 
     try {
-        // Fetch categories.
         var res = await fetch('/api/categories');
         if (res.status === 503) {
             catBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
-            if (destMatch) acctBody.innerHTML = '<p class="text-muted">Firefly III is not configured.</p>';
+            cachedCategories = null;
             return;
         }
         if (!res.ok) throw new Error(await res.text());
         var cats = await res.json();
-        if (!cats || !cats.length) {
-            catBody.innerHTML = '<p class="text-muted">No categories found in Firefly III.</p>';
-        } else {
-            var html = '<div style="margin-bottom:12px">';
-            cats.forEach(function (c) {
-                var isTransfer = c.name.toLowerCase() === 'transfers';
-                var chipCls = isTransfer ? ' cat-chip-transfer' : '';
-                var icon = isTransfer
-                    ? '<i class="fa fa-exchange" style="margin-right:5px"></i>'
-                    : '<i class="fa fa-bookmark-o" style="color:#3c8dbc;margin-right:5px"></i>';
-                html += '<span class="cat-chip' + chipCls + '">' + icon
-                    + esc(c.name)
-                    + (c.notes ? ' <span class="cat-notes">&mdash; ' + esc(c.notes) + '</span>' : '')
-                    + '</span>';
-            });
-            html += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
-                + cats.length + ' categories available to the AI.</small></p>';
-            catBody.innerHTML = html;
-        }
-
-        // Fetch expense accounts if destination matching is on.
-        if (destMatch) {
-            try {
-                var ar = await fetch('/api/accounts');
-                if (!ar.ok) throw new Error(await ar.text());
-                var accts = await ar.json();
-                if (!accts || !accts.length) {
-                    acctBody.innerHTML = '<p class="text-muted">No expense accounts found in Firefly III. The AI will only be able to create new accounts.</p>';
-                } else {
-                    var ahtml = '<div style="margin-bottom:12px">';
-                    accts.forEach(function (a) {
-                        ahtml += '<span class="cat-chip"><i class="fa fa-building-o" style="color:#3c8dbc;margin-right:5px"></i>'
-                            + esc(a.name) + '</span>';
-                    });
-                    ahtml += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
-                        + accts.length + ' expense account' + (accts.length === 1 ? '' : 's')
-                        + ' that the AI can match against.</small></p>';
-                    acctBody.innerHTML = ahtml;
-                }
-            } catch (e) {
-                acctBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Could not load accounts: ' + esc(e.message) + '</div>';
-            }
-        }
+        var html = buildCategoriesHTML(cats);
+        catBody.innerHTML = html;
+        cachedCategories = {html: html, data: cats};
     } catch (e) {
         catBody.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
-        if (destMatch) acctBody.innerHTML = '<p class="text-muted">Could not load accounts due to errors above.</p>';
+        cachedCategories = null;
+    }
+}
+
+// ─── Accounts ──────────────────────────────────────────────────────────────
+function buildAccountsHTML(accts) {
+    if (!accts || !accts.length) {
+        return '<p class="text-muted">No expense accounts found in Firefly III. The AI will only be able to create new accounts when destination matching is enabled.</p>';
+    }
+    var ahtml = '<div style="margin-bottom:12px">';
+    accts.forEach(function (a) {
+        ahtml += '<span class="cat-chip"><i class="fa fa-building-o" style="color:#3c8dbc;margin-right:5px"></i>'
+            + esc(a.name) + '</span>';
+    });
+    ahtml += '</div><p class="text-muted"><small><i class="fa fa-info-circle"></i> '
+        + accts.length + ' expense account' + (accts.length === 1 ? '' : 's')
+        + ' that the AI can match against.</small></p>';
+    return ahtml;
+}
+
+function renderCachedAccounts() {
+    if (!cachedAccounts) return;
+    document.getElementById('acct-body').innerHTML = cachedAccounts.html;
+}
+
+async function loadAccounts() {
+    var acctBody = document.getElementById('acct-body');
+    // Only show spinner if nothing is rendered (first load).
+    if (!cachedAccounts) {
+        acctBody.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
+    }
+
+    try {
+        var ar = await fetch('/api/accounts');
+        if (ar.status === 503) {
+            acctBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            cachedAccounts = null;
+            return;
+        }
+        if (!ar.ok) throw new Error(await ar.text());
+        var accts = await ar.json();
+        var html = buildAccountsHTML(accts);
+        acctBody.innerHTML = html;
+        cachedAccounts = {html: html, data: accts};
+    } catch (e) {
+        acctBody.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Could not load accounts: ' + esc(e.message) + '</div>';
+        cachedAccounts = null;
     }
 }
 
@@ -1464,6 +1651,9 @@ async function saveSettings() {
         });
         if (!res.ok) throw new Error(await res.text());
         $('#save-status').text('');
+        // Invalidate caches — config may have changed.
+        cachedCategories = null;
+        cachedAccounts = null;
         loadSettings();
         applyTheme();
     } catch (e) {

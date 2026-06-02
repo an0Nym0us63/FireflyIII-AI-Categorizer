@@ -6,18 +6,25 @@ import (
 	"strings"
 )
 
+type rawCategory struct {
+	Name       string `json:"name"`
+	Confidence string `json:"confidence"`
+}
+
 type rawDestination struct {
 	Name       string `json:"name"`
 	Action     string `json:"action"`
 	Confidence string `json:"confidence"`
 }
 
+// rawResponse uses json.RawMessage for category so we can accept both the
+// old flat-string format and the new {name, confidence} object format.
 type rawResponse struct {
-	Outcome     string          `json:"outcome"`
-	Category    *string         `json:"category"`
-	Reason      string          `json:"reason"`
-	Assumption  *string         `json:"assumption"`
-	Destination *rawDestination `json:"destination"`
+	Outcome     string           `json:"outcome"`
+	Category    json.RawMessage  `json:"category"`
+	Reason      string           `json:"reason"`
+	Assumption  *string          `json:"assumption"`
+	Destination *rawDestination  `json:"destination"`
 }
 
 // parseResponse validates and converts a raw JSON string into a Result.
@@ -45,9 +52,20 @@ func parseResponse(raw, prompt string, categories []Category, expenseAccounts []
 		r.Category = nil
 	}
 
+	// Parse category — supports both old flat string and new {name, confidence} object.
 	category := ""
-	if r.Category != nil {
-		category = *r.Category
+	if len(r.Category) > 0 {
+		// Try the new object format first.
+		var catObj rawCategory
+		if err := json.Unmarshal(r.Category, &catObj); err == nil && catObj.Name != "" {
+			category = catObj.Name
+		} else {
+			// Fall back to old flat-string format.
+			var catStr string
+			if err := json.Unmarshal(r.Category, &catStr); err == nil {
+				category = catStr
+			}
+		}
 	}
 
 	if category != "" && !categoryNameIn(categories, category) {

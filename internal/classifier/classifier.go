@@ -75,6 +75,11 @@ type Request struct {
 	// and response parsing should include destination-account logic.
 	DestinationMatching bool
 
+	// CategoryOnly signals that only category classification is needed
+	// (destination info is stripped from the prompt). When true, the classifier
+	// won't bother computing a destination even if expense accounts are provided.
+	CategoryOnly bool
+
 	// SystemPromptOverride replaces the built-in system prompt when non-empty.
 	// Used for special-purpose LLM calls like transfer destination suggestion.
 	SystemPromptOverride string
