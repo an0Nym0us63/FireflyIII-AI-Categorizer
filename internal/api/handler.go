@@ -164,33 +164,40 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.Trigger != "STORE_TRANSACTION" {
-		http.Error(w, fmt.Sprintf("trigger %q is not STORE_TRANSACTION", payload.Trigger), http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, fmt.Sprintf("ignored trigger %q — acknowledged", payload.Trigger))
 		return
 	}
 	if payload.Response != "TRANSACTIONS" {
-		http.Error(w, "response is not TRANSACTIONS", http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ignored response type — acknowledged")
 		return
 	}
 	if payload.Content.ID == "" {
-		http.Error(w, "missing content.id", http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "missing content.id — acknowledged")
 		return
 	}
 	if len(payload.Content.Transactions) == 0 {
-		http.Error(w, "no transactions in payload", http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "no transactions in payload — acknowledged")
 		return
 	}
 
 	first := payload.Content.Transactions[0]
 	if first.Type != "withdrawal" {
-		http.Error(w, fmt.Sprintf("transaction type %q is not a withdrawal — skipping", first.Type), http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, fmt.Sprintf("transaction type %q is not a withdrawal — acknowledged", first.Type))
 		return
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" {
-		http.Error(w, "category already set — skipping", http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "category already set — acknowledged")
 		return
 	}
 	if first.Description == "" && first.DestinationName == "" {
-		http.Error(w, "no description or destination — cannot classify", http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "no description or destination — acknowledged")
 		return
 	}
 
