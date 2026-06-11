@@ -164,40 +164,40 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.Trigger != "STORE_TRANSACTION" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, fmt.Sprintf("ignored trigger %q — acknowledged", payload.Trigger))
+		slog.Debug("webhook skipped: trigger is not STORE_TRANSACTION", "trigger", payload.Trigger)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("trigger %q is not STORE_TRANSACTION", payload.Trigger)})
 		return
 	}
 	if payload.Response != "TRANSACTIONS" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ignored response type — acknowledged")
+		slog.Debug("webhook skipped: response is not TRANSACTIONS", "response", payload.Response)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "response is not TRANSACTIONS"})
 		return
 	}
 	if payload.Content.ID == "" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "missing content.id — acknowledged")
+		slog.Warn("webhook skipped: missing content.id")
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "missing content.id"})
 		return
 	}
 	if len(payload.Content.Transactions) == 0 {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "no transactions in payload — acknowledged")
+		slog.Debug("webhook skipped: no transactions in payload")
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no transactions in payload"})
 		return
 	}
 
 	first := payload.Content.Transactions[0]
 	if first.Type != "withdrawal" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, fmt.Sprintf("transaction type %q is not a withdrawal — acknowledged", first.Type))
+		slog.Debug("webhook skipped: not a withdrawal", "type", first.Type, "txn_id", payload.Content.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not a withdrawal", first.Type)})
 		return
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "category already set — acknowledged")
+		slog.Debug("webhook skipped: category already set", "category_id", first.CategoryID, "txn_id", payload.Content.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
 	}
 	if first.Description == "" && first.DestinationName == "" {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "no description or destination — acknowledged")
+		slog.Debug("webhook skipped: no description or destination", "txn_id", payload.Content.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or destination — cannot classify"})
 		return
 	}
 
@@ -239,8 +239,8 @@ type batchFilter struct {
 type batchRequest struct {
 	Filter batchFilter `json:"filter"`
 	DryRun bool        `json:"dry_run"`
-	Force  bool        `json:"force"`  // when true, re-classify even if category is set
-	Mode   string      `json:"mode"`   // "classify" (default), "destination", "both"
+	Force  bool        `json:"force"` // when true, re-classify even if category is set
+	Mode   string      `json:"mode"`  // "classify" (default), "destination", "both"
 }
 
 func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
@@ -383,16 +383,16 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 // "keep existing". For strings an explicit empty value clears the field; for
 // ints a value of 0 or less is rejected.
 type configUpdateRequest struct {
-	FireflyURL    *string `json:"firefly_url"`
-	FireflyToken  *string `json:"firefly_token"`
-	AIProvider    *string `json:"ai_provider"`
-	OpenAIKey     *string `json:"openai_api_key"`
-	OpenAIModel   *string `json:"openai_model"`
-	OpenAIBaseURL *string `json:"openai_base_url"`
-	GeminiKey     *string `json:"gemini_api_key"`
-	GeminiModel   *string `json:"gemini_model"`
-	DeepseekKey   *string `json:"deepseek_api_key"`
-	DeepseekModel *string `json:"deepseek_model"`
+	FireflyURL          *string `json:"firefly_url"`
+	FireflyToken        *string `json:"firefly_token"`
+	AIProvider          *string `json:"ai_provider"`
+	OpenAIKey           *string `json:"openai_api_key"`
+	OpenAIModel         *string `json:"openai_model"`
+	OpenAIBaseURL       *string `json:"openai_base_url"`
+	GeminiKey           *string `json:"gemini_api_key"`
+	GeminiModel         *string `json:"gemini_model"`
+	DeepseekKey         *string `json:"deepseek_api_key"`
+	DeepseekModel       *string `json:"deepseek_model"`
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
 
@@ -652,10 +652,10 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 }
 
 type categorizeRequest struct {
-	CategoryID         string `json:"category_id"`
-	DestinationAction  string `json:"destination_action,omitempty"`  // "MATCH", "CREATE", or ""
-	DestinationName    string `json:"destination_name,omitempty"`    // for CREATE
-	DestinationID      string `json:"destination_id,omitempty"`      // for MATCH
+	CategoryID        string `json:"category_id"`
+	DestinationAction string `json:"destination_action,omitempty"` // "MATCH", "CREATE", or ""
+	DestinationName   string `json:"destination_name,omitempty"`   // for CREATE
+	DestinationID     string `json:"destination_id,omitempty"`     // for MATCH
 }
 
 func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) {
