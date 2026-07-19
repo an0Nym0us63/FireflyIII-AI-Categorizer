@@ -347,6 +347,8 @@ type configResponse struct {
 
 	DestinationMatchEnabled bool `json:"destination_match_enabled"`
 
+	SearchEngine string `json:"search_engine"`
+
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
 	WorkerConcurrency   int `json:"worker_concurrency"`
@@ -371,6 +373,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		Configured:          cfg.IsConfigured(),
 
 		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
+
+		SearchEngine: cfg.SearchEngine,
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -397,6 +401,8 @@ type configUpdateRequest struct {
 	CustomSystemContext *string `json:"custom_system_context"`
 
 	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
+
+	SearchEngine *string `json:"search_engine"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -524,6 +530,9 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to fetch categories: %v", err), http.StatusBadGateway)
 		return
 	}
+	if cats == nil {
+		cats = []firefly.Category{}
+	}
 	writeJSON(w, http.StatusOK, cats)
 }
 
@@ -548,6 +557,9 @@ func (h *Handler) getAccounts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch accounts: %v", err), http.StatusBadGateway)
 		return
+	}
+	if accts == nil {
+		accts = []firefly.Account{}
 	}
 	writeJSON(w, http.StatusOK, accts)
 }
@@ -578,32 +590,17 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	needsReview, err := fc.GetNeedsReviewWithdrawals(r.Context())
+	rg, err := fc.GetReviewGroups(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to fetch needs-review transactions: %v", err), http.StatusBadGateway)
-		return
-	}
-	assumed, err := fc.GetAssumedWithdrawals(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to fetch assumed transactions: %v", err), http.StatusBadGateway)
-		return
-	}
-	destAssumed, err := fc.GetDestAssumedWithdrawals(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to fetch dest-assumed transactions: %v", err), http.StatusBadGateway)
-		return
-	}
-	transfers, err := fc.GetTransferCategoryWithdrawals(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to fetch transfer-category transactions: %v", err), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("failed to fetch review groups: %v", err), http.StatusBadGateway)
 		return
 	}
 
 	var result []*reviewGroup
-	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
-	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
-	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
-	result = append(result, buildReviewGroups("TRANSFER_CATEGORY", transfers)...)
+	result = append(result, buildReviewGroups("NEEDS_REVIEW", rg.NeedsReview)...)
+	result = append(result, buildReviewGroups("ASSUMED", rg.Assumed)...)
+	result = append(result, buildReviewGroups("DEST_ASSUMED", rg.DestAssumed)...)
+	result = append(result, buildReviewGroups("TRANSFER_CATEGORY", rg.TransferCategory)...)
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -1225,6 +1222,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.DestinationMatchEnabled != nil {
 		existing.DestinationMatchEnabled = req.DestinationMatchEnabled
+	}
+	if req.SearchEngine != nil {
+		existing.SearchEngine = *req.SearchEngine
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

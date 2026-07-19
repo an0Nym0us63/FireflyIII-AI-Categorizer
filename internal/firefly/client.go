@@ -264,6 +264,95 @@ func (c *Client) GetAllWithdrawals(ctx context.Context) ([]Transaction, error) {
 	return c.fetchTransactions(ctx, params, func(_ Split) bool { return true })
 }
 
+// ReviewGroups holds the four categories of transactions that need human review.
+type ReviewGroups struct {
+	NeedsReview      []Transaction
+	Assumed          []Transaction
+	DestAssumed      []Transaction
+	TransferCategory []Transaction
+}
+
+// GetReviewGroups fetches all withdrawal pages once and buckets transactions
+// into the four review categories. This avoids the 4× overhead of separate
+// paginated fetches.
+func (c *Client) GetReviewGroups(ctx context.Context) (*ReviewGroups, error) {
+	needsReviewTag := c.tagPrefix + ":needs-review"
+	assumedTag := c.tagPrefix + ":assumed"
+	destAssumedTag := c.tagPrefix + ":dest-assumed"
+
+	rg := &ReviewGroups{}
+	params := url.Values{"type": {"withdrawal"}}
+
+	for page := 1; ; page++ {
+		p := url.Values{}
+		for k, v := range params {
+			p[k] = v
+		}
+		p.Set("page", fmt.Sprintf("%d", page))
+
+		u := fmt.Sprintf("%s/api/v1/transactions?%s", c.baseURL, p.Encode())
+		var resp transactionsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("get review groups page %d: %w", page, err)
+		}
+
+		for _, item := range resp.Data {
+			txn := toTransaction(item)
+			var kept []Split
+			for _, s := range txn.Splits {
+				if contains(s.Tags, needsReviewTag) {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				rg.NeedsReview = append(rg.NeedsReview, txn)
+				continue
+			}
+
+			kept = nil
+			for _, s := range txn.Splits {
+				if contains(s.Tags, assumedTag) {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				rg.Assumed = append(rg.Assumed, txn)
+				continue
+			}
+
+			kept = nil
+			for _, s := range txn.Splits {
+				if contains(s.Tags, destAssumedTag) {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				rg.DestAssumed = append(rg.DestAssumed, txn)
+				continue
+			}
+
+			kept = nil
+			for _, s := range txn.Splits {
+				if strings.EqualFold(s.CategoryName, "Transfers") {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				rg.TransferCategory = append(rg.TransferCategory, txn)
+			}
+		}
+
+		if page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return rg, nil
+}
+
 // GetNeedsReviewWithdrawals fetches all withdrawals tagged with the needs-review tag.
 func (c *Client) GetNeedsReviewWithdrawals(ctx context.Context) ([]Transaction, error) {
 	params := url.Values{"type": {"withdrawal"}}

@@ -27,9 +27,10 @@ type StoredConfig struct {
 
 	HistoryContextLimit     int  `json:"history_context_limit,omitempty"`
 	HistoryLookbackDays     int  `json:"history_lookback_days,omitempty"`
-	DestinationMatchEnabled *bool `json:"destination_match_enabled,omitempty"`
-	WorkerConcurrency       int  `json:"worker_concurrency,omitempty"`
-	BatchConcurrency        int  `json:"batch_concurrency,omitempty"`
+	DestinationMatchEnabled *bool  `json:"destination_match_enabled,omitempty"`
+	SearchEngine            string `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
+	WorkerConcurrency       int    `json:"worker_concurrency,omitempty"`
+	BatchConcurrency        int    `json:"batch_concurrency,omitempty"`
 }
 
 // Store manages a JSON config file that overlays environment variables.

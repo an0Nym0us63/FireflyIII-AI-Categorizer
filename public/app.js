@@ -13,7 +13,8 @@ var selectedTxns = new Set();
 var cachedCategories = null; // {html, data} — rendered cache for instant display
 var cachedAccounts = null;   // {html, data} — rendered cache for instant display
 var reviewAccountsFetching = false; // prevents duplicate account fetches
-var reviewPollTimer = null;  // interval ID for background review polling
+var reviewPollTimer = null;  // interval ID for background review polling (on review tab)
+var globalReviewPollTimer = null; // interval ID for global review badge polling
 
 // ─── Tab navigation ─────────────────────────────────────────────────────────
 var TAB_META = {
@@ -47,6 +48,8 @@ function switchTab(name) {
     // Manage review auto-polling.
     if (reviewPollTimer) { clearInterval(reviewPollTimer); reviewPollTimer = null; }
     if (name === 'review') {
+        // Pause global polling while on the review tab (it does its own full refresh).
+        if (globalReviewPollTimer) { clearInterval(globalReviewPollTimer); globalReviewPollTimer = null; }
         // Show transfer section immediately.
         document.getElementById('review-section-transfers').style.display = '';
         loadReview();
@@ -59,6 +62,9 @@ function switchTab(name) {
             }
             loadReview(true);
         }, 30000);
+    } else {
+        // Restart global badge polling when leaving the review tab.
+        startGlobalReviewPoll();
     }
     return false;
 }
@@ -91,6 +97,11 @@ function connectSSE() {
             var det = document.getElementById('detail-' + data.job.id);
             if (det) $(det).find('.detail-inner').html(buildDetailInner(data.job));
             updateStats();
+            // Refresh review badge when a job completes with a review outcome.
+            var outcomes = ['NEEDS_REVIEW', 'ASSUMED', 'DEST_ASSUMED', 'TRANSFER_CATEGORY'];
+            if (outcomes.indexOf(data.job.outcome) !== -1 || data.job.status === 'failed') {
+                fetchReviewBadge();
+            }
         }
     };
 }
@@ -145,6 +156,9 @@ applyTheme();
         savedConfig = d;
         if (!d.configured) switchTab('settings');
     } catch (e) { }
+    // Start global review badge polling and fetch immediately.
+    fetchReviewBadge();
+    startGlobalReviewPoll();
 })();
 
 // ─── Jobs ──────────────────────────────────────────────────────────────────
@@ -579,20 +593,37 @@ async function loadReview(silent) {
         acctRes = await acctRes;
 
         if (catRes.status === 503 || reviewRes.status === 503) {
-            body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            if (!silent) {
+                body.innerHTML = '<div class="alert alert-warning"><i class="fa fa-warning"></i> Firefly III is not configured. Set credentials in Settings.</div>';
+            }
             return;
         }
         if (!catRes.ok) throw new Error(await catRes.text());
         if (!reviewRes.ok) throw new Error(await reviewRes.text());
 
-        reviewCategories = await catRes.json();
-        allReviewGroups = (await reviewRes.json()) || [];
+        reviewCategories = (await catRes.json()) || [];
+        var freshGroups = (await reviewRes.json()) || [];
         reviewAccounts = (acctRes.ok) ? (await acctRes.json()) || [] : [];
 
+        if (silent) {
+            // Background poll: only update the badge count and progress indicator.
+            // Do not re-render — that would destroy any in-progress user selections.
+            allReviewGroups = freshGroups;
+            updateReviewBadge();
+            updateProgressIndicator();
+            return;
+        }
+
+        allReviewGroups = freshGroups;
         updateReviewBadge();
         renderCurrentBatch();
     } catch (e) {
-        body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+        // Ensure state variables are never null after an error.
+        reviewCategories = reviewCategories || [];
+        reviewAccounts = reviewAccounts || [];
+        if (!silent) {
+            body.innerHTML = '<div class="alert alert-danger"><i class="fa fa-times-circle"></i> ' + esc(e.message) + '</div>';
+        }
     }
 }
 
@@ -656,6 +687,29 @@ function updateReviewBadge() {
     $('#review-count-badge').toggle(n > 0).text(n);
 }
 
+// Fetch review count from the server without rendering the full review page.
+// Used for background badge updates when the user is not on the review tab.
+function fetchReviewBadge() {
+    // Don't poll while on the review tab — loadReview handles it there.
+    if (document.getElementById('tab-review').style.display === '') return;
+    fetch('/api/review').then(function (res) {
+        if (!res.ok) return;
+        return res.json();
+    }).then(function (data) {
+        if (!data) return;
+        allReviewGroups = data;
+        updateReviewBadge();
+    }).catch(function () {});
+}
+
+// Start global polling for the review badge (runs when not on the review tab).
+function startGlobalReviewPoll() {
+    if (globalReviewPollTimer) return;
+    globalReviewPollTimer = setInterval(function () {
+        fetchReviewBadge();
+    }, 30000);
+}
+
 function showReviewProcessingBar(txnCount) {
     document.getElementById('review-processing-status').innerHTML =
         '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Applying '
@@ -684,6 +738,31 @@ function resolveGroupLabel(g) {
     var label = noName ? (g.description || '(unknown)') : dest;
     var sub = (!noName && g.description && g.description !== dest) ? g.description : '';
     return {label: label, sub: sub};
+}
+
+// Build a search icon link for a review group title. Returns empty string
+// when the search engine is disabled.
+function buildSearchIcon(g) {
+    var engine = (savedConfig && savedConfig.search_engine) || '';
+    if (!engine) return '';
+    var dest = (g.destination_name || '').trim();
+    var desc = (g.description || '').trim();
+    var noName = !dest || dest.toLowerCase() === '(no name)';
+    // Prefer destination name for searching; fall back to description.
+    var term = noName ? desc : (dest + (desc && desc !== dest ? ' ' + desc : ''));
+    if (!term) return '';
+    var url;
+    if (engine === 'duckduckgo') {
+        url = 'https://duckduckgo.com/?q=' + encodeURIComponent(term);
+    } else {
+        url = 'https://www.google.com/search?q=' + encodeURIComponent(term);
+    }
+    return ' <a href="' + url + '" target="_blank" rel="noopener"'
+        + ' title="Search &quot;' + esc(term) + '&quot; in ' + (engine === 'duckduckgo' ? 'DuckDuckGo' : 'Google') + '"'
+        + ' onclick="event.stopPropagation()"'
+        + ' style="opacity:.5;color:inherit;text-decoration:none;transition:opacity .2s"'
+        + ' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5">'
+        + '<i class="fa fa-search"></i></a>';
 }
 
 function renderReviewGroups(groups) {
@@ -757,22 +836,24 @@ function renderDestReviewGroup(g) {
     // AI's assumed destination guess (name from the expense account).
     var currentDestID = g.destination_account_id || '';
     var currentDestName = g.destination_name || '';
-    for (var i = 0; i < reviewAccounts.length; i++) {
-        if (reviewAccounts[i].id === currentDestID) {
-            currentDestName = reviewAccounts[i].name;
+    var accts = reviewAccounts || [];
+    for (var i = 0; i < accts.length; i++) {
+        if (accts[i].id === currentDestID) {
+            currentDestName = accts[i].name;
             break;
         }
     }
 
+    var cats = reviewCategories || [];
     var catOptions = '<option value="" disabled selected hidden>—</option>'
-        + reviewCategories.map(function (c) {
+        + cats.map(function (c) {
             var sel = (g.category_id && c.id === g.category_id) ? ' selected' : '';
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
         }).join('');
 
     // Build destination input.
     var matchedAttr = currentDestID ? ' data-matched-id="' + esc(currentDestID) + '"' : '';
-    var acctDataOptions = reviewAccounts.map(function (a) {
+    var acctDataOptions = accts.map(function (a) {
         return '<option value="' + esc(a.name) + '" data-id="' + esc(a.id) + '">';
     }).join('')
         + pendingAccounts.map(function (a) {
@@ -788,7 +869,7 @@ function renderDestReviewGroup(g) {
         + '<div class="box-header with-border review-group-header">'
         + '<span class="review-group-title">' + esc(resolved.label) + sub
         + ' <span class="label label-warning" style="font-size:10px;font-weight:normal;margin-left:3px">'
-        + count + '</span></span>'
+        + count + '</span></span>' + buildSearchIcon(g)
         + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — review later">'
         + '<i class="fa fa-clock-o"></i> Skip'
         + '</button>'
@@ -869,7 +950,7 @@ function renderTransferGroup(g) {
         + '<div class="box-header with-border review-group-header">'
         + '<span class="review-group-title">' + esc(resolved.label) + sub
         + ' <span class="label label-info" style="font-size:10px;font-weight:normal;margin-left:3px">'
-        + count + '</span></span>'
+        + count + '</span></span>' + buildSearchIcon(g)
         + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — review later">'
         + '<i class="fa fa-clock-o"></i> Skip'
         + '</button>'
@@ -1058,10 +1139,13 @@ async function convertToTransfer(gi) {
 
     if (errors === 0) {
         status.innerHTML = '<span class="text-success"><i class="fa fa-check-circle"></i> Converted ' + ids.length + ' transaction(s).</span>';
-        var g = reviewGroupMap[gi];
-        if (g) {
-            var idx = allReviewGroups.indexOf(g);
-            if (idx !== -1) allReviewGroups.splice(idx, 1);
+        // Remove from allReviewGroups by matching transaction IDs.
+        for (var j = allReviewGroups.length - 1; j >= 0; j--) {
+            var tIDs = (allReviewGroups[j].transactions || []).map(function (t) { return t.id; });
+            if (arraysEqual(ids, tIDs)) {
+                allReviewGroups.splice(j, 1);
+                break;
+            }
         }
         setTimeout(function () {
             el.remove();
@@ -1102,7 +1186,7 @@ function renderReviewGroup(g, isAssumed) {
         : '';
 
     var catOptions = '<option value="" disabled selected hidden>—</option>'
-        + reviewCategories.map(function (c) {
+        + (reviewCategories || []).map(function (c) {
             var sel = (isAssumed && g.category_id && c.id === g.category_id) ? ' selected' : '';
             return '<option value="' + esc(c.id) + '"' + sel + '>' + esc(c.name) + '</option>';
         }).join('');
@@ -1111,7 +1195,8 @@ function renderReviewGroup(g, isAssumed) {
     var destHtml = '';
     {
         // Fetch accounts on demand if not loaded yet.
-        if (!reviewAccounts.length && !reviewAccountsFetching) {
+        var ra = reviewAccounts || [];
+        if (!ra.length && !reviewAccountsFetching) {
             reviewAccountsFetching = true;
             fetch('/api/accounts').then(function (r) { return r.ok ? r.json() : []; }).then(function (accts) {
                 reviewAccounts = accts || [];
@@ -1124,9 +1209,9 @@ function renderReviewGroup(g, isAssumed) {
         var currentDestID = g.destination_account_id || '';
         var currentDestName = '';
         if (currentDestID) {
-            for (var i = 0; i < reviewAccounts.length; i++) {
-                if (reviewAccounts[i].id === currentDestID) {
-                    currentDestName = reviewAccounts[i].name;
+            for (var i = 0; i < ra.length; i++) {
+                if (ra[i].id === currentDestID) {
+                    currentDestName = ra[i].name;
                     break;
                 }
             }
@@ -1138,7 +1223,7 @@ function renderReviewGroup(g, isAssumed) {
             matchedAttr = ' data-matched-id="' + esc(currentDestID) + '"';
         }
 
-        var acctDataOptions = reviewAccounts.map(function (a) {
+        var acctDataOptions = ra.map(function (a) {
             return '<option value="' + esc(a.name) + '" data-id="' + esc(a.id) + '">';
         }).join('')
             + pendingAccounts.map(function (a) {
@@ -1170,7 +1255,7 @@ function renderReviewGroup(g, isAssumed) {
         + '<div class="box-header with-border review-group-header">'
         + '<span class="review-group-title">' + esc(resolved.label) + sub
         + ' <span class="label ' + countBadgeCls + '" style="font-size:10px;font-weight:normal;margin-left:3px">'
-        + count + '</span></span>'
+        + count + '</span></span>' + buildSearchIcon(g)
         + '<button type="button" class="btn btn-xs btn-default review-skip-btn" onclick="skipReviewGroup(' + gi + ')" title="Skip — move to end of queue to review later">'
         + '<i class="fa fa-clock-o"></i> Skip'
         + '</button>'
@@ -1295,13 +1380,17 @@ function onReviewCatChange(gi) {
 function skipReviewGroup(gi) {
     var el = document.getElementById('review-group-' + gi);
     if (!el) return;
-    // Move group to end of queue so it reappears after all other groups are reviewed
-    var g = reviewGroupMap[gi];
-    if (g) {
-        var idx = allReviewGroups.indexOf(g);
-        if (idx !== -1) {
-            allReviewGroups.splice(idx, 1);
+    // Move group to end of queue so it reappears after all other groups are reviewed.
+    // Match by transaction IDs instead of object identity (silent poll may have
+    // replaced allReviewGroups with fresh objects).
+    var ids = JSON.parse(el.getAttribute('data-ids') || '[]');
+    for (var i = allReviewGroups.length - 1; i >= 0; i--) {
+        var tIDs = (allReviewGroups[i].transactions || []).map(function (t) { return t.id; });
+        if (arraysEqual(ids, tIDs)) {
+            var g = allReviewGroups[i];
+            allReviewGroups.splice(i, 1);
             allReviewGroups.push(g);
+            break;
         }
     }
     el.remove();
@@ -1346,12 +1435,18 @@ async function submitAllReview() {
     var submissions = toSubmit.map(function (el) {
         var gi = el.id.replace('review-group-', '');
         var sel = document.getElementById('review-cat-' + gi);
-        var g = reviewGroupMap[gi];
-        if (g) {
-            var idx = allReviewGroups.indexOf(g);
-            if (idx !== -1) allReviewGroups.splice(idx, 1);
+        var ids = JSON.parse(el.getAttribute('data-ids'));
+        // Remove the group from allReviewGroups by matching transaction IDs.
+        // (Object identity matching via reviewGroupMap breaks after a silent
+        // background poll replaces allReviewGroups with fresh server objects.)
+        for (var i = allReviewGroups.length - 1; i >= 0; i--) {
+            var txnIDs = (allReviewGroups[i].transactions || []).map(function (t) { return t.id; });
+            if (arraysEqual(ids, txnIDs)) {
+                allReviewGroups.splice(i, 1);
+                break;
+            }
         }
-        var sub = {ids: JSON.parse(el.getAttribute('data-ids')), categoryId: sel.value};
+        var sub = {ids: ids, categoryId: sel.value};
         // Capture destination info from the single searchable field.
         var destInput = document.getElementById('review-dest-' + gi);
         if (destInput) {
@@ -1539,6 +1634,7 @@ async function loadSettings() {
         $('#cfg-tag-prefix').val(d.tag_prefix || '');
         $('#cfg-custom-context').val(d.custom_system_context || '');
         $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
+        $('#cfg-search-engine').val(d.search_engine || '');
         $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
         $('#cfg-history-lookback-days').val(d.history_lookback_days || '');
         $('#cfg-worker-concurrency').val(d.worker_concurrency || '');
@@ -1635,6 +1731,8 @@ async function saveSettings() {
     // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
     payload.custom_system_context = $('#cfg-custom-context').val();
     payload.destination_match_enabled = $('#cfg-destination-match').prop('checked');
+    var se = $('#cfg-search-engine').val();
+    if (se !== undefined) payload.search_engine = se;
     var hcl = parseInt($('#cfg-history-context-limit').val(), 10);
     if (!isNaN(hcl) && hcl > 0) payload.history_context_limit = hcl;
     var hld = parseInt($('#cfg-history-lookback-days').val(), 10);
@@ -1677,4 +1775,11 @@ function trunc(s, n) {return s && s.length > n ? s.substring(0, n) + '…' : (s 
 function esc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function arraysEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return false; }
+    return true;
 }

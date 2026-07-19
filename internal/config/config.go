@@ -35,6 +35,8 @@ type Config struct {
 
 	DestinationMatchEnabled bool
 
+	SearchEngine string // "google", "duckduckgo", or "" (disabled)
+
 	WorkerConcurrency int
 	BatchConcurrency  int
 }
@@ -138,6 +140,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	// We track this via a pointer so the store can signal "was configured".
 	if sc.DestinationMatchEnabled != nil {
 		cfg.DestinationMatchEnabled = *sc.DestinationMatchEnabled
+	}
+	if sc.SearchEngine != "" {
+		cfg.SearchEngine = sc.SearchEngine
 	}
 }
 
