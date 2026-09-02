@@ -253,7 +253,7 @@ function buildDetailInner(j) {
     if (j.tags_assumed && j.tags_assumed.length) {
         html += '<p><strong>Tags suggérés:</strong> ' + j.tags_assumed.map(function (t) {
             return '<span class="label label-warning" style="margin-right:4px">' + esc(t) + '</span>';
-        }).join('') + ' <em class="text-muted">(à valider, non appliqués)</em></p>';
+        }).join('') + ' <em class="text-muted">(à valider dans l\'onglet Transactions)</em></p>';
     }
     if (j.error) {
         html += '<div style="display:flex;align-items:flex-start;gap:8px;margin:0 0 8px">'
@@ -418,7 +418,7 @@ function renderTxnTable(rows) {
         var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
         var date = r.date ? r.date.substring(0, 10) : '';
         var aiTag = aiTagLabel(r.tags);
-        var semTags = semanticTagLabels(r.tags);
+        var semTags = semanticTagLabels(r.tags, r.id);
         return '<tr' + cls + '>'
             + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
             + '<td style="white-space:nowrap">' + esc(date) + '</td>'
@@ -443,20 +443,51 @@ function aiTagLabel(tags) {
     return '';
 }
 
-// semanticTagLabels renders the AI's content tags (everything that is not one of
-// the app's internal control tags like "ai:classified").
-function semanticTagLabels(tags) {
+// semanticTagLabels renders the AI's content tags: applied tags as plain
+// labels, and pending suggestions (ai:suggest:<name>) as orange chips with
+// inline apply (✓) / reject (✗) actions.
+function semanticTagLabels(tags, txnId) {
     if (!tags || !tags.length) return '';
     var ctrl = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':tags-assumed', ':reviewed'];
     var out = [];
     for (var i = 0; i < tags.length; i++) {
-        var t = tags[i], isCtrl = false;
+        var t = tags[i];
+        var si = t.indexOf(':suggest:');
+        if (si >= 0) {
+            var name = t.substring(si + 9);
+            var enc = encodeURIComponent(name);
+            out.push('<span class="label label-warning" style="margin-right:3px" title="Tag suggéré — à valider">'
+                + esc(name)
+                + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer"'
+                + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',true);return false">\u2713</a>'
+                + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter"'
+                + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',false);return false">\u2717</a>'
+                + '</span>');
+            continue;
+        }
+        var isCtrl = false;
         for (var k = 0; k < ctrl.length; k++) {
             if (t.indexOf(ctrl[k]) >= 0) { isCtrl = true; break; }
         }
         if (!isCtrl) out.push('<span class="label label-primary" style="margin-right:3px">' + esc(t) + '</span>');
     }
     return out.join('');
+}
+
+// resolveTag applies or rejects a single suggested tag then refreshes the list.
+function resolveTag(txnId, encName, accept) {
+    var name = decodeURIComponent(encName);
+    var body = accept ? {apply: [name]} : {reject: [name]};
+    $.ajax({
+        url: '/api/transactions/' + txnId + '/tags/resolve',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(body)
+    }).done(function () {
+        loadTransactions(txnPage);
+    }).fail(function (x) {
+        alert('Échec: ' + (x.responseText || x.status));
+    });
 }
 
 function renderTxnPagination() {

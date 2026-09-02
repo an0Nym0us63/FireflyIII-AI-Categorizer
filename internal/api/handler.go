@@ -88,6 +88,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/transactions", h.getTransactions)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
+	r.Post("/api/transactions/{id}/tags/resolve", h.resolveTags)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -704,7 +705,41 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
 	}
 
-	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID, destID); err != nil {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type resolveTagsRequest struct {
+	Apply  []string `json:"apply"`
+	Reject []string `json:"reject"`
+}
+
+// resolveTags applies or rejects the AI's low-confidence tag suggestions
+// (stored as ai:suggest:<name> markers) on a transaction.
+func (h *Handler) resolveTags(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	var req resolveTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if len(req.Apply) == 0 && len(req.Reject) == 0 {
+		http.Error(w, "at least one of apply or reject is required", http.StatusBadRequest)
+		return
+	}
+
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+
+	if err := fc.ResolveSuggestedTags(r.Context(), id, txns[0].Splits, req.Apply, req.Reject); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
 	}

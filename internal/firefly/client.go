@@ -462,6 +462,64 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 	return c.put(ctx, u, b)
 }
 
+// ResolveSuggestedTags applies or rejects previously suggested tags on a
+// transaction. Names listed in apply become real tags; names in reject are
+// dropped. Either way their ai:suggest:<name> marker is removed. Suggestions
+// not listed are left untouched.
+func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []Split, apply, reject []string) error {
+	applySet := make(map[string]bool)
+	for _, n := range apply {
+		applySet[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	rejectSet := make(map[string]bool)
+	for _, n := range reject {
+		rejectSet[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	prefix := c.tagPrefix + ":suggest:"
+
+	type splitUpdate struct {
+		TransactionJournalID string   `json:"transaction_journal_id"`
+		Tags                 []string `json:"tags"`
+	}
+	type body struct {
+		ApplyRules   bool          `json:"apply_rules"`
+		FireWebhooks bool          `json:"fire_webhooks"`
+		Transactions []splitUpdate `json:"transactions"`
+	}
+
+	b := body{ApplyRules: false, FireWebhooks: false}
+	for _, s := range splits {
+		tags := make([]string, 0, len(s.Tags))
+		var toAdd []string
+		for _, t := range s.Tags {
+			if strings.HasPrefix(t, prefix) {
+				name := t[len(prefix):]
+				key := strings.ToLower(strings.TrimSpace(name))
+				if applySet[key] {
+					toAdd = append(toAdd, name)
+					continue // drop the marker; the real tag is added below
+				}
+				if rejectSet[key] {
+					continue // drop the marker without adding
+				}
+			}
+			tags = append(tags, t)
+		}
+		for _, n := range toAdd {
+			if !contains(tags, n) {
+				tags = append(tags, n)
+			}
+		}
+		b.Transactions = append(b.Transactions, splitUpdate{
+			TransactionJournalID: s.JournalID,
+			Tags:                 tags,
+		})
+	}
+
+	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
+	return c.put(ctx, u, b)
+}
+
 // GetTransactionsByIDs fetches specific transaction groups by ID.
 func (c *Client) GetTransactionsByIDs(ctx context.Context, ids []string) ([]Transaction, error) {
 	var txns []Transaction
@@ -562,12 +620,17 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 			}
 			tags = append(tags, t)
 		}
-		// When some tags were only assumed, flag the transaction for review
-		// (the suggestions themselves are recorded in the notes, not applied).
-		if len(outcome.TagsAssumed) > 0 {
-			tagsAssumedTag := c.tagPrefix + ":tags-assumed"
-			if !contains(tags, tagsAssumedTag) {
-				tags = append(tags, tagsAssumedTag)
+		// Store low-confidence tag suggestions durably as control tags, one per
+		// suggestion, so they can be validated later from the UI (applied or
+		// rejected) rather than silently dropped.
+		for _, t := range outcome.TagsAssumed {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+			suggestTag := c.tagPrefix + ":suggest:" + t
+			if !contains(tags, suggestTag) {
+				tags = append(tags, suggestTag)
 			}
 		}
 
@@ -609,9 +672,6 @@ func buildNotes(existing string, outcome UpdateOutcome) string {
 	}
 	if outcome.Assumption != "" {
 		parts = append(parts, "Assumption: "+outcome.Assumption)
-	}
-	if len(outcome.TagsAssumed) > 0 {
-		parts = append(parts, "Étiquettes suggérées : "+strings.Join(outcome.TagsAssumed, ", "))
 	}
 	return strings.Join(parts, "\n\n")
 }
