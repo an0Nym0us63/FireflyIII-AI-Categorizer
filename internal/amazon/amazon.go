@@ -16,7 +16,7 @@ import (
 
 const (
 	matchAmountTolerance = 0.02 // euros
-	matchMaxDays         = 7    // bank charge vs ship/order date
+	matchMaxDays         = 3    // bank charge vs ship/order date
 )
 
 // Shipment is one Amazon shipment (grouped rows sharing an order + ship date).
@@ -128,27 +128,24 @@ func Load(path string) *Index {
 // Loaded reports whether any shipments are available.
 func (i *Index) Loaded() bool { return i != nil && len(i.shipments) > 0 }
 
-// Lookup finds the products of the shipment best matching a bank transaction by
-// amount and date (optionally refined by the card's last 4 digits). It returns
-// nothing when there is no confident, unambiguous match.
+// Lookup finds the products of the shipment matching a bank transaction. Date
+// is the primary matcher (in most cases there is a single order around a given
+// date); the amount is only used to disambiguate when several orders fall close
+// to the same date, with the card as a final tie-breaker.
 func (i *Index) Lookup(amount float64, date time.Time, cardLast4 string) ([]string, bool) {
-	if !i.Loaded() || amount <= 0 {
+	if !i.Loaded() || date.IsZero() {
 		return nil, false
 	}
 
 	type cand struct {
-		s         Shipment
-		dayDiff   int
-		cardMatch bool
+		s       Shipment
+		dayDiff int
 	}
 	var cands []cand
 	for _, s := range i.shipments {
-		if math.Abs(s.Total-amount) > matchAmountTolerance {
-			continue
-		}
 		best := 1 << 30
 		for _, d := range []time.Time{s.ShipDate, s.OrderDate} {
-			if d.IsZero() || date.IsZero() {
+			if d.IsZero() {
 				continue
 			}
 			diff := int(math.Abs(date.Sub(d).Hours()) / 24)
@@ -156,43 +153,51 @@ func (i *Index) Lookup(amount float64, date time.Time, cardLast4 string) ([]stri
 				best = diff
 			}
 		}
-		if best > matchMaxDays {
-			continue
+		if best <= matchMaxDays {
+			cands = append(cands, cand{s, best})
 		}
-		cands = append(cands, cand{s, best, cardLast4 != "" && s.CardLast4 == cardLast4})
 	}
 	if len(cands) == 0 {
 		return nil, false
 	}
 
-	sort.SliceStable(cands, func(a, b int) bool {
-		if cands[a].cardMatch != cands[b].cardMatch {
-			return cands[a].cardMatch
-		}
-		return cands[a].dayDiff < cands[b].dayDiff
-	})
+	sort.SliceStable(cands, func(a, b int) bool { return cands[a].dayDiff < cands[b].dayDiff })
 
-	best := cands[0]
-	// Reject ambiguity: another equally-good candidate with different contents.
-	if len(cands) > 1 {
-		c2 := cands[1]
-		if c2.cardMatch == best.cardMatch && c2.dayDiff == best.dayDiff && !sameProducts(best.s.Products, c2.s.Products) {
-			return nil, false
-		}
+	// Single candidate near this date — the date is enough.
+	if len(cands) == 1 {
+		return cands[0].s.Products, true
 	}
-	return best.s.Products, true
-}
 
-func sameProducts(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+	// Several candidates — use the amount to pick the right one.
+	if amount > 0 {
+		var amt []cand
+		for _, c := range cands {
+			if math.Abs(c.s.Total-amount) <= matchAmountTolerance {
+				amt = append(amt, c)
+			}
+		}
+		if len(amt) == 1 {
+			return amt[0].s.Products, true
+		}
+		if len(amt) > 1 && cardLast4 != "" {
+			var carded []cand
+			for _, c := range amt {
+				if c.s.CardLast4 == cardLast4 {
+					carded = append(carded, c)
+				}
+			}
+			if len(carded) == 1 {
+				return carded[0].s.Products, true
+			}
 		}
 	}
-	return true
+
+	// Fall back to a strictly-closest unique date.
+	if cands[0].dayDiff < cands[1].dayDiff {
+		return cands[0].s.Products, true
+	}
+
+	return nil, false
 }
 
 func last4(paymentMethod string) string {
