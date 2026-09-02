@@ -417,7 +417,7 @@ function renderTxnTable(rows) {
         var checked = selectedTxns.has(r.id) ? 'checked' : '';
         var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
         var date = r.date ? r.date.substring(0, 10) : '';
-        var aiTag = aiTagLabel(r.tags);
+        var stateBadge = processedBadge(r.tags);
         var semTags = semanticTagLabels(r.tags, r.id);
         return '<tr' + cls + '>'
             + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
@@ -426,7 +426,7 @@ function renderTxnTable(rows) {
             + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
             + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-            + '<td class="hidden-xs">' + aiTag + (semTags ? ' ' + semTags : '') + '</td>'
+            + '<td class="hidden-xs">' + stateBadge + (semTags ? ' ' + semTags : '') + '</td>'
             + '</tr>';
     }).join('');
     $('#txn-tbody').html(html);
@@ -441,6 +441,24 @@ function aiTagLabel(tags) {
         if (tags[i].indexOf(':reviewed') >= 0) return '<span class="label label-info">reviewed</span>';
     }
     return '';
+}
+
+// processedBadge tells, from the auto-applied AI control tags, whether a
+// transaction has already been through the classifier. Shows the classification
+// status when present, a generic "traité" when processed without a primary
+// outcome tag, or a muted "non traité" when the AI never touched it.
+function processedBadge(tags) {
+    var status = aiTagLabel(tags);
+    if (status) return status;
+    var suffixes = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':reviewed', ':suggest:'];
+    if (tags && tags.length) {
+        for (var i = 0; i < tags.length; i++) {
+            for (var k = 0; k < suffixes.length; k++) {
+                if (tags[i].indexOf(suffixes[k]) >= 0) return '<span class="label label-success">traité</span>';
+            }
+        }
+    }
+    return '<span class="label label-default" title="Pas encore traité par l\'IA">non traité</span>';
 }
 
 // semanticTagLabels renders the AI's content tags: applied tags as plain
