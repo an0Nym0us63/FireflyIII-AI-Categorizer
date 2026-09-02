@@ -1004,9 +1004,10 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	missingDestination := q.Get("missing_destination") == "true"
 	destFilter := q.Get("destination")
 	categoryFilter := q.Get("category")
+	statusFilter := q.Get("status")
 
 	// When filtering is active, we must fetch all pages, filter, and re-paginate.
-	if missingCategory || missingDestination || destFilter != "" || categoryFilter != "" {
+	if missingCategory || missingDestination || destFilter != "" || categoryFilter != "" || (statusFilter != "" && statusFilter != "all") {
 		// ids_only mode with filters — collect all matching IDs.
 		if q.Get("ids_only") == "true" {
 			var ids []string
@@ -1017,7 +1018,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				for _, row := range result.Data {
-					if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+					if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, statusFilter) {
 						ids = append(ids, row.ID)
 					}
 				}
@@ -1040,7 +1041,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			for _, row := range result.Data {
-				if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+				if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, statusFilter) {
 					allFiltered = append(allFiltered, row)
 				}
 			}
@@ -1106,7 +1107,10 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 }
 
 // matchesTxnFilter checks whether a transaction row matches the active UI filters.
-func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter string) bool {
+func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter, status string) bool {
+	if !txnStatusMatches(row.Tags, status) {
+		return false
+	}
 	if missingCategory && row.CategoryName != "" {
 		return false
 	}
@@ -1130,6 +1134,40 @@ func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestin
 		}
 	}
 	return true
+}
+
+// txnStatusMatches filters a transaction by its AI-processing status, derived
+// from the control tags applied automatically during classification.
+func txnStatusMatches(tags []string, status string) bool {
+	has := func(needle string) bool {
+		for _, t := range tags {
+			if strings.Contains(t, needle) {
+				return true
+			}
+		}
+		return false
+	}
+	switch status {
+	case "", "all":
+		return true
+	case "untreated":
+		return !has(":classified") && !has(":assumed") && !has(":needs-review") &&
+			!has(":dest-assumed") && !has(":reviewed") && !has(":suggest:")
+	case "classified":
+		return has(":classified")
+	case "assumed":
+		return has(":assumed")
+	case "needs_review":
+		return has(":needs-review")
+	case "dest_assumed":
+		return has(":dest-assumed")
+	case "reviewed":
+		return has(":reviewed")
+	case "suggested":
+		return has(":suggest:")
+	default:
+		return true
+	}
 }
 
 // --- Job endpoints ---

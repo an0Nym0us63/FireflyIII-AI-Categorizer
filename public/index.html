@@ -296,6 +296,20 @@
                                             </div>
                                         </div>
                                         <div class="col-sm-3 col-md-2">
+                                            <label style="font-size:12px;font-weight:600;display:block">AI status</label>
+                                            <select class="form-control input-sm" id="txn-filter-status"
+                                                onchange="loadTransactions()">
+                                                <option value="">— all —</option>
+                                                <option value="untreated">Non traité</option>
+                                                <option value="classified">Classified</option>
+                                                <option value="assumed">Assumed (catégorie)</option>
+                                                <option value="dest_assumed">Destination assumed</option>
+                                                <option value="needs_review">Needs review</option>
+                                                <option value="reviewed">Reviewed</option>
+                                                <option value="suggested">Tags à valider</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-sm-3 col-md-2">
                                             <label style="font-size:12px;font-weight:600;display:block">&nbsp;</label>
                                             <button type="button" class="btn btn-default btn-sm"
                                                 onclick="loadTransactions()" style="margin-bottom:8px">

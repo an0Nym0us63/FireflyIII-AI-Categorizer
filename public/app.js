@@ -382,6 +382,8 @@ async function loadTransactions(page) {
     if (destFilter) params.set('destination', destFilter);
     var catFilter = $('#txn-filter-category').val();
     if (catFilter) params.set('category', catFilter);
+    var stFilter = $("#txn-filter-status").val();
+    if (stFilter) params.set("status", stFilter);
     txnFlash('', '');
     $('#txn-select-all-bar').hide();
     $('#txn-select-all').prop('checked', false);
@@ -562,6 +564,8 @@ async function selectAllPages() {
     if (destFilter) params.set('destination', destFilter);
     var catFilter = $('#txn-filter-category').val();
     if (catFilter) params.set('category', catFilter);
+    var stFilter = $("#txn-filter-status").val();
+    if (stFilter) params.set("status", stFilter);
     $('#txn-select-all-bar').html('<i class="fa fa-spinner fa-spin"></i> Fetching all transaction IDs&hellip;');
     try {
         var res = await fetch('/api/transactions?' + params);
