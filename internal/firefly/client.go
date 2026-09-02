@@ -288,143 +288,70 @@ func (c *Client) GetAllWithdrawals(ctx context.Context) ([]Transaction, error) {
 
 // ReviewGroups holds the four categories of transactions that need human review.
 type ReviewGroups struct {
-	NeedsReview      []Transaction
-	Assumed          []Transaction
-	DestAssumed      []Transaction
-	TransferCategory []Transaction
+	NeedsReview []Transaction
+	Assumed     []Transaction
+	DestAssumed []Transaction
 }
 
-// GetReviewGroups fetches all withdrawal pages once and buckets transactions
-// into the four review categories. This avoids the 4× overhead of separate
-// paginated fetches.
+// GetReviewGroups scans withdrawals once (with a large page size to minimise
+// round-trips) and buckets transactions needing review by their AI tags.
 func (c *Client) GetReviewGroups(ctx context.Context) (*ReviewGroups, error) {
 	needsReviewTag := c.tagPrefix + ":needs-review"
 	assumedTag := c.tagPrefix + ":assumed"
 	destAssumedTag := c.tagPrefix + ":dest-assumed"
 
 	rg := &ReviewGroups{}
-	seen := make(map[string]bool) // txn IDs already placed in a higher-priority group
-
-	// addTagGroup fetches only the withdrawals carrying tag (via Firefly's
-	// per-tag endpoint — far cheaper than scanning every transaction), keeps
-	// the matching splits, and skips transactions already claimed by a
-	// higher-priority group.
-	addTagGroup := func(tag string, dst *[]Transaction) error {
-		txns, err := c.fetchByTag(ctx, tag)
-		if err != nil {
-			return err
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/transactions?type=withdrawal&limit=500&page=%d", c.baseURL, page)
+		var resp transactionsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("get review groups page %d: %w", page, err)
 		}
-		for _, txn := range txns {
-			if seen[txn.ID] {
-				continue
-			}
+
+		for _, item := range resp.Data {
+			txn := toTransaction(item)
+
 			var kept []Split
 			for _, s := range txn.Splits {
-				if contains(s.Tags, tag) {
+				if contains(s.Tags, needsReviewTag) {
 					kept = append(kept, s)
 				}
 			}
 			if len(kept) > 0 {
 				txn.Splits = kept
-				*dst = append(*dst, txn)
-				seen[txn.ID] = true
-			}
-		}
-		return nil
-	}
-
-	if err := addTagGroup(needsReviewTag, &rg.NeedsReview); err != nil {
-		return nil, err
-	}
-	if err := addTagGroup(assumedTag, &rg.Assumed); err != nil {
-		return nil, err
-	}
-	if err := addTagGroup(destAssumedTag, &rg.DestAssumed); err != nil {
-		return nil, err
-	}
-
-	// Transfers-category candidates via the category endpoint (best-effort;
-	// a lookup failure just yields an empty group rather than failing review).
-	if txns, err := c.fetchWithdrawalsByCategoryName(ctx, "Transfers"); err == nil {
-		for _, txn := range txns {
-			if seen[txn.ID] {
+				rg.NeedsReview = append(rg.NeedsReview, txn)
 				continue
 			}
-			var kept []Split
+
+			kept = nil
 			for _, s := range txn.Splits {
-				if strings.EqualFold(s.CategoryName, "Transfers") {
+				if contains(s.Tags, assumedTag) {
 					kept = append(kept, s)
 				}
 			}
 			if len(kept) > 0 {
 				txn.Splits = kept
-				rg.TransferCategory = append(rg.TransferCategory, txn)
-				seen[txn.ID] = true
+				rg.Assumed = append(rg.Assumed, txn)
+				continue
+			}
+
+			kept = nil
+			for _, s := range txn.Splits {
+				if contains(s.Tags, destAssumedTag) {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				rg.DestAssumed = append(rg.DestAssumed, txn)
 			}
 		}
-	}
 
+		if page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
 	return rg, nil
-}
-
-// fetchByTag returns all withdrawals carrying the given tag, using Firefly's
-// per-tag transactions endpoint so only relevant transactions are fetched.
-func (c *Client) fetchByTag(ctx context.Context, tag string) ([]Transaction, error) {
-	// Firefly (Laravel) routing is unreliable with a raw ":" in a path segment,
-	// so escape it explicitly.
-	escTag := strings.ReplaceAll(url.PathEscape(tag), ":", "%3A")
-	var out []Transaction
-	for page := 1; ; page++ {
-		u := fmt.Sprintf("%s/api/v1/tags/%s/transactions?type=withdrawal&page=%d",
-			c.baseURL, escTag, page)
-		var resp transactionsResponse
-		if err := c.get(ctx, u, &resp); err != nil {
-			return nil, fmt.Errorf("get transactions for tag %q page %d: %w", tag, page, err)
-		}
-		for _, item := range resp.Data {
-			out = append(out, toTransaction(item))
-		}
-		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
-			break
-		}
-	}
-	return out, nil
-}
-
-// fetchWithdrawalsByCategoryName returns withdrawals in a category identified by
-// name, using the per-category endpoint. Returns nil when the category is absent.
-func (c *Client) fetchWithdrawalsByCategoryName(ctx context.Context, name string) ([]Transaction, error) {
-	cats, err := c.GetCategories(ctx)
-	if err != nil {
-		return nil, err
-	}
-	catID := ""
-	for _, cat := range cats {
-		if strings.EqualFold(cat.Name, name) {
-			catID = cat.ID
-			break
-		}
-	}
-	if catID == "" {
-		return nil, nil
-	}
-
-	var out []Transaction
-	for page := 1; ; page++ {
-		u := fmt.Sprintf("%s/api/v1/categories/%s/transactions?type=withdrawal&page=%d",
-			c.baseURL, catID, page)
-		var resp transactionsResponse
-		if err := c.get(ctx, u, &resp); err != nil {
-			return nil, fmt.Errorf("get transactions for category %s page %d: %w", catID, page, err)
-		}
-		for _, item := range resp.Data {
-			out = append(out, toTransaction(item))
-		}
-		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
-			break
-		}
-	}
-	return out, nil
 }
 
 // GetNeedsReviewWithdrawals fetches all withdrawals tagged with the needs-review tag.

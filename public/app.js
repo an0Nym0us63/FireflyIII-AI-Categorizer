@@ -50,8 +50,6 @@ function switchTab(name) {
     if (name === 'review') {
         // Pause global polling while on the review tab (it does its own full refresh).
         if (globalReviewPollTimer) { clearInterval(globalReviewPollTimer); globalReviewPollTimer = null; }
-        // Show transfer section immediately.
-        document.getElementById('review-section-transfers').style.display = '';
         loadReview();
         // Poll every 30 seconds for new items to review.
         reviewPollTimer = setInterval(function () {
@@ -652,13 +650,10 @@ var REVIEW_BATCH_SIZE = 8;
 async function loadReview(silent) {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var transferBody = document.getElementById('transfer-body');
-    var transferSection = document.getElementById('review-section-transfers');
     if (!silent) {
         body.innerHTML = '<p><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
         actionBar.style.display = 'none';
         hideReviewProcessingBar();
-        transferBody.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading&hellip;</p>';
     }
     try {
         var catRes = fetch('/api/categories');
@@ -706,16 +701,8 @@ async function loadReview(silent) {
 function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
-    var transferBody = document.getElementById('transfer-body');
-    var transferSection = document.getElementById('review-section-transfers');
 
-    // Split groups by outcome. DEST_ASSUMED stays in the main review.
-    var reviewGroups = allReviewGroups.filter(function (g) {
-        return g.outcome !== 'TRANSFER_CATEGORY';
-    });
-    var transferGroups = allReviewGroups.filter(function (g) {
-        return g.outcome === 'TRANSFER_CATEGORY';
-    });
+    var reviewGroups = allReviewGroups;
     var batch = reviewGroups.slice(0, REVIEW_BATCH_SIZE);
 
     reviewGroupCounter = 0;
@@ -733,18 +720,8 @@ function renderCurrentBatch() {
         actionBar.style.display = 'none';
     }
 
-    // Transfer section
-    if (transferGroups.length) {
-        transferSection.style.display = '';
-        transferBody.innerHTML = renderTransferSection(transferGroups);
-    } else {
-        transferSection.style.display = '';
-        transferBody.innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
-    }
-
     updateProgressIndicator();
     updateReviewBadge();
-    populateTransferDestinations();
 }
 
 function updateProgressIndicator() {
@@ -1470,10 +1447,6 @@ function skipReviewGroup(gi) {
         }
     }
     el.remove();
-    // Update transfer section content if the skipped group was the last transfer.
-    if (!document.querySelector('#grid-transfers .review-group')) {
-        document.getElementById('transfer-body').innerHTML = '<p class="text-muted">No transactions flagged for transfer conversion.</p>';
-    }
     if (!document.querySelector('.review-group')) {
         renderCurrentBatch();
     } else {

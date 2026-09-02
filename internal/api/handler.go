@@ -616,7 +616,6 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	result = append(result, buildReviewGroups("NEEDS_REVIEW", rg.NeedsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", rg.Assumed)...)
 	result = append(result, buildReviewGroups("DEST_ASSUMED", rg.DestAssumed)...)
-	result = append(result, buildReviewGroups("TRANSFER_CATEGORY", rg.TransferCategory)...)
 
 	writeJSON(w, http.StatusOK, result)
 }
