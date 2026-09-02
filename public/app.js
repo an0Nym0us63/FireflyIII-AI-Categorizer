@@ -245,6 +245,16 @@ function buildDetailInner(j) {
     }
     if (j.reason) html += '<p><strong>Reason:</strong> ' + esc(j.reason) + '</p>';
     if (j.assumption) html += '<p><strong>Assumption:</strong> <em class="text-warning">' + esc(j.assumption) + '</em></p>';
+    if (j.tags && j.tags.length) {
+        html += '<p><strong>Tags:</strong> ' + j.tags.map(function (t) {
+            return '<span class="label label-primary" style="margin-right:4px">' + esc(t) + '</span>';
+        }).join('') + '</p>';
+    }
+    if (j.tags_assumed && j.tags_assumed.length) {
+        html += '<p><strong>Tags suggérés:</strong> ' + j.tags_assumed.map(function (t) {
+            return '<span class="label label-warning" style="margin-right:4px">' + esc(t) + '</span>';
+        }).join('') + ' <em class="text-muted">(à valider, non appliqués)</em></p>';
+    }
     if (j.error) {
         html += '<div style="display:flex;align-items:flex-start;gap:8px;margin:0 0 8px">'
             + '<div class="alert alert-danger" style="margin:0;flex:1"><i class="fa fa-warning"></i> ' + esc(j.error) + '</div>'
@@ -408,6 +418,7 @@ function renderTxnTable(rows) {
         var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
         var date = r.date ? r.date.substring(0, 10) : '';
         var aiTag = aiTagLabel(r.tags);
+        var semTags = semanticTagLabels(r.tags);
         return '<tr' + cls + '>'
             + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
             + '<td style="white-space:nowrap">' + esc(date) + '</td>'
@@ -415,7 +426,7 @@ function renderTxnTable(rows) {
             + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
             + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-            + '<td class="hidden-xs">' + aiTag + '</td>'
+            + '<td class="hidden-xs">' + aiTag + (semTags ? ' ' + semTags : '') + '</td>'
             + '</tr>';
     }).join('');
     $('#txn-tbody').html(html);
@@ -430,6 +441,22 @@ function aiTagLabel(tags) {
         if (tags[i].indexOf(':reviewed') >= 0) return '<span class="label label-info">reviewed</span>';
     }
     return '';
+}
+
+// semanticTagLabels renders the AI's content tags (everything that is not one of
+// the app's internal control tags like "ai:classified").
+function semanticTagLabels(tags) {
+    if (!tags || !tags.length) return '';
+    var ctrl = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':tags-assumed', ':reviewed'];
+    var out = [];
+    for (var i = 0; i < tags.length; i++) {
+        var t = tags[i], isCtrl = false;
+        for (var k = 0; k < ctrl.length; k++) {
+            if (t.indexOf(ctrl[k]) >= 0) { isCtrl = true; break; }
+        }
+        if (!isCtrl) out.push('<span class="label label-primary" style="margin-right:3px">' + esc(t) + '</span>');
+    }
+    return out.join('');
 }
 
 function renderTxnPagination() {

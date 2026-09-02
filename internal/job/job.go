@@ -34,5 +34,8 @@ type Job struct {
 	DestinationAccount string `json:"destination_account,omitempty"`
 	DestinationAction  string `json:"destination_action,omitempty"` // "MATCH" or "CREATE"
 
+	Tags        []string `json:"tags,omitempty"`         // semantic tags applied to the transaction
+	TagsAssumed []string `json:"tags_assumed,omitempty"` // low-confidence tags suggested for review
+
 	Error string `json:"error,omitempty"`
 }

@@ -49,7 +49,7 @@ func (r *Registry) SetInProgress(id string) {
 	r.update(id, func(j *Job) { j.Status = StatusInProgress })
 }
 
-func (r *Registry) SetFinished(id, outcome, category, reason, assumption, rawPrompt, rawResponse, destAccount, destAction string) {
+func (r *Registry) SetFinished(id, outcome, category, reason, assumption, rawPrompt, rawResponse, destAccount, destAction string, tags, tagsAssumed []string) {
 	r.update(id, func(j *Job) {
 		j.Status = StatusFinished
 		j.Outcome = outcome
@@ -60,6 +60,8 @@ func (r *Registry) SetFinished(id, outcome, category, reason, assumption, rawPro
 		j.RawResponse = rawResponse
 		j.DestinationAccount = destAccount
 		j.DestinationAction = destAction
+		j.Tags = tags
+		j.TagsAssumed = tagsAssumed
 	})
 }
 
