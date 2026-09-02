@@ -158,20 +158,23 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// user's Amazon order-history export and feed the product names to the LLM
 	// so it categorizes from the actual contents rather than just "Amazon".
 	var extraContext string
+	var amazonUncertain bool
 	if p.amazon.Loaded() && amazonTxn {
-		var txnDate time.Time
+		var fireflyDate time.Time
 		if len(splits) > 0 && len(splits[0].Date) >= 10 {
 			if t, err := time.Parse("2006-01-02", splits[0].Date[:10]); err == nil {
-				txnDate = t
+				fireflyDate = t
 			}
 		}
+		labelDate := amazon.ParseLabelDate(j.Description, fireflyDate)
 		card := ""
 		if m := reCardLast4.FindStringSubmatch(j.Description); m != nil {
 			card = m[1]
 		}
-		if products, ok := p.amazon.Lookup(derefAmount(j.Amount), txnDate, card); ok && len(products) > 0 {
+		if products, certain, ok := p.amazon.Lookup(derefAmount(j.Amount), labelDate, fireflyDate, card); ok && len(products) > 0 {
 			extraContext = "Amazon order contents (matched by date): " + strings.Join(products, "; ")
-			slog.Info("amazon order matched", "id", transactionID, "items", len(products))
+			amazonUncertain = !certain
+			slog.Info("amazon order matched", "id", transactionID, "items", len(products), "certain", certain)
 		}
 	}
 
@@ -308,6 +311,15 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		Assumption: result.Assumption,
 	}
 
+	// An Amazon match disambiguated by amount (several orders that day) is not
+	// certain — downgrade to ASSUMED so a human reviews the chosen category.
+	if amazonUncertain && outcome.Outcome == string(classifier.Classified) {
+		outcome.Outcome = string(classifier.Assumed)
+		if strings.TrimSpace(outcome.Assumption) == "" {
+			outcome.Assumption = "Correspondance Amazon incertaine (plusieurs commandes à cette date) — à vérifier."
+		}
+	}
+
 	// Split tag suggestions: confident tags are applied, assumed ones are only
 	// surfaced for human review (recorded in notes + flagged).
 	for _, t := range result.Tags {
@@ -413,6 +425,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		finishedOutcome = string(classifier.Classified)
 		finishedCategory = historyMatchCat
 		finishedReason = outcome.Reason
+	}
+	if amazonUncertain && finishedOutcome == string(classifier.Classified) {
+		finishedOutcome = string(classifier.Assumed)
 	}
 
 	p.registry.SetFinished(
