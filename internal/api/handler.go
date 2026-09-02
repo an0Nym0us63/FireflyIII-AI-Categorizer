@@ -705,6 +705,11 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
 	}
 
+	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID, destID); err != nil {
+		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
