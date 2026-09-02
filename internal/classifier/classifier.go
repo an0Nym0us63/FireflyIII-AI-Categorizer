@@ -35,7 +35,8 @@ func GroupKey(destinationName, description string) string {
 
 func isBlankName(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "no name", "(no name)", "unknown", "n/a":
+	case "", "no name", "(no name)", "unknown", "n/a",
+		"cash account", "(cash account)", "cash", "(cash)":
 		return true
 	}
 	return false
