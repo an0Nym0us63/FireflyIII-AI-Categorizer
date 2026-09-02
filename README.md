@@ -41,7 +41,8 @@ The recommended way is Docker Compose with a volume mount so settings survive co
 ```yaml
 services:
   categorizer:
-    image: ghcr.io/ejagombar/fireflyiii-ai-categorizer:latest
+    image: ghcr.io/an0nym0us63/fireflyiii-ai-categorizer:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "3000:3000"
