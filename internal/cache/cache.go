@@ -97,6 +97,12 @@ func (c *Cache) ensureFresh(ctx context.Context) error {
 	entries := make([]classifier.HistoricalEntry, 0, len(txns))
 	for _, txn := range txns {
 		for _, s := range txn.Splits {
+			// Skip transactions still sitting on a generic account (e.g. "Cash
+			// account"): they haven't been sorted, so they are not reliable
+			// references for either category or destination.
+			if classifier.IsGenericAccountName(s.DestinationName) {
+				continue
+			}
 			amount, _ := strconv.ParseFloat(s.Amount, 64)
 			entries = append(entries, classifier.HistoricalEntry{
 				TransactionID:        txn.ID,

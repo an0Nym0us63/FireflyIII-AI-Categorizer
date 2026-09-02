@@ -64,7 +64,7 @@ func Load() (*Config, *Store, error) {
 		DeepseekModel:           getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
 		TagPrefix:               getEnv("TAG_PREFIX", "ai"),
 		HistoryContextLimit:     getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
-		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 90),
+		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 365),
 		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
 		TagSuggestEnabled:       getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
 		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),

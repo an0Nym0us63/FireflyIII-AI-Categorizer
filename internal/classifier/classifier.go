@@ -2,6 +2,7 @@ package classifier
 
 import (
 	"context"
+	"regexp"
 	"strings"
 )
 
@@ -23,14 +24,118 @@ type HistoricalEntry struct {
 	DestinationAccountID string  // expense account ID from a previous classification (empty if unknown)
 }
 
-// GroupKey returns the field to use when grouping and looking up transaction
-// history. When destination_name is absent or a generic placeholder, description
-// is used instead so that past context is still surfaced for nameless payees.
+// GroupKey returns the key used to group and look up transaction history.
+// French bank descriptions carry the merchant but wrapped in noise (card
+// prefix, payment-processor prefix, reference, date) that differs on every
+// visit, so grouping on the raw description never matches. GroupKey therefore
+// derives a stable "merchant fingerprint" from the description and uses that.
+// It falls back to the destination name (when it is a real payee) or the raw
+// description only when no merchant token can be extracted.
+//
+// Because both the incoming transaction and the stored history entries go
+// through this same function, the two sides always align on the same key.
 func GroupKey(destinationName, description string) string {
-	if isBlankName(destinationName) {
-		return description
+	if fp := merchantFingerprint(description); fp != "" {
+		return fp
 	}
-	return destinationName
+	if !isBlankName(destinationName) {
+		return strings.ToLower(strings.TrimSpace(destinationName))
+	}
+	return strings.ToLower(strings.TrimSpace(description))
+}
+
+// IsGenericAccountName reports whether name is blank or a generic placeholder
+// (e.g. "(no name)", "Cash account"). Exposed so other packages (history cache)
+// can drop unsorted transactions that still sit on such an account.
+func IsGenericAccountName(name string) bool {
+	return isBlankName(name)
+}
+
+var (
+	reCardPrefix = regexp.MustCompile(`^X\d{3,4}\s+`)
+	reDatePart   = regexp.MustCompile(`\b\d{2}/\d{2}(?:/\d{2,4})?\b`)
+	reProcessor  = regexp.MustCompile(`^(HPY|SUMUP|SUM-UP|PAYPAL|PP|SQ|SQUARE|STRIPE|MOLLIE|CKO|ADYEN|IZ|IZETTLE|ZTL|ZETTLE|LYDIA|GOCARDLESS|GC|PADDLE|WISE|REVOLUT|SP|SC)\*`)
+	reHasDigit   = regexp.MustCompile(`\d`)
+)
+
+// txnTypePrefixes are leading French bank keywords to strip before the merchant.
+var txnTypePrefixes = []string{
+	"PAIEMENT CB", "FACTURE CARTE", "ACHAT CB", "ACHAT CARTE",
+	"PRLV SEPA", "PRELEVEMENT SEPA", "PRLV", "PRELEVEMENT",
+	"VIR SEPA", "VIREMENT SEPA", "VIR", "VIREMENT",
+	"RETRAIT DAB", "RETRAIT", "DAB", "CARTE", "CB", "SEPA",
+}
+
+// merchantStopwords are short leading words that don't identify a merchant on
+// their own, so the next token is appended for context.
+var merchantStopwords = map[string]bool{
+	"LE": true, "LA": true, "LES": true, "L": true, "AU": true, "AUX": true,
+	"DU": true, "DE": true, "DES": true, "CHEZ": true, "THE": true, "A": true,
+}
+
+// merchantFingerprint extracts a stable merchant key from a noisy French/CA
+// bank description, or "" when nothing usable can be extracted. Heuristic by
+// design — worst case it returns "" and the caller falls back.
+func merchantFingerprint(description string) string {
+	s := strings.ToUpper(strings.TrimSpace(description))
+	if s == "" {
+		return ""
+	}
+
+	// Drop leading card marker like "X0938 ".
+	s = reCardPrefix.ReplaceAllString(s, "")
+
+	// Cut everything from the first date onward (e.g. "01/09", "07/2026").
+	if loc := reDatePart.FindStringIndex(s); loc != nil {
+		s = s[:loc[0]]
+	}
+	s = strings.TrimSpace(s)
+
+	// Strip leading transaction-type prefixes, repeatedly.
+	changed := true
+	for changed {
+		changed = false
+		for _, p := range txnTypePrefixes {
+			if s == p {
+				s = ""
+			} else if strings.HasPrefix(s, p+" ") {
+				s = strings.TrimSpace(s[len(p):])
+				changed = true
+			}
+		}
+	}
+
+	// Strip a leading payment-processor prefix like "HPY*".
+	s = strings.TrimSpace(reProcessor.ReplaceAllString(s, ""))
+	if s == "" {
+		return ""
+	}
+
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	// Cut a token at "*" (separates merchant from its reference) and trim edges.
+	clean := func(tok string) string {
+		if i := strings.IndexByte(tok, '*'); i >= 0 {
+			tok = tok[:i]
+		}
+		return strings.Trim(tok, ".-_/")
+	}
+
+	first := clean(fields[0])
+	key := first
+	if merchantStopwords[first] && len(fields) > 1 {
+		key = first + " " + clean(fields[1])
+	}
+
+	key = strings.ToLower(strings.TrimSpace(key))
+	// Reject useless keys: too short or reference-like (contains a digit).
+	if len(key) < 3 || reHasDigit.MatchString(key) {
+		return ""
+	}
+	return key
 }
 
 func isBlankName(s string) bool {
