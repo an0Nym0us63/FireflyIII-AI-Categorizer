@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/api"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
@@ -121,7 +122,7 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool) {
 
 	fc := firefly.New(cfg.FireflyURL, cfg.FireflyToken, cfg.TagPrefix)
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
-	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax)
+	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile))
 
 	ctx := context.Background()
 

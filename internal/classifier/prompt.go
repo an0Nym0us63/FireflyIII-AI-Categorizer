@@ -207,5 +207,9 @@ func buildUserPrompt(req Request) string {
 		fmt.Fprintf(&sb, "  Amount: %.2f\n", *req.Amount)
 	}
 
+	if strings.TrimSpace(req.ExtraContext) != "" {
+		fmt.Fprintf(&sb, "\nKnown contents of this purchase (use this to choose the category):\n%s\n", strings.TrimSpace(req.ExtraContext))
+	}
+
 	return sb.String()
 }

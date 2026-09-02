@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
@@ -45,6 +47,8 @@ type Pipeline struct {
 	tagSuggest bool
 	tagMax     int
 
+	amazon *amazon.Index
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
@@ -70,6 +74,7 @@ func New(
 	destinationMatch bool,
 	tagSuggest bool,
 	tagMax int,
+	amz *amazon.Index,
 ) *Pipeline {
 	return &Pipeline{
 		firefly:          fc,
@@ -80,6 +85,7 @@ func New(
 		destinationMatch: destinationMatch,
 		tagSuggest:       tagSuggest,
 		tagMax:           tagMax,
+		amazon:           amz,
 	}
 }
 
@@ -236,6 +242,27 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
+	// For Amazon purchases, try to match the bank transaction to an order in the
+	// user's Amazon order-history export and feed the product names to the LLM
+	// so it categorizes from the actual contents rather than just "Amazon".
+	var extraContext string
+	if p.amazon.Loaded() && isAmazon(j.Description, j.DestinationName) {
+		var txnDate time.Time
+		if len(splits) > 0 && len(splits[0].Date) >= 10 {
+			if t, err := time.Parse("2006-01-02", splits[0].Date[:10]); err == nil {
+				txnDate = t
+			}
+		}
+		card := ""
+		if m := reCardLast4.FindStringSubmatch(j.Description); m != nil {
+			card = m[1]
+		}
+		if products, ok := p.amazon.Lookup(derefAmount(j.Amount), txnDate, card); ok && len(products) > 0 {
+			extraContext = "Amazon order contents (matched by amount and date): " + strings.Join(products, "; ")
+			slog.Info("amazon order matched", "id", transactionID, "items", len(products))
+		}
+	}
+
 	result, err := p.classifier.Classify(ctx, classifier.Request{
 		Categories:          clCats,
 		DestinationName:     j.DestinationName,
@@ -248,6 +275,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		ExistingTags:        existingTags,
 		TagSuggestion:       tagSuggest,
 		TagMax:              p.tagMax,
+		ExtraContext:        extraContext,
 	})
 	if err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
@@ -488,6 +516,15 @@ func tryDestinationHistoryMatch(history []classifier.HistoricalEntry, amount *fl
 		}
 	}
 	return best, bestCount
+}
+
+var reCardLast4 = regexp.MustCompile(`X(\d{4})`)
+
+// isAmazon reports whether a transaction is an Amazon purchase, from its
+// description or destination name.
+func isAmazon(description, destinationName string) bool {
+	s := strings.ToLower(description + " " + destinationName)
+	return strings.Contains(s, "amazon") || strings.Contains(s, "amzn")
 }
 
 func derefAmount(a *float64) float64 {

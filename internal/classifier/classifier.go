@@ -194,6 +194,10 @@ type Request struct {
 	// TagMax caps how many tags the LLM may return (0 falls back to a default).
 	TagMax int
 
+	// ExtraContext is optional per-transaction context injected into the prompt
+	// (e.g. Amazon order contents matched from an order-history export).
+	ExtraContext string
+
 	// DestinationMatching signals to the classifier that the system prompt
 	// and response parsing should include destination-account logic.
 	DestinationMatching bool

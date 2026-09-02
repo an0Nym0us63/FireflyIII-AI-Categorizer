@@ -38,6 +38,8 @@ type Config struct {
 	TagSuggestEnabled bool
 	TagSuggestMax     int
 
+	AmazonOrdersFile string
+
 	SearchEngine string // "google", "duckduckgo", or "" (disabled)
 
 	WorkerConcurrency int
@@ -68,6 +70,7 @@ func Load() (*Config, *Store, error) {
 		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
 		TagSuggestEnabled:       getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
 		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),
+		AmazonOrdersFile:        getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
 		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
 		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 5),
 	}

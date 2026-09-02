@@ -240,6 +240,7 @@ All variables are optional. When they are absent, the server starts normally and
 | `HISTORY_CACHE_TTL` | `10m` | How long to cache the history lookup |
 | `TAG_SUGGEST_ENABLED` | `false` | Let the AI suggest semantic tags (also toggleable in Settings) |
 | `TAG_SUGGEST_MAX` | `3` | Maximum number of tags the AI may suggest per transaction |
+| `AMAZON_ORDERS_FILE` | `/data/amazon_orders.csv` | Path to an Amazon "Order History" CSV export. When present, Amazon withdrawals are matched by amount+date (and card) to their order and the product names are fed to the AI so it categorises from the actual contents |
 
 ---
 

@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/config"
@@ -1331,7 +1332,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile))
 
 	h.mu.Lock()
 	h.fc = fc
