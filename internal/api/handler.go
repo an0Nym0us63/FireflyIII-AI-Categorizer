@@ -42,6 +42,13 @@ type Handler struct {
 	// Transfer conversion history: description → asset account ID.
 	transferHistory   map[string]string
 	transferHistoryMu sync.RWMutex
+
+	// Short-lived cache of computed review groups. The UI polls /api/review
+	// every 30s for the badge (and on every page load), and each computation
+	// scans all withdrawals — so without this, a slow Firefly gets hammered.
+	reviewMu       sync.Mutex
+	reviewCache    []*reviewGroup
+	reviewCachedAt time.Time
 }
 
 func New(
@@ -606,10 +613,31 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rg, err := fc.GetReviewGroups(r.Context())
+	groups, err := h.cachedReviewGroups(r.Context(), fc)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch review groups: %v", err), http.StatusBadGateway)
 		return
+	}
+
+	writeJSON(w, http.StatusOK, groups)
+}
+
+const reviewCacheTTL = 90 * time.Second
+
+// cachedReviewGroups computes review groups at most once per reviewCacheTTL.
+// The mutex is held across the (potentially slow) scan so concurrent callers
+// wait for a single computation instead of each launching their own.
+func (h *Handler) cachedReviewGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
+	h.reviewMu.Lock()
+	defer h.reviewMu.Unlock()
+
+	if h.reviewCache != nil && time.Since(h.reviewCachedAt) < reviewCacheTTL {
+		return h.reviewCache, nil
+	}
+
+	rg, err := fc.GetReviewGroups(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var result []*reviewGroup
@@ -617,7 +645,17 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	result = append(result, buildReviewGroups("ASSUMED", rg.Assumed)...)
 	result = append(result, buildReviewGroups("DEST_ASSUMED", rg.DestAssumed)...)
 
-	writeJSON(w, http.StatusOK, result)
+	h.reviewCache = result
+	h.reviewCachedAt = time.Now()
+	return result, nil
+}
+
+// invalidateReviewCache forces the next /api/review call to recompute, used
+// after a human review action changes the set of flagged transactions.
+func (h *Handler) invalidateReviewCache() {
+	h.reviewMu.Lock()
+	h.reviewCache = nil
+	h.reviewMu.Unlock()
 }
 
 func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGroup {
@@ -718,6 +756,7 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -757,6 +796,7 @@ func (h *Handler) resolveTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
