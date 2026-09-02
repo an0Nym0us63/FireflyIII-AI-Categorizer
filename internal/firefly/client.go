@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -293,9 +294,114 @@ type ReviewGroups struct {
 	DestAssumed []Transaction
 }
 
-// GetReviewGroups scans withdrawals once (with a large page size to minimise
-// round-trips) and buckets transactions needing review by their AI tags.
+// GetReviewGroups returns the transactions needing review. It first tries a
+// fast path that resolves each review tag to its numeric ID and fetches only
+// that tag's transactions (Firefly indexes this). If that path errors or is
+// too slow, it falls back to scanning all withdrawals.
 func (c *Client) GetReviewGroups(ctx context.Context) (*ReviewGroups, error) {
+	fastCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	rg, err := c.reviewGroupsByTag(fastCtx)
+	cancel()
+	if err == nil {
+		return rg, nil
+	}
+	slog.Warn("review: per-tag fetch failed, scanning all withdrawals instead", "error", err)
+	return c.reviewGroupsByScan(ctx)
+}
+
+// reviewGroupsByTag fetches only the flagged transactions, resolving each
+// review tag to its numeric ID first so the URL carries no ":" (which some
+// Firefly setups mishandle) and only relevant transactions are fetched.
+func (c *Client) reviewGroupsByTag(ctx context.Context) (*ReviewGroups, error) {
+	tagIDs, err := c.listTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rg := &ReviewGroups{}
+	seen := make(map[string]bool) // txn IDs already in a higher-priority group
+
+	order := []struct {
+		name string
+		dst  *[]Transaction
+	}{
+		{c.tagPrefix + ":needs-review", &rg.NeedsReview},
+		{c.tagPrefix + ":assumed", &rg.Assumed},
+		{c.tagPrefix + ":dest-assumed", &rg.DestAssumed},
+	}
+
+	for _, o := range order {
+		id, ok := tagIDs[strings.ToLower(o.name)]
+		if !ok {
+			continue // tag never used — nothing flagged for it
+		}
+		txns, err := c.fetchByTagID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, txn := range txns {
+			if seen[txn.ID] {
+				continue
+			}
+			var kept []Split
+			for _, s := range txn.Splits {
+				if contains(s.Tags, o.name) {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) > 0 {
+				txn.Splits = kept
+				*o.dst = append(*o.dst, txn)
+				seen[txn.ID] = true
+			}
+		}
+	}
+	return rg, nil
+}
+
+// listTags returns a map of lowercased tag name → numeric tag ID.
+func (c *Client) listTags(ctx context.Context) (map[string]string, error) {
+	ids := make(map[string]string)
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/tags?page=%d", c.baseURL, page)
+		var resp tagsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("list tags page %d: %w", page, err)
+		}
+		for _, item := range resp.Data {
+			if item.Attributes.Tag != "" && item.ID != "" {
+				ids[strings.ToLower(item.Attributes.Tag)] = item.ID
+			}
+		}
+		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return ids, nil
+}
+
+// fetchByTagID fetches withdrawals carrying the tag identified by numeric ID.
+func (c *Client) fetchByTagID(ctx context.Context, id string) ([]Transaction, error) {
+	var out []Transaction
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/tags/%s/transactions?type=withdrawal&limit=200&page=%d", c.baseURL, id, page)
+		var resp transactionsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("get transactions for tag id %s page %d: %w", id, page, err)
+		}
+		for _, item := range resp.Data {
+			out = append(out, toTransaction(item))
+		}
+		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return out, nil
+}
+
+// reviewGroupsByScan scans all withdrawals once (large page size) and buckets
+// transactions needing review by their AI tags. Fallback for reviewGroupsByTag.
+func (c *Client) reviewGroupsByScan(ctx context.Context) (*ReviewGroups, error) {
 	needsReviewTag := c.tagPrefix + ":needs-review"
 	assumedTag := c.tagPrefix + ":assumed"
 	destAssumedTag := c.tagPrefix + ":dest-assumed"
