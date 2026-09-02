@@ -188,9 +188,10 @@ func buildUserPrompt(req Request) string {
 		}
 
 		fmt.Fprintf(&sb, "Tagging is enabled. In ADDITION to the fields above, include a \"tags\" array in your JSON (at most %d items). Each item: {\"name\": <tag>, \"action\": \"MATCH\"|\"CREATE\", \"confidence\": \"CLASSIFIED\"|\"ASSUMED\"}.\n", max)
+		sb.WriteString("- Tags must ADD information beyond the category and destination. NEVER output a tag that repeats, translates, or is a synonym of the chosen category (e.g. category \"Restauration\" → do NOT tag \"restaurant\"/\"resto\"). If you have nothing that adds information, return an empty array — that is expected and fine.\n")
+		sb.WriteString("- A good tag captures a DIFFERENT dimension of the expense: recurrence (abonnement, récurrent, ponctuel), context (professionnel, cadeau, vacances, urgence), or channel (en-ligne, espèces). Short lowercase French keywords.\n")
 		sb.WriteString("- Prefer reusing an existing tag: use MATCH with the exact name from the list. Only use CREATE for a new, concise tag when none fits.\n")
-		sb.WriteString("- Tags are short, lowercase French keywords describing the nature of the expense (e.g. abonnement, restaurant, courses, transport, sante, loisirs, professionnel, voyage).\n")
-		sb.WriteString("- Only include a tag you are actually confident is relevant. Use confidence CLASSIFIED only when clearly correct, otherwise ASSUMED. Return an empty array when nothing fits.\n\n")
+		sb.WriteString("- Only include a tag you are actually confident is relevant. Use confidence CLASSIFIED only when clearly correct, otherwise ASSUMED.\n\n")
 	}
 
 	sb.WriteString("Transaction to classify:\n")

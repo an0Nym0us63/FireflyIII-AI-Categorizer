@@ -46,9 +46,10 @@ type Handler struct {
 	// Short-lived cache of computed review groups. The UI polls /api/review
 	// every 30s for the badge (and on every page load), and each computation
 	// scans all withdrawals — so without this, a slow Firefly gets hammered.
-	reviewMu       sync.Mutex
-	reviewCache    []*reviewGroup
-	reviewCachedAt time.Time
+	reviewMu         sync.Mutex
+	reviewCache      []*reviewGroup
+	reviewCachedAt   time.Time
+	reviewRefreshing bool
 }
 
 func New(
@@ -622,31 +623,72 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, groups)
 }
 
-const reviewCacheTTL = 90 * time.Second
+const reviewCacheTTL = 2 * time.Minute
 
-// cachedReviewGroups computes review groups at most once per reviewCacheTTL.
-// The mutex is held across the (potentially slow) scan so concurrent callers
-// wait for a single computation instead of each launching their own.
+// cachedReviewGroups serves review groups stale-while-revalidate: a cached copy
+// (even expired) is returned immediately while a background refresh runs, so the
+// UI never waits on a scan except on the very first cold call.
 func (h *Handler) cachedReviewGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
 	h.reviewMu.Lock()
-	defer h.reviewMu.Unlock()
-
-	if h.reviewCache != nil && time.Since(h.reviewCachedAt) < reviewCacheTTL {
-		return h.reviewCache, nil
+	if h.reviewCache != nil {
+		cached := h.reviewCache
+		if time.Since(h.reviewCachedAt) >= reviewCacheTTL && !h.reviewRefreshing {
+			h.reviewRefreshing = true
+			go h.refreshReviewCache()
+		}
+		h.reviewMu.Unlock()
+		return cached, nil
 	}
+	h.reviewMu.Unlock()
 
+	// Cold cache: compute synchronously.
+	groups, err := h.computeReviewGroups(ctx, fc)
+	if err != nil {
+		return nil, err
+	}
+	h.reviewMu.Lock()
+	h.reviewCache = groups
+	h.reviewCachedAt = time.Now()
+	h.reviewMu.Unlock()
+	return groups, nil
+}
+
+// refreshReviewCache recomputes the review cache in the background using a
+// fresh context, so a cancelled request doesn't abort the refresh.
+func (h *Handler) refreshReviewCache() {
+	defer func() {
+		h.reviewMu.Lock()
+		h.reviewRefreshing = false
+		h.reviewMu.Unlock()
+	}()
+
+	fc := h.getFC()
+	if fc == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	groups, err := h.computeReviewGroups(ctx, fc)
+	if err != nil {
+		slog.Warn("review: background refresh failed", "error", err)
+		return
+	}
+	h.reviewMu.Lock()
+	h.reviewCache = groups
+	h.reviewCachedAt = time.Now()
+	h.reviewMu.Unlock()
+}
+
+func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
 	rg, err := fc.GetReviewGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	var result []*reviewGroup
 	result = append(result, buildReviewGroups("NEEDS_REVIEW", rg.NeedsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", rg.Assumed)...)
 	result = append(result, buildReviewGroups("DEST_ASSUMED", rg.DestAssumed)...)
-
-	h.reviewCache = result
-	h.reviewCachedAt = time.Now()
 	return result, nil
 }
 
@@ -1298,6 +1340,15 @@ func (h *Handler) reloadClients() error {
 	h.mu.Unlock()
 
 	slog.Info("clients reloaded", "provider", cfg.AIProvider, "firefly", cfg.FireflyURL)
+
+	// Warm the review cache in the background so the first UI load is instant.
+	h.reviewMu.Lock()
+	if !h.reviewRefreshing {
+		h.reviewRefreshing = true
+		go h.refreshReviewCache()
+	}
+	h.reviewMu.Unlock()
+
 	return nil
 }
 
