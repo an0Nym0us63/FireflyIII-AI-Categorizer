@@ -522,7 +522,18 @@
         <footer class="main-footer">
             <strong><a href="https://github.com/firefly-iii/firefly-iii">Firefly III</a></strong>
             AI Categorizer &mdash; automated transaction classification.
+            <span class="text-muted" id="app-version" style="margin-left:6px"></span>
         </footer>
+        <script>
+        (function () {
+            fetch('/api/version').then(function (r) { return r.json(); }).then(function (d) {
+                var c = (d.commit || '').substring(0, 7);
+                var txt = (d.version || 'dev') + (c ? ' (' + c + ')' : '');
+                var el = document.getElementById('app-version');
+                if (el) el.textContent = txt;
+            }).catch(function () {});
+        })();
+        </script>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>

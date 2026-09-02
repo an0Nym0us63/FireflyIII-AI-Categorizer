@@ -22,6 +22,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/pipeline"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/version"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/worker"
 )
 
@@ -71,6 +72,7 @@ func (h *Handler) Router() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/health", h.health)
+	r.Get("/api/version", h.getVersion)
 	r.Post("/webhook", h.webhookHandler)
 	r.Post("/batch/run", h.batchRun)
 
@@ -106,6 +108,13 @@ func (h *Handler) Router() http.Handler {
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) getVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version": version.Version,
+		"commit":  version.Commit,
+	})
 }
 
 // --- Webhook ---

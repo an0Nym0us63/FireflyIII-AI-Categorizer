@@ -3,7 +3,11 @@ WORKDIR /app
 COPY go.mod ./
 RUN go mod tidy
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /firefly-ai-categorize ./cmd/server
+ARG VERSION=dev
+ARG COMMIT=
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Version=${VERSION} -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Commit=${COMMIT}" \
+    -o /firefly-ai-categorize ./cmd/server
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata && mkdir -p /data
