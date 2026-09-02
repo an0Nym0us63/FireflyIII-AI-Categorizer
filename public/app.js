@@ -532,8 +532,8 @@ async function recategorizeSelected(mode) {
     if (!mode) mode = 'classify';
     var ids = Array.from(selectedTxns);
     if (!ids.length) return;
-    var labels = {classify: 'Set Category', destination: 'Set Destination', both: 'Set Both'};
-    var desc = {classify: 'classify categories', destination: 'match destination accounts', both: 'classify categories and match destinations'};
+    var labels = {classify: 'Set Category & Tags', destination: 'Set Destination', both: 'Set Both'};
+    var desc = {classify: 'classify categories and suggest tags', destination: 'match destination accounts', both: 'classify categories, match destinations and suggest tags'};
     var modeLabel = labels[mode] || 'Process';
     var modeDesc = desc[mode] || 'process';
     showModal(modeLabel + ' transactions',
