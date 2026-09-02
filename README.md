@@ -238,6 +238,8 @@ All variables are optional. When they are absent, the server starts normally and
 | `HISTORY_CONTEXT_LIMIT` | `5` | Past transactions sent to the model as context examples |
 | `HISTORY_LOOKBACK_DAYS` | `90` | How far back to search for history examples |
 | `HISTORY_CACHE_TTL` | `10m` | How long to cache the history lookup |
+| `TAG_SUGGEST_ENABLED` | `false` | Let the AI suggest semantic tags (also toggleable in Settings) |
+| `TAG_SUGGEST_MAX` | `3` | Maximum number of tags the AI may suggest per transaction |
 
 ---
 

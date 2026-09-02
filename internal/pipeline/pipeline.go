@@ -42,10 +42,18 @@ type Pipeline struct {
 
 	destinationMatch bool
 
+	tagSuggest bool
+	tagMax     int
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
 	catFetched time.Time
+
+	// Short-lived tag cache (only used when tagSuggest is true).
+	tagMu      sync.RWMutex
+	tagCache   []string
+	tagFetched time.Time
 
 	// Short-lived expense-account cache (only used when destinationMatch is true).
 	acctMu      sync.RWMutex
@@ -60,6 +68,8 @@ func New(
 	reg *job.Registry,
 	contextN int,
 	destinationMatch bool,
+	tagSuggest bool,
+	tagMax int,
 ) *Pipeline {
 	return &Pipeline{
 		firefly:          fc,
@@ -68,6 +78,8 @@ func New(
 		registry:         reg,
 		contextN:         contextN,
 		destinationMatch: destinationMatch,
+		tagSuggest:       tagSuggest,
+		tagMax:           tagMax,
 	}
 }
 
@@ -211,15 +223,31 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		promptHistory = promptHistory[:p.contextN]
 	}
 
+	// Fetch existing tags to offer the LLM for reuse (only when tagging is on
+	// and we're actually classifying a category).
+	var existingTags []string
+	tagSuggest := p.tagSuggest && opts.ClassifyCategory
+	if tagSuggest {
+		if t, err := p.getTags(ctx); err != nil {
+			slog.Warn("failed to fetch tags, continuing without tag suggestion", "error", err)
+			tagSuggest = false
+		} else {
+			existingTags = t
+		}
+	}
+
 	result, err := p.classifier.Classify(ctx, classifier.Request{
-		Categories:           clCats,
-		DestinationName:      j.DestinationName,
-		Description:          j.Description,
-		Amount:               j.Amount,
-		History:              promptHistory,
-		ExpenseAccounts:      clAccounts,
-		DestinationMatching:  opts.MatchDestination,
-		CategoryOnly:         opts.ClassifyCategory && !opts.MatchDestination,
+		Categories:          clCats,
+		DestinationName:     j.DestinationName,
+		Description:         j.Description,
+		Amount:              j.Amount,
+		History:             promptHistory,
+		ExpenseAccounts:     clAccounts,
+		DestinationMatching: opts.MatchDestination,
+		CategoryOnly:        opts.ClassifyCategory && !opts.MatchDestination,
+		ExistingTags:        existingTags,
+		TagSuggestion:       tagSuggest,
+		TagMax:              p.tagMax,
 	})
 	if err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
@@ -240,6 +268,16 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		CategoryID: categoryID,
 		Reason:     result.Reason,
 		Assumption: result.Assumption,
+	}
+
+	// Split tag suggestions: confident tags are applied, assumed ones are only
+	// surfaced for human review (recorded in notes + flagged).
+	for _, t := range result.Tags {
+		if t.Confidence == "CLASSIFIED" {
+			outcome.Tags = append(outcome.Tags, t.Name)
+		} else {
+			outcome.TagsAssumed = append(outcome.TagsAssumed, t.Name)
+		}
 	}
 
 	// Override category with history match when available — the LLM was only
@@ -520,6 +558,32 @@ func (p *Pipeline) getExpenseAccounts(ctx context.Context) ([]firefly.Account, e
 	p.acctCache = accts
 	p.acctFetched = time.Now()
 	return accts, nil
+}
+
+// getTags returns cached tag names, re-fetching when the TTL expires.
+func (p *Pipeline) getTags(ctx context.Context) ([]string, error) {
+	p.tagMu.RLock()
+	if !p.tagFetched.IsZero() && time.Since(p.tagFetched) < categoryTTL {
+		tags := p.tagCache
+		p.tagMu.RUnlock()
+		return tags, nil
+	}
+	p.tagMu.RUnlock()
+
+	p.tagMu.Lock()
+	defer p.tagMu.Unlock()
+
+	if !p.tagFetched.IsZero() && time.Since(p.tagFetched) < categoryTTL {
+		return p.tagCache, nil
+	}
+
+	tags, err := p.firefly.GetTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p.tagCache = tags
+	p.tagFetched = time.Now()
+	return tags, nil
 }
 
 // TransferSuggestion is the result of suggesting a destination asset account

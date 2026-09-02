@@ -347,6 +347,8 @@ type configResponse struct {
 
 	DestinationMatchEnabled bool `json:"destination_match_enabled"`
 
+	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
+
 	SearchEngine string `json:"search_engine"`
 
 	HistoryContextLimit int `json:"history_context_limit"`
@@ -373,6 +375,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		Configured:          cfg.IsConfigured(),
 
 		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
+
+		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
 		SearchEngine: cfg.SearchEngine,
 
@@ -401,6 +405,8 @@ type configUpdateRequest struct {
 	CustomSystemContext *string `json:"custom_system_context"`
 
 	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
+
+	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
 	SearchEngine *string `json:"search_engine"`
 
@@ -1157,7 +1163,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -1222,6 +1228,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.DestinationMatchEnabled != nil {
 		existing.DestinationMatchEnabled = req.DestinationMatchEnabled
+	}
+	if req.TagSuggestEnabled != nil {
+		existing.TagSuggestEnabled = req.TagSuggestEnabled
 	}
 	if req.SearchEngine != nil {
 		existing.SearchEngine = *req.SearchEngine

@@ -52,5 +52,5 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 		return Result{}, fmt.Errorf("gemini: unexpected response part type")
 	}
 
-	return parseResponse(string(text), prompt, req.Categories, req.ExpenseAccounts, req.DestinationMatching), nil
+	return parseResponse(string(text), prompt, req), nil
 }

@@ -17,20 +17,30 @@ type rawDestination struct {
 	Confidence string `json:"confidence"`
 }
 
+type rawTag struct {
+	Name       string `json:"name"`
+	Action     string `json:"action"`
+	Confidence string `json:"confidence"`
+}
+
 // rawResponse uses json.RawMessage for category so we can accept both the
 // old flat-string format and the new {name, confidence} object format.
 type rawResponse struct {
-	Outcome     string           `json:"outcome"`
-	Category    json.RawMessage  `json:"category"`
-	Reason      string           `json:"reason"`
-	Assumption  *string          `json:"assumption"`
-	Destination *rawDestination  `json:"destination"`
+	Outcome     string          `json:"outcome"`
+	Category    json.RawMessage `json:"category"`
+	Reason      string          `json:"reason"`
+	Assumption  *string         `json:"assumption"`
+	Destination *rawDestination `json:"destination"`
+	Tags        []rawTag        `json:"tags"`
 }
 
 // parseResponse validates and converts a raw JSON string into a Result.
 // It falls back to NeedsReview on any structural or validation error.
 // When destinationMatching is true, the destination field is also parsed.
-func parseResponse(raw, prompt string, categories []Category, expenseAccounts []AccountCandidate, destinationMatching bool) Result {
+func parseResponse(raw, prompt string, req Request) Result {
+	categories := req.Categories
+	expenseAccounts := req.ExpenseAccounts
+	destinationMatching := req.DestinationMatching
 	cleaned := stripMarkdown(raw)
 
 	var r rawResponse
@@ -102,6 +112,42 @@ func parseResponse(raw, prompt string, categories []Category, expenseAccounts []
 		}
 	}
 
+	var tags []TagResult
+	if req.TagSuggestion && len(r.Tags) > 0 {
+		max := req.TagMax
+		if max <= 0 {
+			max = 3
+		}
+		seen := make(map[string]bool)
+		for _, t := range r.Tags {
+			name := strings.TrimSpace(t.Name)
+			if name == "" {
+				continue
+			}
+			action := strings.ToUpper(strings.TrimSpace(t.Action))
+			if action != "MATCH" && action != "CREATE" {
+				continue
+			}
+			conf := strings.ToUpper(strings.TrimSpace(t.Confidence))
+			if conf != "CLASSIFIED" && conf != "ASSUMED" {
+				continue
+			}
+			// MATCH must reference an existing tag; otherwise treat it as CREATE.
+			if action == "MATCH" && !tagNameIn(req.ExistingTags, name) {
+				action = "CREATE"
+			}
+			key := strings.ToLower(name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			tags = append(tags, TagResult{Name: name, Action: action, Confidence: conf})
+			if len(tags) >= max {
+				break
+			}
+		}
+	}
+
 	return Result{
 		Outcome:     outcome,
 		Category:    category,
@@ -110,7 +156,17 @@ func parseResponse(raw, prompt string, categories []Category, expenseAccounts []
 		RawPrompt:   prompt,
 		RawResponse: raw,
 		Destination: dest,
+		Tags:        tags,
 	}
+}
+
+func tagNameIn(tags []string, name string) bool {
+	for _, t := range tags {
+		if strings.EqualFold(t, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func categoryNameIn(cats []Category, name string) bool {

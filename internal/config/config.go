@@ -35,6 +35,9 @@ type Config struct {
 
 	DestinationMatchEnabled bool
 
+	TagSuggestEnabled bool
+	TagSuggestMax     int
+
 	SearchEngine string // "google", "duckduckgo", or "" (disabled)
 
 	WorkerConcurrency int
@@ -47,22 +50,24 @@ type Config struct {
 // allow first-time configuration via the UI.
 func Load() (*Config, *Store, error) {
 	cfg := &Config{
-		Port:                getEnv("PORT", "3000"),
-		EnableUI:            getEnv("ENABLE_UI", "true") != "false",
-		AIProvider:          getEnv("AI_PROVIDER", "openai"),
-		FireflyURL:          getEnv("FIREFLY_URL", ""),
-		FireflyToken:        getEnv("FIREFLY_PERSONAL_TOKEN", ""),
-		OpenAIKey:           getEnv("OPENAI_API_KEY", ""),
-		OpenAIModel:         getEnv("OPENAI_MODEL", "gpt-4o-mini"),
-		OpenAIBaseURL:       getEnv("OPENAI_BASE_URL", ""),
-		GeminiKey:           getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:         getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
-		DeepseekKey:         getEnv("DEEPSEEK_API_KEY", ""),
-		DeepseekModel:       getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
-		TagPrefix:           getEnv("TAG_PREFIX", "ai"),
+		Port:                    getEnv("PORT", "3000"),
+		EnableUI:                getEnv("ENABLE_UI", "true") != "false",
+		AIProvider:              getEnv("AI_PROVIDER", "openai"),
+		FireflyURL:              getEnv("FIREFLY_URL", ""),
+		FireflyToken:            getEnv("FIREFLY_PERSONAL_TOKEN", ""),
+		OpenAIKey:               getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:             getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAIBaseURL:           getEnv("OPENAI_BASE_URL", ""),
+		GeminiKey:               getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:             getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+		DeepseekKey:             getEnv("DEEPSEEK_API_KEY", ""),
+		DeepseekModel:           getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
+		TagPrefix:               getEnv("TAG_PREFIX", "ai"),
 		HistoryContextLimit:     getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
 		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 90),
 		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
+		TagSuggestEnabled:       getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
+		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),
 		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
 		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 5),
 	}
@@ -140,6 +145,12 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	// We track this via a pointer so the store can signal "was configured".
 	if sc.DestinationMatchEnabled != nil {
 		cfg.DestinationMatchEnabled = *sc.DestinationMatchEnabled
+	}
+	if sc.TagSuggestEnabled != nil {
+		cfg.TagSuggestEnabled = *sc.TagSuggestEnabled
+	}
+	if sc.TagSuggestMax > 0 {
+		cfg.TagSuggestMax = sc.TagSuggestMax
 	}
 	if sc.SearchEngine != "" {
 		cfg.SearchEngine = sc.SearchEngine

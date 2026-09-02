@@ -49,5 +49,5 @@ func (c *OpenAIClassifier) Classify(ctx context.Context, req Request) (Result, e
 	}
 
 	raw := resp.Choices[0].Message.Content
-	return parseResponse(raw, prompt, req.Categories, req.ExpenseAccounts, req.DestinationMatching), nil
+	return parseResponse(raw, prompt, req), nil
 }

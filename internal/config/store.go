@@ -12,22 +12,24 @@ const StoreFile = "config.json"
 // and persisted to disk. Each non-empty field overrides the corresponding
 // env var. Empty string means "use the env var / default".
 type StoredConfig struct {
-	FireflyURL    string `json:"firefly_url,omitempty"`
-	FireflyToken  string `json:"firefly_token,omitempty"`
-	AIProvider    string `json:"ai_provider,omitempty"`
-	OpenAIKey     string `json:"openai_api_key,omitempty"`
-	OpenAIModel   string `json:"openai_model,omitempty"`
-	OpenAIBaseURL string `json:"openai_base_url,omitempty"`
-	GeminiKey     string `json:"gemini_api_key,omitempty"`
-	GeminiModel   string `json:"gemini_model,omitempty"`
-	DeepseekKey   string `json:"deepseek_api_key,omitempty"`
-	DeepseekModel string `json:"deepseek_model,omitempty"`
+	FireflyURL          string `json:"firefly_url,omitempty"`
+	FireflyToken        string `json:"firefly_token,omitempty"`
+	AIProvider          string `json:"ai_provider,omitempty"`
+	OpenAIKey           string `json:"openai_api_key,omitempty"`
+	OpenAIModel         string `json:"openai_model,omitempty"`
+	OpenAIBaseURL       string `json:"openai_base_url,omitempty"`
+	GeminiKey           string `json:"gemini_api_key,omitempty"`
+	GeminiModel         string `json:"gemini_model,omitempty"`
+	DeepseekKey         string `json:"deepseek_api_key,omitempty"`
+	DeepseekModel       string `json:"deepseek_model,omitempty"`
 	TagPrefix           string `json:"tag_prefix,omitempty"`
 	CustomSystemContext string `json:"custom_system_context,omitempty"`
 
-	HistoryContextLimit     int  `json:"history_context_limit,omitempty"`
-	HistoryLookbackDays     int  `json:"history_lookback_days,omitempty"`
+	HistoryContextLimit     int    `json:"history_context_limit,omitempty"`
+	HistoryLookbackDays     int    `json:"history_lookback_days,omitempty"`
 	DestinationMatchEnabled *bool  `json:"destination_match_enabled,omitempty"`
+	TagSuggestEnabled       *bool  `json:"tag_suggest_enabled,omitempty"`
+	TagSuggestMax           int    `json:"tag_suggest_max,omitempty"`
 	SearchEngine            string `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
 	WorkerConcurrency       int    `json:"worker_concurrency,omitempty"`
 	BatchConcurrency        int    `json:"batch_concurrency,omitempty"`

@@ -1634,6 +1634,7 @@ async function loadSettings() {
         $('#cfg-tag-prefix').val(d.tag_prefix || '');
         $('#cfg-custom-context').val(d.custom_system_context || '');
         $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
+        $('#cfg-tag-suggest').prop('checked', !!d.tag_suggest_enabled);
         $('#cfg-search-engine').val(d.search_engine || '');
         $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
         $('#cfg-history-lookback-days').val(d.history_lookback_days || '');
@@ -1731,6 +1732,7 @@ async function saveSettings() {
     // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
     payload.custom_system_context = $('#cfg-custom-context').val();
     payload.destination_match_enabled = $('#cfg-destination-match').prop('checked');
+    payload.tag_suggest_enabled = $('#cfg-tag-suggest').prop('checked');
     var se = $('#cfg-search-engine').val();
     if (se !== undefined) payload.search_engine = se;
     var hcl = parseInt($('#cfg-history-context-limit').val(), 10);

@@ -45,6 +45,9 @@ type UpdateOutcome struct {
 	DestConfidence string // "CLASSIFIED" | "ASSUMED" — destination confidence (independent of Outcome)
 	Reason         string
 	Assumption     string
+
+	Tags        []string // confident semantic tags to apply to the transaction
+	TagsAssumed []string // low-confidence semantic tags surfaced for review (not applied)
 }
 
 // TransactionRow is a flat summary used by the UI transactions list.

@@ -676,6 +676,24 @@
                                             </div>
                                         </div>
                                         <div class="form-group">
+                                            <div class="col-sm-offset-4 col-sm-8">
+                                                <div class="checkbox">
+                                                    <label>
+                                                        <input type="checkbox" id="cfg-tag-suggest">
+                                                        <strong>Suggest tags automatically</strong>
+                                                    </label>
+                                                </div>
+                                                <p class="help-block" style="margin-top:2px">
+                                                    When enabled, the AI also suggests up to a few semantic tags
+                                                    (e.g. abonnement, restaurant, transport). Confident tags are applied
+                                                    automatically; uncertain ones are noted and flagged with the
+                                                    <code>:tags-assumed</code> tag for review. The maximum number of tags
+                                                    is set via the <code>TAG_SUGGEST_MAX</code> environment variable
+                                                    (default 3).
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
                                             <label class="col-sm-4 control-label">Review search engine</label>
                                             <div class="col-sm-4">
                                                 <select class="form-control" id="cfg-search-engine">

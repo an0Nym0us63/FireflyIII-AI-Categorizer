@@ -121,14 +121,14 @@ type CreateTransferParams struct {
 // CreateTransfer creates a transfer transaction between two asset accounts.
 func (c *Client) CreateTransfer(ctx context.Context, p CreateTransferParams) (Transaction, error) {
 	type transferSplit struct {
-		Type            string   `json:"type"`
-		Date            string   `json:"date"`
-		Amount          string   `json:"amount"`
-		Description     string   `json:"description"`
-		SourceID        string   `json:"source_id"`
-		DestinationID   string   `json:"destination_id"`
-		Notes           string   `json:"notes,omitempty"`
-		Tags            []string `json:"tags,omitempty"`
+		Type          string   `json:"type"`
+		Date          string   `json:"date"`
+		Amount        string   `json:"amount"`
+		Description   string   `json:"description"`
+		SourceID      string   `json:"source_id"`
+		DestinationID string   `json:"destination_id"`
+		Notes         string   `json:"notes,omitempty"`
+		Tags          []string `json:"tags,omitempty"`
 	}
 	type transferBody struct {
 		ApplyRules   bool            `json:"apply_rules"`
@@ -239,6 +239,28 @@ func (c *Client) GetCategories(ctx context.Context) ([]Category, error) {
 		}
 	}
 	return categories, nil
+}
+
+// GetTags fetches all existing tag names, paginating through all pages.
+// Used to offer the LLM a reuse list when tag suggestion is enabled.
+func (c *Client) GetTags(ctx context.Context) ([]string, error) {
+	var tags []string
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/tags?page=%d", c.baseURL, page)
+		var resp tagsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("get tags page %d: %w", page, err)
+		}
+		for _, item := range resp.Data {
+			if item.Attributes.Tag != "" {
+				tags = append(tags, item.Attributes.Tag)
+			}
+		}
+		if page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return tags, nil
 }
 
 // GetCategorizedWithdrawals fetches all categorized withdrawals within the lookback window.
@@ -398,6 +420,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		c.tagPrefix + ":needs-review": true,
 		c.tagPrefix + ":assumed":      true,
 		c.tagPrefix + ":dest-assumed": true,
+		c.tagPrefix + ":tags-assumed": true,
 	}
 	reviewedTag := c.tagPrefix + ":reviewed"
 
@@ -531,6 +554,22 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 				tags = append(tags, destTag)
 			}
 		}
+		// Apply confident semantic tags suggested by the AI.
+		for _, t := range outcome.Tags {
+			t = strings.TrimSpace(t)
+			if t == "" || contains(tags, t) {
+				continue
+			}
+			tags = append(tags, t)
+		}
+		// When some tags were only assumed, flag the transaction for review
+		// (the suggestions themselves are recorded in the notes, not applied).
+		if len(outcome.TagsAssumed) > 0 {
+			tagsAssumedTag := c.tagPrefix + ":tags-assumed"
+			if !contains(tags, tagsAssumedTag) {
+				tags = append(tags, tagsAssumedTag)
+			}
+		}
 
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
 		if outcome.Outcome != "NEEDS_REVIEW" && outcome.CategoryID != "" {
@@ -570,6 +609,9 @@ func buildNotes(existing string, outcome UpdateOutcome) string {
 	}
 	if outcome.Assumption != "" {
 		parts = append(parts, "Assumption: "+outcome.Assumption)
+	}
+	if len(outcome.TagsAssumed) > 0 {
+		parts = append(parts, "Étiquettes suggérées : "+strings.Join(outcome.TagsAssumed, ", "))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -735,6 +777,20 @@ type accountsResponse struct {
 
 type accountResponse struct {
 	Data accountData `json:"data"`
+}
+
+type tagAttributes struct {
+	Tag string `json:"tag"`
+}
+
+type tagData struct {
+	ID         string        `json:"id"`
+	Attributes tagAttributes `json:"attributes"`
+}
+
+type tagsResponse struct {
+	Data []tagData `json:"data"`
+	Meta meta      `json:"meta"`
 }
 
 type splitData struct {

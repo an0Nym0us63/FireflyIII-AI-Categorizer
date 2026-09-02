@@ -61,6 +61,13 @@ type DestinationResult struct {
 	Confidence string // "CLASSIFIED" or "ASSUMED"
 }
 
+// TagResult captures the LLM's decision about a single semantic tag.
+type TagResult struct {
+	Name       string // tag name
+	Action     string // "MATCH" (reuse existing) or "CREATE" (new tag)
+	Confidence string // "CLASSIFIED" or "ASSUMED"
+}
+
 type Request struct {
 	Categories      []Category
 	DestinationName string
@@ -70,6 +77,16 @@ type Request struct {
 
 	// ExpenseAccounts is set when destination-account matching is enabled.
 	ExpenseAccounts []AccountCandidate
+
+	// ExistingTags is the list of existing Firefly tag names offered to the LLM
+	// for reuse when tag suggestion is enabled.
+	ExistingTags []string
+
+	// TagSuggestion enables semantic tag suggestion in the prompt and parsing.
+	TagSuggestion bool
+
+	// TagMax caps how many tags the LLM may return (0 falls back to a default).
+	TagMax int
 
 	// DestinationMatching signals to the classifier that the system prompt
 	// and response parsing should include destination-account logic.
@@ -96,6 +113,9 @@ type Result struct {
 	// Destination is set when destination-account matching was enabled
 	// and the LLM returned a valid destination suggestion.
 	Destination *DestinationResult
+
+	// Tags holds semantic tag suggestions when TagSuggestion was enabled.
+	Tags []TagResult
 }
 
 type Classifier interface {

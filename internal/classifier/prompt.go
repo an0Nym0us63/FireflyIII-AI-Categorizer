@@ -169,6 +169,30 @@ func buildUserPrompt(req Request) string {
 	}
 
 	fmt.Fprintf(&sb, "Available categories:%s\n\n", formatCategories(req.Categories))
+
+	if req.TagSuggestion {
+		max := req.TagMax
+		if max <= 0 {
+			max = 3
+		}
+
+		if len(req.ExistingTags) > 0 {
+			sb.WriteString("Existing tags (reuse these when relevant):\n")
+			for _, t := range req.ExistingTags {
+				if strings.TrimSpace(t) == "" {
+					continue
+				}
+				fmt.Fprintf(&sb, "  - %s\n", t)
+			}
+			sb.WriteString("\n")
+		}
+
+		fmt.Fprintf(&sb, "Tagging is enabled. In ADDITION to the fields above, include a \"tags\" array in your JSON (at most %d items). Each item: {\"name\": <tag>, \"action\": \"MATCH\"|\"CREATE\", \"confidence\": \"CLASSIFIED\"|\"ASSUMED\"}.\n", max)
+		sb.WriteString("- Prefer reusing an existing tag: use MATCH with the exact name from the list. Only use CREATE for a new, concise tag when none fits.\n")
+		sb.WriteString("- Tags are short, lowercase French keywords describing the nature of the expense (e.g. abonnement, restaurant, courses, transport, sante, loisirs, professionnel, voyage).\n")
+		sb.WriteString("- Only include a tag you are actually confident is relevant. Use confidence CLASSIFIED only when clearly correct, otherwise ASSUMED. Return an empty array when nothing fits.\n\n")
+	}
+
 	sb.WriteString("Transaction to classify:\n")
 	// When destination is a blank placeholder, show description instead
 	// so the LLM still has useful context.
