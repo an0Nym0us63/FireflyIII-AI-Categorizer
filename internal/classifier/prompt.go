@@ -190,6 +190,9 @@ func buildUserPrompt(req Request) string {
 		fmt.Fprintf(&sb, "Tagging is enabled. In ADDITION to the fields above, include a \"tags\" array in your JSON (at most %d items). Each item: {\"name\": <tag>, \"action\": \"MATCH\"|\"CREATE\", \"confidence\": \"CLASSIFIED\"|\"ASSUMED\"}.\n", max)
 		sb.WriteString("- Tags must ADD information beyond the category and destination. NEVER output a tag that repeats, translates, or is a synonym of the chosen category (e.g. category \"Restauration\" → do NOT tag \"restaurant\"/\"resto\"). If you have nothing that adds information, return an empty array — that is expected and fine.\n")
 		sb.WriteString("- A good tag captures a DIFFERENT dimension of the expense: recurrence (abonnement, récurrent, ponctuel), context (professionnel, cadeau, vacances, urgence), or channel (en-ligne, espèces). Short lowercase French keywords.\n")
+		if strings.TrimSpace(req.ExtraContext) != "" {
+			sb.WriteString("- The contents of this purchase are given below. Base your tags on the PRODUCT itself: its brand and its product type (e.g. contents \"Anker Soundcore casque bluetooth\" → tags: anker, casque audio). These product tags are far more useful here than generic ones like \"en-ligne\".\n")
+		}
 		sb.WriteString("- Prefer reusing an existing tag: use MATCH with the exact name from the list. Only use CREATE for a new, concise tag when none fits.\n")
 		sb.WriteString("- Only include a tag you are actually confident is relevant. Use confidence CLASSIFIED only when clearly correct, otherwise ASSUMED.\n\n")
 	}
