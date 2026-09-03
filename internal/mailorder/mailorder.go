@@ -112,21 +112,9 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 
 	since := date.AddDate(0, 0, -backDays)
 	before := date.AddDate(0, 0, fwdDays+1)
+	section := &imap.BodySectionName{}
 
-	// Collect matching UIDs. When senders are given, search each (OR); otherwise
-	// fall back to a date-only search.
-	idset := map[uint32]bool{}
-	var searches [][]string // each is a list of From values for one criteria
-	for _, s := range senders {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			searches = append(searches, []string{s})
-		}
-	}
-	if len(searches) == 0 {
-		searches = append(searches, nil)
-	}
-	for _, froms := range searches {
+	searchUIDs := func(froms []string) ([]uint32, error) {
 		crit := imap.NewSearchCriteria()
 		crit.Since = since
 		crit.Before = before
@@ -136,27 +124,8 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 				crit.Header.Add("From", f)
 			}
 		}
-		ids, err := c.Search(crit)
-		if err != nil {
-			return SearchResult{}, fmt.Errorf("search: %w", err)
-		}
-		for _, id := range ids {
-			idset[id] = true
-		}
+		return c.Search(crit)
 	}
-	if len(idset) == 0 {
-		return SearchResult{}, nil
-	}
-
-	seqset := new(imap.SeqSet)
-	for id := range idset {
-		seqset.AddNum(id)
-	}
-	section := &imap.BodySectionName{}
-	items := []imap.FetchItem{imap.FetchEnvelope, section.FetchItem()}
-	messages := make(chan *imap.Message, 30)
-	done := make(chan error, 1)
-	go func() { done <- c.Fetch(seqset, items, messages) }()
 
 	type cand struct {
 		text        string
@@ -164,33 +133,83 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		amt         bool
 		installment bool
 	}
-	var cands []cand
-	for msg := range messages {
-		if msg == nil {
-			continue
+	fetchCands := func(uids []uint32) ([]cand, error) {
+		if len(uids) == 0 {
+			return nil, nil
 		}
-		var diff time.Duration
-		if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
-			d := msg.Envelope.Date.Sub(date)
-			if d < 0 {
-				d = -d
+		seqset := new(imap.SeqSet)
+		for _, id := range uids {
+			seqset.AddNum(id)
+		}
+		items := []imap.FetchItem{imap.FetchEnvelope, section.FetchItem()}
+		messages := make(chan *imap.Message, 64)
+		done := make(chan error, 1)
+		go func() { done <- c.Fetch(seqset, items, messages) }()
+		var out []cand
+		for msg := range messages {
+			if msg == nil {
+				continue
 			}
-			diff = d
+			var diff time.Duration
+			if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
+				d := msg.Envelope.Date.Sub(date)
+				if d < 0 {
+					d = -d
+				}
+				diff = d
+			}
+			r := msg.GetBody(section)
+			if r == nil {
+				continue
+			}
+			body := extractText(r)
+			if body == "" {
+				continue
+			}
+			ok, inst := amountMatch(body, amount)
+			out = append(out, cand{text: body, dayDiff: diff, amt: ok, installment: inst})
 		}
-		r := msg.GetBody(section)
-		if r == nil {
-			continue
+		if err := <-done; err != nil {
+			return nil, err
 		}
-		body := extractText(r)
-		if body == "" {
-			continue
-		}
-		ok, inst := amountMatch(body, amount)
-		cands = append(cands, cand{text: body, dayDiff: diff, amt: ok, installment: inst})
+		return out, nil
 	}
-	if err := <-done; err != nil {
+	hasAmt := func(cs []cand) bool {
+		for _, c := range cs {
+			if c.amt {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Pass 1: filter by the configured sender(s) — fast and precise.
+	var froms []string
+	for _, s := range senders {
+		if t := strings.TrimSpace(s); t != "" {
+			froms = append(froms, t)
+		}
+	}
+	uids, err := searchUIDs(froms)
+	if err != nil {
+		return SearchResult{}, fmt.Errorf("search: %w", err)
+	}
+	cands, err := fetchCands(uids)
+	if err != nil {
 		return SearchResult{}, fmt.Errorf("fetch: %w", err)
 	}
+
+	// Pass 2: senders were set but no candidate matches the amount — the
+	// merchant's sender address may have changed over time. Retry ignoring the
+	// sender and let the amount identify the right email.
+	if len(froms) > 0 && !hasAmt(cands) {
+		if uids2, serr := searchUIDs(nil); serr == nil {
+			if c2, ferr := fetchCands(uids2); ferr == nil && len(c2) > 0 {
+				cands = c2
+			}
+		}
+	}
+
 	if len(cands) == 0 {
 		return SearchResult{}, nil
 	}
