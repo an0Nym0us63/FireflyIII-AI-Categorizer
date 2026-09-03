@@ -24,6 +24,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/config"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/mailorder"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/pipeline"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/version"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/worker"
@@ -88,6 +89,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/health", h.health)
 	r.Get("/api/version", h.getVersion)
 	r.Get("/api/gemini/models", h.getGeminiModels)
+	r.Post("/api/mail/test", h.testMail)
 	r.Post("/webhook", h.webhookHandler)
 	r.Post("/batch/run", h.batchRun)
 
@@ -131,6 +133,63 @@ func (h *Handler) Router() http.Handler {
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// maskMailMappings returns a copy with IMAP passwords blanked for the UI.
+func maskMailMappings(in []config.MailMapping) []config.MailMapping {
+	out := make([]config.MailMapping, len(in))
+	for i, m := range in {
+		m.IMAPPassword = ""
+		out[i] = m
+	}
+	return out
+}
+
+// mergeMailMappings replaces the stored list with the incoming one, generating
+// IDs for new entries and keeping the existing password when a blank one is sent.
+func mergeMailMappings(existing, incoming []config.MailMapping) []config.MailMapping {
+	byID := map[string]config.MailMapping{}
+	for _, m := range existing {
+		byID[m.ID] = m
+	}
+	out := make([]config.MailMapping, 0, len(incoming))
+	for _, m := range incoming {
+		if m.ID == "" {
+			m.ID = uuid.New().String()
+		}
+		if m.IMAPPassword == "" {
+			if old, ok := byID[m.ID]; ok {
+				m.IMAPPassword = old.IMAPPassword
+			}
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// testMail verifies IMAP connectivity for a mapping. Uses the posted password,
+// or the stored one for the given mapping ID when blank.
+func (h *Handler) testMail(w http.ResponseWriter, r *http.Request) {
+	var m config.MailMapping
+	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if m.IMAPPassword == "" && m.ID != "" {
+		for _, ex := range h.effectiveConfig().MailMappings {
+			if ex.ID == m.ID {
+				m.IMAPPassword = ex.IMAPPassword
+				break
+			}
+		}
+	}
+	if err := mailorder.Test(mailorder.Account{
+		Host: m.IMAPHost, Port: m.IMAPPort, User: m.IMAPUser, Password: m.IMAPPassword,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *Handler) getGeminiModels(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +518,8 @@ type configResponse struct {
 	SearchEngine   string `json:"search_engine"`
 	GeminiThinking string `json:"gemini_thinking"`
 
+	MailMappings []config.MailMapping `json:"mail_mappings"`
+
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
 	WorkerConcurrency   int `json:"worker_concurrency"`
@@ -488,6 +549,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 
 		SearchEngine:   cfg.SearchEngine,
 		GeminiThinking: cfg.GeminiThinking,
+
+		MailMappings: maskMailMappings(cfg.MailMappings),
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -519,6 +582,8 @@ type configUpdateRequest struct {
 
 	SearchEngine   *string `json:"search_engine"`
 	GeminiThinking *string `json:"gemini_thinking"`
+
+	MailMappings *[]config.MailMapping `json:"mail_mappings"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -1702,6 +1767,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.GeminiThinking != nil {
 		existing.GeminiThinking = *req.GeminiThinking
+	}
+	if req.MailMappings != nil {
+		existing.MailMappings = mergeMailMappings(existing.MailMappings, *req.MailMappings)
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

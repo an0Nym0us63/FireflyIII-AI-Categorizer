@@ -839,6 +839,27 @@
                         </div>
                     </div>
 
+                    <div class="row" style="margin-top:10px">
+                        <div class="col-md-12">
+                            <div class="box box-default">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-envelope-o"></i> Mapping mail (enrichissement par email)</h3>
+                                </div>
+                                <div class="box-body">
+                                    <p class="help-block">
+                                        Pour PayPal / Amazon / AliExpress : associe des mots-clés (repérés dans le libellé)
+                                        à la boîte mail où arrivent les emails de commande. Le moteur cherchera l'email
+                                        correspondant et enverra son contenu à l'IA. Mot de passe laissé vide = inchangé.
+                                    </p>
+                                    <div id="mail-mappings"></div>
+                                    <button type="button" class="btn btn-default btn-sm" onclick="addMailMapping()">
+                                        <i class="fa fa-plus"></i> Ajouter un mapping
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-12">
                             <button type="button" class="btn btn-primary" onclick="saveSettings()">

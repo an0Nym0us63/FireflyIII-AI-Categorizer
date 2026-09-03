@@ -39,13 +39,27 @@ type Config struct {
 	TagSuggestMax     int
 
 	AmazonOrdersFile string
-	GeminiThinking   string
-	AIDBFile         string
+
+	MailMappings   []MailMapping
+	GeminiThinking string
+	AIDBFile       string
 
 	SearchEngine string // "google", "duckduckgo", or "" (disabled)
 
 	WorkerConcurrency int
 	BatchConcurrency  int
+}
+
+// MailMapping ties a set of description keywords to an IMAP mailbox where that
+// merchant's order-confirmation emails arrive.
+type MailMapping struct {
+	ID           string   `json:"id"`
+	Keywords     []string `json:"keywords"`
+	Recipient    string   `json:"recipient"` // alias the orders are delivered to
+	IMAPHost     string   `json:"imap_host"`
+	IMAPPort     int      `json:"imap_port"`
+	IMAPUser     string   `json:"imap_user"`
+	IMAPPassword string   `json:"imap_password"`
 }
 
 // Load reads config from environment variables and overlays the config file.
@@ -164,6 +178,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.GeminiThinking != "" {
 		cfg.GeminiThinking = sc.GeminiThinking
+	}
+	if sc.MailMappings != nil {
+		cfg.MailMappings = sc.MailMappings
 	}
 }
 
