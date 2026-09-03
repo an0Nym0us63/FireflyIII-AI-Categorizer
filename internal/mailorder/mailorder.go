@@ -108,14 +108,14 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		}
 		ids, err := c.Search(crit)
 		if err != nil {
-			return "", false, fmt.Errorf("search: %w", err)
+			return "", false, false, fmt.Errorf("search: %w", err)
 		}
 		for _, id := range ids {
 			idset[id] = true
 		}
 	}
 	if len(idset) == 0 {
-		return "", false, nil
+		return "", false, false, nil
 	}
 
 	seqset := new(imap.SeqSet)
