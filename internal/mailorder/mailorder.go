@@ -227,28 +227,31 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		return ids
 	}
 	// filterByDate keeps only the seq numbers whose envelope date is in-window
-	// (client-side date filtering, cheap: envelope fetch only).
-	filterByDate := func(ids []uint32) []uint32 {
+	// (client-side date filtering, cheap: envelope fetch only). It also reports
+	// the oldest envelope date seen (to reveal an IMAP history horizon).
+	filterByDate := func(ids []uint32) (in []uint32, oldest time.Time) {
 		if len(ids) == 0 {
-			return nil
+			return nil, time.Time{}
 		}
 		seqset := new(imap.SeqSet)
 		seqset.AddNum(ids...)
 		messages := make(chan *imap.Message, 256)
 		done := make(chan error, 1)
 		go func() { done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages) }()
-		var out []uint32
 		for msg := range messages {
 			if msg == nil || msg.Envelope == nil || msg.Envelope.Date.IsZero() {
 				continue
 			}
 			d := msg.Envelope.Date
+			if oldest.IsZero() || d.Before(oldest) {
+				oldest = d
+			}
 			if (d.After(since) || d.Equal(since)) && d.Before(before) {
-				out = append(out, msg.SeqNum)
+				in = append(in, msg.SeqNum)
 			}
 		}
 		<-done
-		return out
+		return in, oldest
 	}
 
 	// Pass 1: filter by the configured sender(s) — fast and precise.
@@ -258,13 +261,15 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			froms = append(froms, t)
 		}
 	}
-	uids := filterByDate(searchFrom(froms))
+	fromSeq := searchFrom(froms)
+	uids, oldest := filterByDate(fromSeq)
 	cands, err := fetchCands(uids)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("fetch: %w", err)
 	}
 	senderCount := len(cands)
 	rawHits := len(uids)
+	senderTotal := len(fromSeq)
 
 	// Pass 2: no candidate matches the amount — retry ignoring the sender (its
 	// address may have changed) and let the amount identify the right email.
@@ -298,6 +303,12 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		note := ""
 		if searchErr != nil {
 			note = "IMAP search error: " + searchErr.Error()
+		} else if len(froms) > 0 {
+			od := "aucun"
+			if !oldest.IsZero() {
+				od = oldest.Format("2006-01-02")
+			}
+			note = fmt.Sprintf("expéditeur: %d email(s) accessibles, plus ancien: %s", senderTotal, od)
 		}
 		return SearchResult{Candidates: senderCount, SearchHits: rawHits, Note: note}, nil
 	}
