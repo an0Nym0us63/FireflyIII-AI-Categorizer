@@ -199,9 +199,13 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 
 // amountMatch reports whether text contains the debit amount (±2%), and whether
 // the match was via the full total of a 4-installment payment (amount*4 ±2%).
-// An exact match takes precedence over an installment match.
+// Only numbers adjacent to a currency symbol/code are considered, so order
+// numbers, phone numbers, dates, etc. never produce a false match.
 func amountMatch(text string, amount float64) (matched bool, installment bool) {
-	if amount <= 0 {
+	if amount < 0 {
+		amount = -amount
+	}
+	if amount == 0 {
 		return false, false
 	}
 	within := func(v, target float64) bool {
@@ -215,7 +219,11 @@ func amountMatch(text string, amount float64) (matched bool, installment bool) {
 		return diff <= 0.02*target
 	}
 	exact, four := false, false
-	for _, tok := range reMoney.FindAllString(text, -1) {
+	for _, m := range reMoney.FindAllStringSubmatch(text, -1) {
+		tok := m[1]
+		if tok == "" {
+			tok = m[2]
+		}
 		v, ok := parseAmountToken(tok)
 		if !ok {
 			continue
@@ -236,7 +244,9 @@ func amountMatch(text string, amount float64) (matched bool, installment bool) {
 	return false, false
 }
 
-var reMoney = regexp.MustCompile(`\d[\d \x{00a0}.,]*\d`)
+// reMoney captures a number immediately adjacent to a currency symbol/code,
+// e.g. "12,95 €", "€12.95", "EUR 12.95", "12.95 EUR", "$1,234.56".
+var reMoney = regexp.MustCompile(`(?i)(?:€|eur|\$|usd|£|gbp|chf)\s?([0-9][0-9 \x{00a0}.,]*[0-9])|([0-9][0-9 \x{00a0}.,]*[0-9])\s?(?:€|eur|\$|usd|£|gbp|chf)`)
 
 func parseAmountToken(s string) (float64, bool) {
 	s = strings.ReplaceAll(s, "\u00a0", "")
