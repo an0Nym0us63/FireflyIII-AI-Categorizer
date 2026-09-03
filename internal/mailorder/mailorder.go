@@ -8,8 +8,10 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
+	"math"
 	"net/textproto"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,16 +129,12 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	done := make(chan error, 1)
 	go func() { done <- c.Fetch(seqset, items, messages) }()
 
-	// Amount variants to look for in the body (12.95 and 12,95).
-	var amtStrs []string
-	if amount > 0 {
-		a1 := fmt.Sprintf("%.2f", amount)
-		amtStrs = append(amtStrs, a1, strings.Replace(a1, ".", ",", 1))
+	type cand struct {
+		text    string
+		dayDiff time.Duration
+		amt     bool
 	}
-
-	bestText := ""
-	bestAmt := false
-	bestDiff := time.Duration(1<<62 - 1)
+	var cands []cand
 	for msg := range messages {
 		if msg == nil {
 			continue
@@ -157,36 +155,101 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		if text == "" {
 			continue
 		}
-		amtMatch := false
-		for _, s := range amtStrs {
-			if strings.Contains(text, s) {
-				amtMatch = true
-				break
-			}
-		}
-		// Prefer amount-matching emails; among equal, the closest date.
-		better := false
-		if amtMatch != bestAmt {
-			better = amtMatch // an amount match beats a non-match
-		} else {
-			better = diff < bestDiff
-		}
-		if bestText == "" || better {
-			bestText = text
-			bestAmt = amtMatch
-			bestDiff = diff
-		}
+		cands = append(cands, cand{text: text, dayDiff: diff, amt: bodyHasAmount(text, amount)})
 	}
 	if err := <-done; err != nil {
 		return "", false, fmt.Errorf("fetch: %w", err)
 	}
-	if bestText == "" {
+	if len(cands) == 0 {
 		return "", false, nil
 	}
-	if len(bestText) > 5000 {
-		bestText = bestText[:5000]
+
+	// Selection: the amount is the key. Prefer emails whose body contains the
+	// exact amount; among those, the closest date. If several candidates and
+	// NONE matches the amount, refuse to guess (avoid the wrong email).
+	pick := func(list []cand) string {
+		best := ""
+		bestDiff := time.Duration(1<<62 - 1)
+		for _, c := range list {
+			if best == "" || c.dayDiff < bestDiff {
+				best = c.text
+				bestDiff = c.dayDiff
+			}
+		}
+		return best
 	}
-	return bestText, true, nil
+	var withAmt []cand
+	for _, c := range cands {
+		if c.amt {
+			withAmt = append(withAmt, c)
+		}
+	}
+	var chosen string
+	switch {
+	case len(withAmt) > 0:
+		chosen = pick(withAmt)
+	case len(cands) == 1 && amount <= 0:
+		chosen = cands[0].text
+	case len(cands) == 1:
+		// Single candidate but amount didn't match — accept only if it's the
+		// lone email from this sender in the window.
+		chosen = cands[0].text
+	default:
+		return "", false, nil // multiple candidates, none matches the amount
+	}
+	if chosen == "" {
+		return "", false, nil
+	}
+	if len(chosen) > 5000 {
+		chosen = chosen[:5000]
+	}
+	return chosen, true, nil
+}
+
+// bodyHasAmount reports whether text contains a monetary value equal to amount
+// (to the cent), tolerant of formats: 12,95 / 12.95 / 1 234,56 / EUR 12.95 / 12.95€.
+func bodyHasAmount(text string, amount float64) bool {
+	if amount <= 0 {
+		return false
+	}
+	target := int64(math.Round(amount * 100))
+	for _, tok := range reMoney.FindAllString(text, -1) {
+		if v, ok := parseAmountToken(tok); ok && int64(math.Round(v*100)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+var reMoney = regexp.MustCompile(`\d[\d \x{00a0}.,]*\d`)
+
+func parseAmountToken(s string) (float64, bool) {
+	s = strings.ReplaceAll(s, "\u00a0", "")
+	s = strings.ReplaceAll(s, " ", "")
+	lastDot := strings.LastIndex(s, ".")
+	lastComma := strings.LastIndex(s, ",")
+	dec := lastDot
+	if lastComma > lastDot {
+		dec = lastComma
+	}
+	var intPart, frac string
+	if dec >= 0 {
+		intPart, frac = s[:dec], s[dec+1:]
+		if len(frac) != 2 { // only 2-decimal money tokens
+			return 0, false
+		}
+	} else {
+		intPart, frac = s, "00"
+	}
+	intPart = strings.ReplaceAll(strings.ReplaceAll(intPart, ".", ""), ",", "")
+	if intPart == "" {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(intPart+"."+frac, 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
 }
 
 var (

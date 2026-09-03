@@ -224,7 +224,7 @@ func buildUserPrompt(req Request) string {
 	}
 
 	if req.MerchantFromContent && req.DestinationMatching {
-		sb.WriteString("\nIMPORTANT — destination: the bank payee is a payment processor (e.g. PayPal), NOT the real merchant. Identify the ACTUAL merchant/shop from the content above and set the destination to it: MATCH it if it is in the accounts list, otherwise CREATE it (this is read from the order, so you can be confident → CLASSIFIED). Never set the destination to the payment processor itself.\n")
+		fmt.Fprintf(&sb, "\nIMPORTANT — destination: the bank payee %q is a PAYMENT PROCESSOR / intermediary, NOT the real merchant. You MUST identify the ACTUAL shop/merchant from the content above and set the destination to it (MATCH an existing account, else CREATE it — you can be CLASSIFIED since it is read from the order). NEVER set or keep the destination as %q or any generic payment-processor name.\n", req.DestinationName, req.DestinationName)
 	}
 
 	return sb.String()
