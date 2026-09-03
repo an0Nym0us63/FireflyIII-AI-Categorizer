@@ -1312,15 +1312,16 @@ func (h *Handler) reloadClients() error {
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
 
 	cl, err := classifier.Build(classifier.BuildParams{
-		Provider:      cfg.AIProvider,
-		OpenAIKey:     cfg.OpenAIKey,
-		OpenAIModel:   cfg.OpenAIModel,
-		OpenAIBaseURL: cfg.OpenAIBaseURL,
-		GeminiKey:     cfg.GeminiKey,
-		GeminiModel:   cfg.GeminiModel,
-		DeepseekKey:   cfg.DeepseekKey,
-		DeepseekModel: cfg.DeepseekModel,
-		CustomContext: cfg.CustomSystemContext,
+		Provider:       cfg.AIProvider,
+		OpenAIKey:      cfg.OpenAIKey,
+		OpenAIModel:    cfg.OpenAIModel,
+		OpenAIBaseURL:  cfg.OpenAIBaseURL,
+		GeminiKey:      cfg.GeminiKey,
+		GeminiModel:    cfg.GeminiModel,
+		GeminiThinking: cfg.GeminiThinking,
+		DeepseekKey:    cfg.DeepseekKey,
+		DeepseekModel:  cfg.DeepseekModel,
+		CustomContext:  cfg.CustomSystemContext,
 	})
 	if err != nil {
 		// Set firefly client even if AI fails — categories/transactions still work.

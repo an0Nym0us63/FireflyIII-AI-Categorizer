@@ -217,6 +217,7 @@ All variables are optional. When they are absent, the server starts normally and
 | `OPENAI_BASE_URL` | — | Override for OpenAI-compatible APIs (Ollama, Azure, etc.) |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
+| `GEMINI_THINKING` | `low` | Reasoning effort for Gemini: `minimal`/`low`/`medium`/`high`. Lower = cheaper & faster (classification needs little). Uses thinking_level on Gemini 3+, thinking_budget on 2.5 |
 | `DEEPSEEK_API_KEY` | — | DeepSeek API key |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model name |
 

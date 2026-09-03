@@ -1,8 +1,7 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /app
-COPY go.mod ./
-RUN go mod tidy
 COPY . .
+RUN go mod tidy
 ARG VERSION=dev
 ARG COMMIT=
 RUN CGO_ENABLED=0 GOOS=linux go build \

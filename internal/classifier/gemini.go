@@ -3,23 +3,59 @@ package classifier
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 type GeminiClassifier struct {
 	client        *genai.Client
 	model         string
 	customContext string
+	thinking      string // "minimal" | "low" | "medium" | "high"
 }
 
-func NewGemini(apiKey, model, customContext string) (*GeminiClassifier, error) {
-	client, err := genai.NewClient(context.Background(), option.WithAPIKey(apiKey))
+func NewGemini(apiKey, model, customContext, thinking string) (*GeminiClassifier, error) {
+	client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("gemini client: %w", err)
 	}
-	return &GeminiClassifier{client: client, model: model, customContext: customContext}, nil
+	if thinking == "" {
+		thinking = "low"
+	}
+	return &GeminiClassifier{
+		client:        client,
+		model:         model,
+		customContext: customContext,
+		thinking:      strings.ToLower(strings.TrimSpace(thinking)),
+	}, nil
+}
+
+// thinkingConfig builds the right thinking setting for the target model.
+// Gemini 3+ uses thinking_level; Gemini 2.5 uses thinking_budget (0 = off).
+// The two are mutually exclusive per Google's API.
+func (c *GeminiClassifier) thinkingConfig() *genai.ThinkingConfig {
+	if strings.Contains(c.model, "gemini-2") {
+		// Legacy 2.5 family: budget-based. Minimal/low → disable thinking.
+		if c.thinking == "minimal" || c.thinking == "low" || c.thinking == "off" {
+			return &genai.ThinkingConfig{ThinkingBudget: genai.Ptr[int32](0)}
+		}
+		return nil // leave dynamic thinking on for medium/high
+	}
+	// Gemini 3+ (and future): level-based.
+	level := genai.ThinkingLevelLow
+	switch c.thinking {
+	case "medium":
+		level = genai.ThinkingLevelMedium
+	case "high":
+		level = genai.ThinkingLevelHigh
+	default: // minimal, low, off, unknown → lowest available level
+		level = genai.ThinkingLevelLow
+	}
+	return &genai.ThinkingConfig{ThinkingLevel: level}
 }
 
 func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, error) {
@@ -30,27 +66,24 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 		sysPrompt = req.SystemPromptOverride
 	}
 
-	m := c.client.GenerativeModel(c.model)
-	temp := float32(0.1)
-	m.Temperature = &temp
-	m.ResponseMIMEType = "application/json"
-	m.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(sysPrompt)},
+	config := &genai.GenerateContentConfig{
+		Temperature:      genai.Ptr[float32](0.1),
+		ResponseMIMEType: "application/json",
+		SystemInstruction: &genai.Content{
+			Parts: []*genai.Part{{Text: sysPrompt}},
+		},
+		ThinkingConfig: c.thinkingConfig(),
 	}
 
-	resp, err := m.GenerateContent(ctx, genai.Text(prompt))
+	resp, err := c.client.Models.GenerateContent(ctx, c.model, genai.Text(prompt), config)
 	if err != nil {
 		return Result{}, fmt.Errorf("gemini: %w", err)
 	}
 
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+	text := resp.Text()
+	if strings.TrimSpace(text) == "" {
 		return Result{}, fmt.Errorf("gemini: empty response")
 	}
 
-	text, ok := resp.Candidates[0].Content.Parts[0].(genai.Text)
-	if !ok {
-		return Result{}, fmt.Errorf("gemini: unexpected response part type")
-	}
-
-	return parseResponse(string(text), prompt, req), nil
+	return parseResponse(text, prompt, req), nil
 }
