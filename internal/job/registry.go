@@ -113,6 +113,25 @@ func (r *Registry) SetFailed(id, errMsg string) {
 	})
 }
 
+// MarkReviewedByTxn marks any jobs for a transaction as reviewed, so the Jobs
+// list reflects a later human review.
+func (r *Registry) MarkReviewedByTxn(txnID string) {
+	var updated []*Job
+	r.mu.Lock()
+	for _, j := range r.jobs {
+		if j.TransactionID == txnID {
+			j.Outcome = "REVIEWED"
+			j.UpdatedAt = time.Now()
+			updated = append(updated, j)
+		}
+	}
+	r.mu.Unlock()
+	for _, j := range updated {
+		r.persist(j)
+		r.publish(Event{Type: "updated", Job: j})
+	}
+}
+
 func (r *Registry) Get(id string) (*Job, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

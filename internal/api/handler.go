@@ -697,6 +697,7 @@ type reviewGroup struct {
 	CategoryID           string      `json:"category_id,omitempty"`
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
 	SuggestedTags        []string    `json:"suggested_tags,omitempty"`
+	AppliedTags          []string    `json:"applied_tags,omitempty"`
 	Transactions         []reviewTxn `json:"transactions"`
 }
 
@@ -879,6 +880,7 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 			DestinationName: s.DestinationName,
 			CategoryName:    s.CategoryName,
 			SuggestedTags:   tags,
+			AppliedTags:     classifier.SemanticTags(s.Tags),
 			Transactions:    []reviewTxn{{ID: t.ID, Date: s.Date, Amount: s.Amount}},
 		})
 	}
@@ -920,6 +922,7 @@ func (h *Handler) computeReviewedGroups(ctx context.Context, fc *firefly.Client)
 			DestinationName: s.DestinationName,
 			CategoryName:    s.CategoryName,
 			CategoryID:      s.CategoryID,
+			AppliedTags:     classifier.SemanticTags(s.Tags),
 			Transactions:    []reviewTxn{{ID: t.ID, Date: s.Date, Amount: s.Amount}},
 		})
 	}
@@ -960,6 +963,7 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 				g.CategoryName = s.CategoryName
 				g.CategoryID = s.CategoryID
 			}
+			g.AppliedTags = classifier.SemanticTags(s.Tags)
 			groups[key] = g
 			order = append(order, key)
 		}
@@ -1033,6 +1037,7 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 	}
 
 	_ = h.aidb.MarkReviewed(id)
+	h.registry.MarkReviewedByTxn(id)
 	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)
 }

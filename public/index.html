@@ -208,6 +208,11 @@
                                 <div class="box-header with-border">
                                     <h3 class="box-title">Classification Jobs</h3>
                                     <div class="box-tools pull-right">
+                                        <div style="display:inline-block;margin-right:6px">
+                                            <input type="text" class="form-control input-sm" id="job-search"
+                                                placeholder="Rechercher…" oninput="onJobSearch(this.value)"
+                                                style="width:180px;display:inline-block">
+                                        </div>
                                         <button type="button" class="btn btn-box-tool" data-widget="collapse">
                                             <i class="fa fa-minus"></i>
                                         </button>
@@ -222,13 +227,14 @@
                                                 <th class="hidden-xs">Description</th>
                                                 <th class="text-right hidden-sm hidden-xs">Amount</th>
                                                 <th>Category</th>
+                                                <th class="hidden-xs">Tags</th>
                                                 <th>Outcome</th>
                                                 <th class="hidden-xs text-right">Time</th>
                                             </tr>
                                         </thead>
                                         <tbody id="job-tbody">
                                             <tr id="job-empty-row">
-                                                <td colspan="7" class="text-center text-muted" style="padding:40px 0">
+                                                <td colspan="8" class="text-center text-muted" style="padding:40px 0">
                                                     <i class="fa fa-inbox fa-3x"
                                                         style="display:block;margin-bottom:10px;opacity:.3"></i>
                                                     No jobs yet &mdash; waiting for webhooks or run a batch.
@@ -236,6 +242,7 @@
                                             </tr>
                                         </tbody>
                                     </table>
+                                    <div id="job-pager" style="padding:8px 12px;text-align:center"></div>
                                 </div>
                             </div>
                         </div>
@@ -406,6 +413,9 @@
                                 <div class="box-header with-border">
                                     <h3 class="box-title"><i class="fa fa-flag-o"></i> Review</h3>
                                     <div class="box-tools pull-right">
+                                        <input type="text" class="form-control input-sm" id="review-search"
+                                            placeholder="Rechercher…" oninput="onReviewSearch(this.value)"
+                                            style="width:150px;display:inline-block;margin-right:6px">
                                         <div class="btn-group btn-group-sm" style="margin-right:6px">
                                             <button type="button" class="btn btn-primary" id="rev-tab-pending"
                                                 onclick="setReviewMode('pending')">À traiter</button>

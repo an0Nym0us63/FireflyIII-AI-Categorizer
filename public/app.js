@@ -86,15 +86,12 @@ function connectSSE() {
             renderJobTable();
         } else if (data.type === 'created') {
             jobs[data.job.id] = data.job;
-            prependJobRow(data.job);
-            updateStats();
+            scheduleJobRender();
         } else if (data.type === 'updated') {
             jobs[data.job.id] = data.job;
-            var row = document.querySelector('tr[data-job="' + data.job.id + '"]');
-            if (row) row.replaceWith(buildJobRow(data.job));
             var det = document.getElementById('detail-' + data.job.id);
             if (det) $(det).find('.detail-inner').html(buildDetailInner(data.job));
-            updateStats();
+            scheduleJobRender();
             // Refresh review badge when a job completes with a review outcome.
             var outcomes = ['NEEDS_REVIEW', 'ASSUMED', 'DEST_ASSUMED', 'TRANSFER_CATEGORY'];
             if (outcomes.indexOf(data.job.outcome) !== -1 || data.job.status === 'failed') {
@@ -160,7 +157,66 @@ applyTheme();
 })();
 
 // ─── Jobs ──────────────────────────────────────────────────────────────────
+var jobSearch = '';
+var jobPage = 1;
+var JOB_PAGE_SIZE = 25;
+var jobRenderTimer = null;
+
+function jobTagsHtml(j) {
+    var out = (j.tags || []).map(function (t) {
+        return '<span class="label label-primary" style="margin-right:2px">' + esc(t) + '</span>';
+    });
+    out = out.concat((j.tags_assumed || []).map(function (t) {
+        return '<span class="label label-warning" style="margin-right:2px" title="suggéré">' + esc(t) + '</span>';
+    }));
+    return out.length ? out.join('') : '<span class="text-muted">&mdash;</span>';
+}
+
+function jobMatchesSearch(j, q) {
+    if (!q) return true;
+    var hay = [(j.destination_account || ''), (j.destination_name || ''), (j.description || ''),
+        (j.category || ''), (j.tags || []).join(' '), (j.tags_assumed || []).join(' ')].join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+}
+
+function onJobSearch(v) { jobSearch = (v || '').toLowerCase().trim(); jobPage = 1; renderJobTable(); }
+function jobGoPage(n) { jobPage = n; renderJobTable(); }
+function scheduleJobRender() {
+    if (jobRenderTimer) return;
+    jobRenderTimer = setTimeout(function () { jobRenderTimer = null; renderJobTable(); }, 250);
+}
+
 function renderJobTable() {
+    var tbody = document.getElementById('job-tbody');
+    var all = Object.values(jobs).filter(function (j) { return jobMatchesSearch(j, jobSearch); })
+        .sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+    var total = all.length;
+    var pages = Math.max(1, Math.ceil(total / JOB_PAGE_SIZE));
+    if (jobPage > pages) jobPage = pages;
+    var slice = all.slice((jobPage - 1) * JOB_PAGE_SIZE, jobPage * JOB_PAGE_SIZE);
+
+    tbody.innerHTML = '';
+    if (!slice.length) {
+        tbody.innerHTML = '<tr id="job-empty-row"><td colspan="8" class="text-center text-muted" style="padding:40px 0">'
+            + '<i class="fa fa-inbox fa-3x" style="display:block;margin-bottom:10px;opacity:.3"></i>'
+            + (jobSearch ? 'No jobs match your search.' : 'No jobs yet &mdash; waiting for webhooks or run a batch.') + '</td></tr>';
+    } else {
+        slice.forEach(function (j) { tbody.appendChild(buildJobRow(j)); });
+    }
+    renderJobPager(total, pages);
+    updateStats();
+}
+
+function renderJobPager(total, pages) {
+    var el = document.getElementById('job-pager');
+    if (!el) return;
+    if (total <= JOB_PAGE_SIZE) { el.innerHTML = total ? '<span class="text-muted">' + total + ' jobs</span>' : ''; return; }
+    el.innerHTML = '<button class="btn btn-xs btn-default" ' + (jobPage <= 1 ? 'disabled' : '') + ' onclick="jobGoPage(' + (jobPage - 1) + ')">&laquo; Préc.</button>'
+        + ' <span class="text-muted" style="margin:0 8px">Page ' + jobPage + ' / ' + pages + ' (' + total + ')</span>'
+        + '<button class="btn btn-xs btn-default" ' + (jobPage >= pages ? 'disabled' : '') + ' onclick="jobGoPage(' + (jobPage + 1) + ')">Suiv. &raquo;</button>';
+}
+
+function renderJobTableLegacy() {
     var tbody = document.getElementById('job-tbody');
     tbody.innerHTML = '';
     var sorted = Object.values(jobs).sort(function (a, b) {
@@ -207,6 +263,7 @@ function buildJobRow(j) {
         + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + '</td>'
         + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
         + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
+        + '<td class="hidden-xs">' + jobTagsHtml(j) + '</td>'
         + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
         + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>';
     return tr;
@@ -275,6 +332,7 @@ function jobLabel(j) {
     if (j.status === 'queued') return {cls: 'label-default', txt: 'Queued'};
     if (j.status === 'in_progress') return {cls: 'label-info', txt: 'Running'};
     if (j.status === 'failed') return {cls: 'label-danger', txt: 'Failed'};
+    if (j.outcome === 'REVIEWED') return {cls: 'label-info', txt: 'Reviewed'};
     if (j.outcome === 'CLASSIFIED') return {cls: 'label-success', txt: 'Classified'};
     if (j.outcome === 'ASSUMED') return {cls: 'label-warning', txt: 'Assumed'};
     if (j.outcome === 'NEEDS_REVIEW') return {cls: 'label-danger', txt: 'Needs Review'};
@@ -710,22 +768,22 @@ function renderCurrentBatch() {
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
 
-    var reviewGroups = allReviewGroups;
-    var batch = reviewGroups.slice(0, REVIEW_BATCH_SIZE);
-
     reviewGroupCounter = 0;
     reviewGroupMap = {};
     reviewDestFocused = {};
     pendingAccounts = [];
 
     // Main Review section
+    var filtered = allReviewGroups.filter(reviewMatchesSearch);
+    var pages = Math.max(1, Math.ceil(filtered.length / REVIEW_PAGE_SIZE));
+    if (reviewPage > pages) reviewPage = pages;
+    var batch = filtered.slice((reviewPage - 1) * REVIEW_PAGE_SIZE, reviewPage * REVIEW_PAGE_SIZE);
     if (batch.length) {
-        body.innerHTML = renderReviewTable(batch);
-        actionBar.style.display = 'none';
+        body.innerHTML = renderReviewTable(batch) + reviewPagerHtml(filtered.length, pages);
     } else {
-        body.innerHTML = '<p class="text-muted">No transactions need review &mdash; all caught up!</p>';
-        actionBar.style.display = 'none';
+        body.innerHTML = '<p class="text-muted">' + (reviewSearch ? 'Aucun résultat.' : 'No transactions need review &mdash; all caught up!') + '</p>';
     }
+    actionBar.style.display = 'none';
 
     updateProgressIndicator();
     updateReviewBadge();
@@ -734,12 +792,8 @@ function renderCurrentBatch() {
 function updateProgressIndicator() {
     var el = document.getElementById('review-progress');
     if (!el) return;
-    var n = allReviewGroups.filter(function (g) {
-        return g.outcome !== 'TRANSFER_CATEGORY';
-    }).length;
-    el.textContent = n > REVIEW_BATCH_SIZE
-        ? 'Showing first ' + REVIEW_BATCH_SIZE + ' of ' + n + ' groups'
-        : '';
+    var n = allReviewGroups.length;
+    el.textContent = n > REVIEW_PAGE_SIZE ? (n + ' éléments') : '';
 }
 
 function updateReviewBadge() {
@@ -827,6 +881,27 @@ function buildSearchIcon(g) {
 
 // ─── table-based review (per-row validate/reject) ───────────────────────────
 var reviewMode = 'pending'; // 'pending' | 'reviewed'
+var reviewSearch = '';
+var reviewPage = 1;
+var REVIEW_PAGE_SIZE = 20;
+
+function reviewMatchesSearch(g) {
+    if (!reviewSearch) return true;
+    var hay = [(g.description || ''), (g.destination_name || ''), (g.category_name || ''),
+        (g.applied_tags || []).join(' '), (g.suggested_tags || []).join(' ')].join(' ').toLowerCase();
+    return hay.indexOf(reviewSearch) >= 0;
+}
+
+function onReviewSearch(v) { reviewSearch = (v || '').toLowerCase().trim(); reviewPage = 1; renderCurrentBatch(); }
+function reviewGoPage(n) { reviewPage = n; renderCurrentBatch(); }
+
+function reviewPagerHtml(total, pages) {
+    if (total <= REVIEW_PAGE_SIZE) return '';
+    return '<div style="padding:8px 0;text-align:center">'
+        + '<button class="btn btn-xs btn-default" ' + (reviewPage <= 1 ? 'disabled' : '') + ' onclick="reviewGoPage(' + (reviewPage - 1) + ')">&laquo; Préc.</button>'
+        + ' <span class="text-muted" style="margin:0 8px">Page ' + reviewPage + ' / ' + pages + ' (' + total + ')</span>'
+        + '<button class="btn btn-xs btn-default" ' + (reviewPage >= pages ? 'disabled' : '') + ' onclick="reviewGoPage(' + (reviewPage + 1) + ')">Suiv. &raquo;</button></div>';
+}
 
 function setReviewMode(mode) {
     reviewMode = mode;
@@ -850,6 +925,22 @@ function reviewCatOptions(selectedId) {
     return opts;
 }
 
+function reviewAppliedTagsHtml(g) {
+    var t = (g.applied_tags || []);
+    if (!t.length) return '<span class="text-muted">—</span>';
+    return t.map(function (x) { return '<span class="label label-primary" style="margin-right:2px">' + esc(x) + '</span>'; }).join('');
+}
+
+function reviewSuggestChips(txnId, gi, tags) {
+    return (tags || []).map(function (name) {
+        var enc = encodeURIComponent(name);
+        return '<span class="label label-warning" style="margin-right:4px" title="Tag suggéré">' + esc(name)
+            + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer" onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',true,' + gi + ');return false">\u2713</a>'
+            + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter" onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',false,' + gi + ');return false">\u2717</a>'
+            + '</span>';
+    }).join('');
+}
+
 function renderReviewTable(groups) {
     var destList = '<datalist id="rev-dest-accounts">'
         + (reviewAccounts || []).map(function (a) { return '<option value="' + esc(a.name) + '">'; }).join('')
@@ -861,63 +952,47 @@ function renderReviewTable(groups) {
         var lbl = resolveGroupLabel(g);
         var count = (g.transactions || []).length;
         var txnId = count ? g.transactions[0].id : '';
-        var amountCell;
-        if (count === 1) {
-            var a = parseFloat(g.transactions[0].amount);
-            amountCell = isNaN(a) ? '—' : a.toFixed(2);
-        } else {
-            amountCell = count + ' txns';
-        }
+        var amountCell = (count === 1)
+            ? (isNaN(parseFloat(g.transactions[0].amount)) ? '—' : parseFloat(g.transactions[0].amount).toFixed(2))
+            : (count + ' txns');
         var sub = lbl.sub ? '<br><small class="text-muted">' + esc(lbl.sub) + '</small>' : '';
         var labelCell = '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + '</td>';
         var amtCell = '<td class="text-right" style="white-space:nowrap">' + amountCell + '</td>';
 
-        // Reviewed (read-only) rows.
         if (g.outcome === 'REVIEWED') {
             return '<tr id="rev-row-' + gi + '">'
                 + '<td><span class="label label-info">traité</span></td>'
                 + labelCell + amtCell
                 + '<td>' + (g.category_name ? esc(g.category_name) : '<span class="text-muted">—</span>') + '</td>'
                 + '<td class="text-muted">—</td>'
-                + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
-                + '<button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button>'
-                + '</td></tr>';
+                + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
+                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button></td>'
+                + '</tr>';
         }
 
-        // Tag-suggestion rows: chips with per-tag apply/reject.
         if (g.outcome === 'TAGS') {
-            var chips = (g.suggested_tags || []).map(function (name) {
-                var enc = encodeURIComponent(name);
-                return '<span class="label label-warning" style="margin-right:4px" title="Tag suggéré">'
-                    + esc(name)
-                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer"'
-                    + ' onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',true,' + gi + ');return false">\u2713</a>'
-                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter"'
-                    + ' onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',false,' + gi + ');return false">\u2717</a>'
-                    + '</span>';
-            }).join('');
             return '<tr id="rev-row-' + gi + '">'
                 + '<td><span class="label label-warning">tags ?</span></td>'
                 + labelCell + amtCell
-                + '<td colspan="2" id="rev-tags-' + gi + '">' + chips + '</td>'
-                + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
-                + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button>'
-                + '</td></tr>';
+                + '<td class="text-muted">—</td><td class="text-muted">—</td>'
+                + '<td id="rev-tags-' + gi + '">' + reviewSuggestChips(txnId, gi, g.suggested_tags) + '</td>'
+                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button></td>'
+                + '</tr>';
         }
 
-        // Category / destination review rows.
         var destCell = '<span class="text-muted">—</span>';
         if (g.outcome === 'DEST_ASSUMED') {
             destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
-                + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:140px">';
+                + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:130px">';
         }
         return '<tr id="rev-row-' + gi + '">'
             + '<td style="white-space:nowrap">' + reviewTypeBadge(g.outcome) + '</td>'
             + labelCell + amtCell
-            + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:150px">'
+            + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:140px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
             + '<td>' + destCell + '</td>'
-            + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
+            + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
+            + '<td style="white-space:nowrap">'
             + '<button class="btn btn-warning btn-sm" onclick="confirmReviewRow(' + gi + ')" title="Appliquer et valider"><i class="fa fa-check"></i> Valider</button> '
             + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button>'
             + '</td>'
@@ -928,7 +1003,7 @@ function renderReviewTable(groups) {
         + '<div class="table-responsive"><table class="table table-condensed table-hover" style="margin-bottom:0">'
         + '<thead><tr>'
         + '<th>Type</th><th>Bénéficiaire / Libellé</th><th class="text-right">Montant</th>'
-        + '<th>Catégorie</th><th>Destination</th><th>Actions</th>'
+        + '<th>Catégorie</th><th>Destination</th><th>Tags</th><th>Actions</th>'
         + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
