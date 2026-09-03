@@ -154,6 +154,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var paymentTag string
 	var forceDestination bool
 	var installmentTag bool
+	var mailMerchant string
 
 	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
@@ -165,6 +166,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			if det.ReplaceDestination {
 				opts.MatchDestination = true // determine the real merchant from the email
 				forceDestination = true
+				mailMerchant = mailorder.ExtractMerchant(body)
 			}
 			if t := strings.TrimSpace(det.Tag); t != "" {
 				paymentTag = t
@@ -500,6 +502,35 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				destAccount = a.Name
 				break
 			}
+		}
+	}
+
+	// Deterministic override: when replacing the destination and we extracted the
+	// real merchant/recipient from the email, use it (MATCH existing, else CREATE)
+	// regardless of what the LLM chose — this reliably removes "Paypal".
+	if forceDestination && mailMerchant != "" {
+		matchedID := ""
+		for _, a := range expenseAccounts {
+			if strings.EqualFold(a.Name, mailMerchant) {
+				matchedID = a.ID
+				break
+			}
+		}
+		if matchedID != "" {
+			outcome.DestinationID = matchedID
+			outcome.DestConfidence = "CLASSIFIED"
+			destAccount = mailMerchant
+			destAction = "MATCH"
+		} else if created, err := p.firefly.CreateExpenseAccount(ctx, mailMerchant); err == nil {
+			outcome.DestinationID = created.ID
+			outcome.DestConfidence = "CLASSIFIED"
+			destAccount = created.Name
+			destAction = "CREATE"
+			p.acctMu.Lock()
+			p.acctCache = append(p.acctCache, created)
+			p.acctMu.Unlock()
+		} else {
+			slog.Warn("failed to create merchant account from email", "name", mailMerchant, "error", err)
 		}
 	}
 

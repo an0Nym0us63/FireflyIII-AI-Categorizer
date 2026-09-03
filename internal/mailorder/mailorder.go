@@ -48,6 +48,25 @@ func dial(a Account) (*client.Client, error) {
 	return c, nil
 }
 
+// reMerchant captures the recipient/merchant from PayPal-style wording:
+// "Vous avez payé 12,95 € à MesBilles." / "Vous avez envoyé 2,00 € à tommy guilbert."
+var reMerchant = regexp.MustCompile(`(?i)vous avez (?:pay[eé]|envoy[eé]).*?\sà\s+([^\n.]+?)(?:\s+avec\b|[.\n]|$)`)
+
+// ExtractMerchant tries to pull the real merchant/recipient name out of an order
+// email body (currently PayPal patterns). Returns "" when nothing reliable found.
+func ExtractMerchant(body string) string {
+	m := reMerchant.FindStringSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	name := strings.TrimSpace(m[1])
+	// Guard against grabbing a whole sentence.
+	if name == "" || len(name) > 60 || strings.Count(name, " ") > 6 {
+		return ""
+	}
+	return name
+}
+
 // Test verifies that the mailbox is reachable and the credentials work.
 func Test(a Account) error {
 	if a.Host == "" || a.User == "" {
