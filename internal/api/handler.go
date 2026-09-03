@@ -135,9 +135,9 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// maskMailMappings returns a copy with IMAP passwords blanked for the UI.
-func maskMailMappings(in []config.MailMapping) []config.MailMapping {
-	out := make([]config.MailMapping, len(in))
+// maskMailAccounts returns a copy with IMAP passwords blanked for the UI.
+func maskMailAccounts(in []config.MailAccount) []config.MailAccount {
+	out := make([]config.MailAccount, len(in))
 	for i, m := range in {
 		m.IMAPPassword = ""
 		out[i] = m
@@ -145,14 +145,14 @@ func maskMailMappings(in []config.MailMapping) []config.MailMapping {
 	return out
 }
 
-// mergeMailMappings replaces the stored list with the incoming one, generating
+// mergeMailAccounts replaces the stored list with the incoming one, generating
 // IDs for new entries and keeping the existing password when a blank one is sent.
-func mergeMailMappings(existing, incoming []config.MailMapping) []config.MailMapping {
-	byID := map[string]config.MailMapping{}
+func mergeMailAccounts(existing, incoming []config.MailAccount) []config.MailAccount {
+	byID := map[string]config.MailAccount{}
 	for _, m := range existing {
 		byID[m.ID] = m
 	}
-	out := make([]config.MailMapping, 0, len(incoming))
+	out := make([]config.MailAccount, 0, len(incoming))
 	for _, m := range incoming {
 		if m.ID == "" {
 			m.ID = uuid.New().String()
@@ -167,16 +167,27 @@ func mergeMailMappings(existing, incoming []config.MailMapping) []config.MailMap
 	return out
 }
 
-// testMail verifies IMAP connectivity for a mapping. Uses the posted password,
-// or the stored one for the given mapping ID when blank.
+func mergeMailDetectors(incoming []config.MailDetector) []config.MailDetector {
+	out := make([]config.MailDetector, 0, len(incoming))
+	for _, d := range incoming {
+		if d.ID == "" {
+			d.ID = uuid.New().String()
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// testMail verifies IMAP connectivity for an account. Uses the posted password,
+// or the stored one for the given account ID when blank.
 func (h *Handler) testMail(w http.ResponseWriter, r *http.Request) {
-	var m config.MailMapping
+	var m config.MailAccount
 	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 	if m.IMAPPassword == "" && m.ID != "" {
-		for _, ex := range h.effectiveConfig().MailMappings {
+		for _, ex := range h.effectiveConfig().MailAccounts {
 			if ex.ID == m.ID {
 				m.IMAPPassword = ex.IMAPPassword
 				break
@@ -518,7 +529,8 @@ type configResponse struct {
 	SearchEngine   string `json:"search_engine"`
 	GeminiThinking string `json:"gemini_thinking"`
 
-	MailMappings []config.MailMapping `json:"mail_mappings"`
+	MailAccounts  []config.MailAccount  `json:"mail_accounts"`
+	MailDetectors []config.MailDetector `json:"mail_detectors"`
 
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
@@ -550,7 +562,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		SearchEngine:   cfg.SearchEngine,
 		GeminiThinking: cfg.GeminiThinking,
 
-		MailMappings: maskMailMappings(cfg.MailMappings),
+		MailAccounts:  maskMailAccounts(cfg.MailAccounts),
+		MailDetectors: cfg.MailDetectors,
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -583,7 +596,8 @@ type configUpdateRequest struct {
 	SearchEngine   *string `json:"search_engine"`
 	GeminiThinking *string `json:"gemini_thinking"`
 
-	MailMappings *[]config.MailMapping `json:"mail_mappings"`
+	MailAccounts  *[]config.MailAccount  `json:"mail_accounts"`
+	MailDetectors *[]config.MailDetector `json:"mail_detectors"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -1684,7 +1698,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailMappings)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -1768,8 +1782,11 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	if req.GeminiThinking != nil {
 		existing.GeminiThinking = *req.GeminiThinking
 	}
-	if req.MailMappings != nil {
-		existing.MailMappings = mergeMailMappings(existing.MailMappings, *req.MailMappings)
+	if req.MailAccounts != nil {
+		existing.MailAccounts = mergeMailAccounts(existing.MailAccounts, *req.MailAccounts)
+	}
+	if req.MailDetectors != nil {
+		existing.MailDetectors = mergeMailDetectors(*req.MailDetectors)
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

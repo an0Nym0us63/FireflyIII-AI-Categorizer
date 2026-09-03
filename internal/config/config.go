@@ -40,7 +40,8 @@ type Config struct {
 
 	AmazonOrdersFile string
 
-	MailMappings   []MailMapping
+	MailAccounts   []MailAccount
+	MailDetectors  []MailDetector
 	GeminiThinking string
 	AIDBFile       string
 
@@ -50,16 +51,22 @@ type Config struct {
 	BatchConcurrency  int
 }
 
-// MailMapping ties a set of description keywords to an IMAP mailbox where that
-// merchant's order-confirmation emails arrive.
-type MailMapping struct {
-	ID           string   `json:"id"`
-	Keywords     []string `json:"keywords"`
-	Recipient    string   `json:"recipient"` // alias the orders are delivered to
-	IMAPHost     string   `json:"imap_host"`
-	IMAPPort     int      `json:"imap_port"`
-	IMAPUser     string   `json:"imap_user"`
-	IMAPPassword string   `json:"imap_password"`
+// MailAccount describes an IMAP mailbox to search for order emails.
+type MailAccount struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	IMAPHost     string `json:"imap_host"`
+	IMAPPort     int    `json:"imap_port"`
+	IMAPUser     string `json:"imap_user"`
+	IMAPPassword string `json:"imap_password"`
+}
+
+// MailDetector maps description keywords to a mailbox + expected sender(s).
+type MailDetector struct {
+	ID        string   `json:"id"`
+	Keywords  []string `json:"keywords"`   // matched in the bank description
+	AccountID string   `json:"account_id"` // which MailAccount to search
+	Senders   []string `json:"senders"`    // From addresses of the order emails
 }
 
 // Load reads config from environment variables and overlays the config file.
@@ -179,8 +186,11 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	if sc.GeminiThinking != "" {
 		cfg.GeminiThinking = sc.GeminiThinking
 	}
-	if sc.MailMappings != nil {
-		cfg.MailMappings = sc.MailMappings
+	if sc.MailAccounts != nil {
+		cfg.MailAccounts = sc.MailAccounts
+	}
+	if sc.MailDetectors != nil {
+		cfg.MailDetectors = sc.MailDetectors
 	}
 }
 

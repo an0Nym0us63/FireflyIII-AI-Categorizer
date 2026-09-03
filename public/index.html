@@ -847,13 +847,20 @@
                                 </div>
                                 <div class="box-body">
                                     <p class="help-block">
-                                        Pour PayPal / Amazon / AliExpress : associe des mots-clés (repérés dans le libellé)
-                                        à la boîte mail où arrivent les emails de commande. Le moteur cherchera l'email
-                                        correspondant et enverra son contenu à l'IA. Mot de passe laissé vide = inchangé.
+                                        Pour PayPal / Amazon / AliExpress : décris tes boîtes mail, puis ajoute des
+                                        détecteurs (mots-clés du libellé → boîte à chercher + expéditeurs des emails de
+                                        commande). Le moteur enverra le contenu de l'email à l'IA. Rien trouvé = non touché.
                                     </p>
-                                    <div id="mail-mappings"></div>
-                                    <button type="button" class="btn btn-default btn-sm" onclick="addMailMapping()">
-                                        <i class="fa fa-plus"></i> Ajouter un mapping
+                                    <h4 style="margin-top:0"><i class="fa fa-inbox"></i> Boîtes mail</h4>
+                                    <div id="mail-accounts"></div>
+                                    <button type="button" class="btn btn-default btn-sm" onclick="addMailAccount()">
+                                        <i class="fa fa-plus"></i> Ajouter une boîte
+                                    </button>
+                                    <hr>
+                                    <h4><i class="fa fa-filter"></i> Détecteurs</h4>
+                                    <div id="mail-detectors"></div>
+                                    <button type="button" class="btn btn-default btn-sm" onclick="addMailDetector()">
+                                        <i class="fa fa-plus"></i> Ajouter un détecteur
                                     </button>
                                 </div>
                             </div>

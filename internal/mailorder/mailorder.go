@@ -59,9 +59,9 @@ func Test(a Account) error {
 }
 
 // FindOrderEmail searches the mailbox for an order-confirmation email near the
-// given date (± windowDays), optionally restricted to a recipient alias, and
+// given date (± windowDays), restricted to the given sender addresses, and
 // returns the text content of the closest match (truncated).
-func FindOrderEmail(a Account, recipient string, date time.Time, windowDays int) (string, bool, error) {
+func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int) (string, bool, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return "", false, nil
 	}
@@ -75,23 +75,48 @@ func FindOrderEmail(a Account, recipient string, date time.Time, windowDays int)
 		return "", false, fmt.Errorf("select inbox: %w", err)
 	}
 
-	crit := imap.NewSearchCriteria()
-	crit.Since = date.AddDate(0, 0, -windowDays)
-	crit.Before = date.AddDate(0, 0, windowDays+1)
-	if recipient != "" {
-		crit.Header = textproto.MIMEHeader{}
-		crit.Header.Add("To", recipient)
+	since := date.AddDate(0, 0, -windowDays)
+	before := date.AddDate(0, 0, windowDays+1)
+
+	// Collect matching UIDs. When senders are given, search each (OR); otherwise
+	// fall back to a date-only search.
+	idset := map[uint32]bool{}
+	var searches [][]string // each is a list of From values for one criteria
+	for _, s := range senders {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			searches = append(searches, []string{s})
+		}
 	}
-	ids, err := c.Search(crit)
-	if err != nil {
-		return "", false, fmt.Errorf("search: %w", err)
+	if len(searches) == 0 {
+		searches = append(searches, nil)
 	}
-	if len(ids) == 0 {
+	for _, froms := range searches {
+		crit := imap.NewSearchCriteria()
+		crit.Since = since
+		crit.Before = before
+		if len(froms) > 0 {
+			crit.Header = textproto.MIMEHeader{}
+			for _, f := range froms {
+				crit.Header.Add("From", f)
+			}
+		}
+		ids, err := c.Search(crit)
+		if err != nil {
+			return "", false, fmt.Errorf("search: %w", err)
+		}
+		for _, id := range ids {
+			idset[id] = true
+		}
+	}
+	if len(idset) == 0 {
 		return "", false, nil
 	}
 
 	seqset := new(imap.SeqSet)
-	seqset.AddNum(ids...)
+	for id := range idset {
+		seqset.AddNum(id)
+	}
 	section := &imap.BodySectionName{}
 	items := []imap.FetchItem{imap.FetchEnvelope, section.FetchItem()}
 	messages := make(chan *imap.Message, 30)

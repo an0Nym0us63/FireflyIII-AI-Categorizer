@@ -54,7 +54,8 @@ type Pipeline struct {
 
 	aidb *aidb.DB
 
-	mailMappings []config.MailMapping
+	mailAccounts  []config.MailAccount
+	mailDetectors []config.MailDetector
 
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
@@ -83,7 +84,8 @@ func New(
 	tagMax int,
 	amz *amazon.Index,
 	adb *aidb.DB,
-	mailMappings []config.MailMapping,
+	mailAccounts []config.MailAccount,
+	mailDetectors []config.MailDetector,
 ) *Pipeline {
 	return &Pipeline{
 		firefly:          fc,
@@ -96,7 +98,8 @@ func New(
 		tagMax:           tagMax,
 		amazon:           amz,
 		aidb:             adb,
-		mailMappings:     mailMappings,
+		mailAccounts:     mailAccounts,
+		mailDetectors:    mailDetectors,
 	}
 }
 
@@ -178,9 +181,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 
 	// Opaque merchants configured with a mail mapping (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
-	if mm := p.matchMailMapping(j.Description); mm != nil {
+	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
-		if body, ok := p.findOrderEmail(mm, fireflyDate); ok {
+		if body, ok := p.findOrderEmail(det, fireflyDate); ok {
 			extraContext = "Order confirmation email (use it to choose category and tags):\n" + body
 			slog.Info("order email matched", "id", transactionID)
 		}
@@ -650,29 +653,39 @@ var reCardLast4 = regexp.MustCompile(`X(\d{4})`)
 
 const mailWindowDays = 4
 
-// matchMailMapping returns the first mail mapping whose keyword appears in the
+// matchMailDetector returns the first detector whose keyword appears in the
 // transaction description (case-insensitive), or nil.
-func (p *Pipeline) matchMailMapping(description string) *config.MailMapping {
+func (p *Pipeline) matchMailDetector(description string) *config.MailDetector {
 	d := strings.ToLower(description)
-	for i := range p.mailMappings {
-		for _, kw := range p.mailMappings[i].Keywords {
+	for i := range p.mailDetectors {
+		for _, kw := range p.mailDetectors[i].Keywords {
 			kw = strings.ToLower(strings.TrimSpace(kw))
 			if kw != "" && strings.Contains(d, kw) {
-				return &p.mailMappings[i]
+				return &p.mailDetectors[i]
 			}
 		}
 	}
 	return nil
 }
 
-// findOrderEmail searches the mapping's mailbox for the order email near date.
-func (p *Pipeline) findOrderEmail(mm *config.MailMapping, date time.Time) (string, bool) {
-	if mm.IMAPHost == "" || mm.IMAPUser == "" || date.IsZero() {
+func (p *Pipeline) accountByID(id string) *config.MailAccount {
+	for i := range p.mailAccounts {
+		if p.mailAccounts[i].ID == id {
+			return &p.mailAccounts[i]
+		}
+	}
+	return nil
+}
+
+// findOrderEmail searches the detector's mailbox for the order email near date.
+func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time) (string, bool) {
+	acc := p.accountByID(det.AccountID)
+	if acc == nil || acc.IMAPHost == "" || acc.IMAPUser == "" || date.IsZero() {
 		return "", false
 	}
 	body, ok, err := mailorder.FindOrderEmail(mailorder.Account{
-		Host: mm.IMAPHost, Port: mm.IMAPPort, User: mm.IMAPUser, Password: mm.IMAPPassword,
-	}, mm.Recipient, date, mailWindowDays)
+		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
+	}, det.Senders, date, mailWindowDays)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
 		return "", false

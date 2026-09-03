@@ -162,80 +162,85 @@ var jobPage = 1;
 var JOB_PAGE_SIZE = 25;
 var jobRenderTimer = null;
 
-// ─── Mail mappings ───────────────────────────────────────────────────────
-var mailMappings = [];
+// ─── Mail: accounts + detectors ────────────────────────────────────────────
+var mailAccounts = [];
+var mailDetectors = [];
 
-function renderMailMappings() {
-    var c = document.getElementById('mail-mappings');
+function mailField(coll, i, key, label, val, cls, type) {
+    return '<div class="' + cls + '"><label style="font-size:11px;display:block">' + label + '</label>'
+        + '<input type="' + (type || 'text') + '" class="form-control input-sm" value="' + esc(val == null ? '' : val) + '"'
+        + ' oninput="' + coll + '[' + i + '].' + key + '=' + (type === 'number' ? 'parseInt(this.value,10)||0' : 'this.value') + '"></div>';
+}
+
+function renderMailAccounts() {
+    var c = document.getElementById('mail-accounts');
     if (!c) return;
-    if (!mailMappings.length) {
-        c.innerHTML = '<p class="text-muted" style="margin-bottom:8px">Aucun mapping.</p>';
-        return;
-    }
-    c.innerHTML = mailMappings.map(function (m, i) {
-        var chips = (m.keywords || []).map(function (k, ki) {
-            return '<span class="label label-primary" style="margin-right:4px">' + esc(k)
-                + ' <a href="#" style="color:#fff;text-decoration:none" onclick="removeMailKeyword(' + i + ',' + ki + ');return false">\u00d7</a></span>';
-        }).join('');
-        return '<div class="well well-sm" style="margin-bottom:10px">'
-            + '<div class="row"><div class="col-sm-12" style="margin-bottom:6px">'
-            + '<strong>Mots-clés :</strong> ' + chips
-            + ' <input type="text" class="input-sm" placeholder="ajouter + Entrée" style="width:150px"'
-            + ' onkeydown="if(event.key===\'Enter\'){addMailKeyword(' + i + ',this.value);this.value=\'\';event.preventDefault();}"></div></div>'
-            + '<div class="row">'
-            + mailField(i, 'recipient', 'Alias de réception', m.recipient, 'col-sm-4')
-            + mailField(i, 'imap_host', 'IMAP hôte', m.imap_host, 'col-sm-4')
-            + mailFieldNum(i, 'imap_port', 'Port', m.imap_port || 993, 'col-sm-2')
+    if (!mailAccounts.length) { c.innerHTML = '<p class="text-muted" style="margin-bottom:8px">Aucune boîte.</p>'; return; }
+    c.innerHTML = mailAccounts.map(function (m, i) {
+        return '<div class="well well-sm" style="margin-bottom:10px"><div class="row">'
+            + mailField('mailAccounts', i, 'name', 'Nom (ex: yahoo)', m.name, 'col-sm-3')
+            + mailField('mailAccounts', i, 'imap_host', 'IMAP hôte', m.imap_host, 'col-sm-4')
+            + mailField('mailAccounts', i, 'imap_port', 'Port', m.imap_port || 993, 'col-sm-2', 'number')
             + '</div><div class="row">'
-            + mailField(i, 'imap_user', 'Utilisateur', m.imap_user, 'col-sm-4')
-            + mailFieldPw(i, 'Mot de passe', 'col-sm-4')
+            + mailField('mailAccounts', i, 'imap_user', 'Utilisateur', m.imap_user, 'col-sm-4')
+            + '<div class="col-sm-4"><label style="font-size:11px;display:block">Mot de passe <span class="text-muted">(vide = inchangé)</span></label>'
+            + '<input type="password" class="form-control input-sm" placeholder="••••••" oninput="mailAccounts[' + i + '].imap_password=this.value"></div>'
             + '<div class="col-sm-4" style="padding-top:22px">'
-            + '<button type="button" class="btn btn-default btn-sm" onclick="testMailMapping(' + i + ')"><i class="fa fa-plug"></i> Test</button> '
-            + '<button type="button" class="btn btn-danger btn-sm" onclick="removeMailMapping(' + i + ')"><i class="fa fa-trash"></i></button> '
-            + '<span id="mail-test-' + i + '" style="font-size:12px;margin-left:6px"></span>'
-            + '</div></div></div>';
+            + '<button type="button" class="btn btn-default btn-sm" onclick="testMailAccount(' + i + ')"><i class="fa fa-plug"></i> Test</button> '
+            + '<button type="button" class="btn btn-danger btn-sm" onclick="removeMailAccount(' + i + ')"><i class="fa fa-trash"></i></button> '
+            + '<span id="mail-test-' + i + '" style="font-size:12px;margin-left:6px"></span></div>'
+            + '</div></div>';
     }).join('');
 }
 
-function mailField(i, key, label, val, cls) {
-    return '<div class="' + cls + '"><label style="font-size:11px;display:block">' + label + '</label>'
-        + '<input type="text" class="form-control input-sm" value="' + esc(val || '') + '"'
-        + ' oninput="mailMappings[' + i + '].' + key + '=this.value"></div>';
-}
-function mailFieldNum(i, key, label, val, cls) {
-    return '<div class="' + cls + '"><label style="font-size:11px;display:block">' + label + '</label>'
-        + '<input type="number" class="form-control input-sm" value="' + (val || '') + '"'
-        + ' oninput="mailMappings[' + i + '].' + key + '=parseInt(this.value,10)||0"></div>';
-}
-function mailFieldPw(i, label, cls) {
-    return '<div class="' + cls + '"><label style="font-size:11px;display:block">' + label + ' <span class="text-muted">(vide = inchangé)</span></label>'
-        + '<input type="password" class="form-control input-sm" placeholder="••••••"'
-        + ' oninput="mailMappings[' + i + '].imap_password=this.value"></div>';
+function accountOptions(selectedId) {
+    return '<option value="">— choisir —</option>' + mailAccounts.map(function (a) {
+        var name = a.name || a.imap_user || a.id;
+        return '<option value="' + esc(a.id || '') + '"' + (a.id === selectedId ? ' selected' : '') + '>' + esc(name) + '</option>';
+    }).join('');
 }
 
-function addMailMapping() {
-    mailMappings.push({keywords: [], recipient: '', imap_host: '', imap_port: 993, imap_user: '', imap_password: ''});
-    renderMailMappings();
+function renderMailDetectors() {
+    var c = document.getElementById('mail-detectors');
+    if (!c) return;
+    if (!mailDetectors.length) { c.innerHTML = '<p class="text-muted" style="margin-bottom:8px">Aucun détecteur.</p>'; return; }
+    c.innerHTML = mailDetectors.map(function (d, i) {
+        var kw = (d.keywords || []).map(function (k, ki) {
+            return '<span class="label label-primary" style="margin-right:4px">' + esc(k) + ' <a href="#" style="color:#fff;text-decoration:none" onclick="removeDetKeyword(' + i + ',' + ki + ');return false">\u00d7</a></span>';
+        }).join('');
+        var senders = (d.senders || []).map(function (s, si) {
+            return '<span class="label label-info" style="margin-right:4px">' + esc(s) + ' <a href="#" style="color:#fff;text-decoration:none" onclick="removeDetSender(' + i + ',' + si + ');return false">\u00d7</a></span>';
+        }).join('');
+        return '<div class="well well-sm" style="margin-bottom:10px">'
+            + '<div class="row"><div class="col-sm-12" style="margin-bottom:6px"><strong>Mots-clés libellé :</strong> ' + kw
+            + ' <input type="text" class="input-sm" placeholder="ajouter + Entrée" style="width:140px" onkeydown="if(event.key===\'Enter\'){addDetKeyword(' + i + ',this.value);this.value=\'\';event.preventDefault();}"></div></div>'
+            + '<div class="row"><div class="col-sm-4"><label style="font-size:11px;display:block">Boîte mail</label>'
+            + '<select class="form-control input-sm" onchange="mailDetectors[' + i + '].account_id=this.value">' + accountOptions(d.account_id) + '</select></div>'
+            + '<div class="col-sm-8"><label style="font-size:11px;display:block">Expéditeurs</label>' + senders
+            + ' <input type="text" class="input-sm" placeholder="ex: auto-confirm@amazon.fr + Entrée" style="width:230px" onkeydown="if(event.key===\'Enter\'){addDetSender(' + i + ',this.value);this.value=\'\';event.preventDefault();}"></div></div>'
+            + '<div class="row"><div class="col-sm-12" style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" onclick="removeMailDetector(' + i + ')"><i class="fa fa-trash"></i> Supprimer</button></div></div>'
+            + '</div>';
+    }).join('');
 }
-function removeMailMapping(i) { mailMappings.splice(i, 1); renderMailMappings(); }
-function addMailKeyword(i, v) {
-    v = (v || '').trim().toLowerCase();
-    if (!v) return;
-    mailMappings[i].keywords = mailMappings[i].keywords || [];
-    if (mailMappings[i].keywords.indexOf(v) < 0) mailMappings[i].keywords.push(v);
-    renderMailMappings();
-}
-function removeMailKeyword(i, ki) { mailMappings[i].keywords.splice(ki, 1); renderMailMappings(); }
 
-function testMailMapping(i) {
+function renderMailConfig() { renderMailAccounts(); renderMailDetectors(); }
+
+function addMailAccount() { mailAccounts.push({name: '', imap_host: '', imap_port: 993, imap_user: '', imap_password: ''}); renderMailConfig(); }
+function removeMailAccount(i) { mailAccounts.splice(i, 1); renderMailConfig(); }
+function testMailAccount(i) {
     var st = document.getElementById('mail-test-' + i);
     if (st) st.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
-    $.ajax({
-        url: '/api/mail/test', method: 'POST', contentType: 'application/json',
-        data: JSON.stringify(mailMappings[i])
-    }).done(function () { if (st) st.innerHTML = '<span class="text-success">OK</span>'; })
-      .fail(function (x) { if (st) st.innerHTML = '<span class="text-danger">' + esc(x.responseText || ('' + x.status)) + '</span>'; });
+    $.ajax({url: '/api/mail/test', method: 'POST', contentType: 'application/json', data: JSON.stringify(mailAccounts[i])})
+        .done(function () { if (st) st.innerHTML = '<span class="text-success">OK</span>'; })
+        .fail(function (x) { if (st) st.innerHTML = '<span class="text-danger">' + esc(x.responseText || ('' + x.status)) + '</span>'; });
 }
+
+function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: []}); renderMailConfig(); }
+function removeMailDetector(i) { mailDetectors.splice(i, 1); renderMailConfig(); }
+function addDetKeyword(i, v) { v = (v || '').trim().toLowerCase(); if (!v) return; mailDetectors[i].keywords = mailDetectors[i].keywords || []; if (mailDetectors[i].keywords.indexOf(v) < 0) mailDetectors[i].keywords.push(v); renderMailDetectors(); }
+function removeDetKeyword(i, ki) { mailDetectors[i].keywords.splice(ki, 1); renderMailDetectors(); }
+function addDetSender(i, v) { v = (v || '').trim(); if (!v) return; mailDetectors[i].senders = mailDetectors[i].senders || []; if (mailDetectors[i].senders.indexOf(v) < 0) mailDetectors[i].senders.push(v); renderMailDetectors(); }
+function removeDetSender(i, si) { mailDetectors[i].senders.splice(si, 1); renderMailDetectors(); }
 
 function jobTagsHtml(j) {
     var out = (j.tags || []).map(function (t) {
@@ -2036,8 +2041,9 @@ async function loadSettings() {
         $('#gemini-key-hint').toggle(!!d.gemini_key_set);
         $('#cfg-gemini-model').val(d.gemini_model || '');
         $('#cfg-gemini-thinking').val(d.gemini_thinking || 'low');
-        mailMappings = (d.mail_mappings || []).map(function (m) { return Object.assign({}, m); });
-        renderMailMappings();
+        mailAccounts = (d.mail_accounts || []).map(function (m) { return Object.assign({}, m); });
+        mailDetectors = (d.mail_detectors || []).map(function (m) { return Object.assign({}, m, {keywords: (m.keywords || []).slice(), senders: (m.senders || []).slice()}); });
+        renderMailConfig();
         if (d.gemini_key_set) loadGeminiModels();
         $('#cfg-deepseek-key').val('');
         $('#deepseek-key-hint').toggle(!!d.deepseek_key_set);
@@ -2134,7 +2140,8 @@ async function saveSettings() {
         if (k) payload.gemini_api_key = k;
         if (m) payload.gemini_model = m;
         payload.gemini_thinking = $('#cfg-gemini-thinking').val();
-    payload.mail_mappings = mailMappings;
+    payload.mail_accounts = mailAccounts;
+    payload.mail_detectors = mailDetectors;
     } else if (p === 'deepseek') {
         var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
         if (k) payload.deepseek_api_key = k;

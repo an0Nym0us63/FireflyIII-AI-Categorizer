@@ -25,16 +25,17 @@ type StoredConfig struct {
 	TagPrefix           string `json:"tag_prefix,omitempty"`
 	CustomSystemContext string `json:"custom_system_context,omitempty"`
 
-	HistoryContextLimit     int           `json:"history_context_limit,omitempty"`
-	HistoryLookbackDays     int           `json:"history_lookback_days,omitempty"`
-	DestinationMatchEnabled *bool         `json:"destination_match_enabled,omitempty"`
-	TagSuggestEnabled       *bool         `json:"tag_suggest_enabled,omitempty"`
-	TagSuggestMax           int           `json:"tag_suggest_max,omitempty"`
-	SearchEngine            string        `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
-	GeminiThinking          string        `json:"gemini_thinking,omitempty"`
-	MailMappings            []MailMapping `json:"mail_mappings,omitempty"`
-	WorkerConcurrency       int           `json:"worker_concurrency,omitempty"`
-	BatchConcurrency        int           `json:"batch_concurrency,omitempty"`
+	HistoryContextLimit     int            `json:"history_context_limit,omitempty"`
+	HistoryLookbackDays     int            `json:"history_lookback_days,omitempty"`
+	DestinationMatchEnabled *bool          `json:"destination_match_enabled,omitempty"`
+	TagSuggestEnabled       *bool          `json:"tag_suggest_enabled,omitempty"`
+	TagSuggestMax           int            `json:"tag_suggest_max,omitempty"`
+	SearchEngine            string         `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
+	GeminiThinking          string         `json:"gemini_thinking,omitempty"`
+	MailAccounts            []MailAccount  `json:"mail_accounts,omitempty"`
+	MailDetectors           []MailDetector `json:"mail_detectors,omitempty"`
+	WorkerConcurrency       int            `json:"worker_concurrency,omitempty"`
+	BatchConcurrency        int            `json:"batch_concurrency,omitempty"`
 }
 
 // Store manages a JSON config file that overlays environment variables.
