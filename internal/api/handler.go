@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/aidb"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
@@ -32,6 +33,7 @@ type Handler struct {
 	baseCfg     *config.Config // original env-var config (never mutated)
 	store       *config.Store
 	registry    *job.Registry
+	aidb        *aidb.DB
 	webhookPool *worker.Pool
 	batchPool   *worker.Pool
 
@@ -59,6 +61,7 @@ func New(
 	store *config.Store,
 	reg *job.Registry,
 	webhookPool, batchPool *worker.Pool,
+	adb *aidb.DB,
 ) (*Handler, error) {
 	h := &Handler{
 		baseCfg:         baseCfg,
@@ -66,6 +69,7 @@ func New(
 		registry:        reg,
 		webhookPool:     webhookPool,
 		batchPool:       batchPool,
+		aidb:            adb,
 		transferHistory: make(map[string]string),
 	}
 	// Best-effort: if not configured yet, server still starts.
@@ -1418,7 +1422,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile))
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb)
 
 	h.mu.Lock()
 	h.fc = fc

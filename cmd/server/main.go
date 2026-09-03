@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/aidb"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/api"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
@@ -39,15 +40,22 @@ func main() {
 	webhookPool := worker.NewPool(cfg.WorkerConcurrency, 1000)
 	batchPool := worker.NewPool(cfg.BatchConcurrency, 10000)
 
+	adb, err := aidb.Open(cfg.AIDBFile)
+	if err != nil {
+		slog.Error("ai db", "error", err)
+		os.Exit(1)
+	}
+	defer adb.Close()
+
 	webhookPool.Start()
 	batchPool.Start()
 
 	if *batchMode {
-		runBatch(cfg, reg, batchPool)
+		runBatch(cfg, reg, batchPool, adb)
 		return
 	}
 
-	handler, err := api.New(cfg, store, reg, webhookPool, batchPool)
+	handler, err := api.New(cfg, store, reg, webhookPool, batchPool, adb)
 	if err != nil {
 		slog.Error("handler init", "error", err)
 		os.Exit(1)
@@ -96,7 +104,7 @@ func main() {
 	batchPool.Shutdown()
 }
 
-func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool) {
+func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aidb.DB) {
 	if !cfg.IsConfigured() {
 		slog.Error("batch: not configured — set required environment variables")
 		pool.Shutdown()
@@ -123,7 +131,7 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool) {
 
 	fc := firefly.New(cfg.FireflyURL, cfg.FireflyToken, cfg.TagPrefix)
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
-	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile))
+	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), adb)
 
 	ctx := context.Background()
 

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/aidb"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
@@ -49,6 +50,8 @@ type Pipeline struct {
 
 	amazon *amazon.Index
 
+	aidb *aidb.DB
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
@@ -75,6 +78,7 @@ func New(
 	tagSuggest bool,
 	tagMax int,
 	amz *amazon.Index,
+	adb *aidb.DB,
 ) *Pipeline {
 	return &Pipeline{
 		firefly:          fc,
@@ -86,6 +90,7 @@ func New(
 		tagSuggest:       tagSuggest,
 		tagMax:           tagMax,
 		amazon:           amz,
+		aidb:             adb,
 	}
 }
 
@@ -227,6 +232,20 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 			p.registry.SetFailed(j.ID, err.Error())
 			return fmt.Errorf("update transaction: %w", err)
+		}
+
+		if p.aidb != nil {
+			destConf := ""
+			if historyMatchDestID != "" {
+				destConf = "CLASSIFIED"
+			}
+			_ = p.aidb.Upsert(aidb.Record{
+				TransactionID:  transactionID,
+				Outcome:        string(classifier.Classified),
+				Category:       historyMatchCat,
+				DestConfidence: destConf,
+				Reason:         reason,
+			})
 		}
 
 		var destName, destAction string
@@ -417,6 +436,18 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
 		return fmt.Errorf("update transaction: %w", err)
+	}
+
+	if p.aidb != nil {
+		_ = p.aidb.Upsert(aidb.Record{
+			TransactionID:  transactionID,
+			Outcome:        outcome.Outcome,
+			Category:       outcome.Category,
+			DestConfidence: outcome.DestConfidence,
+			Reason:         outcome.Reason,
+			Assumption:     outcome.Assumption,
+			SuggestedTags:  outcome.TagsAssumed,
+		})
 	}
 
 	// Use history override values for the finished job when they were applied.

@@ -40,6 +40,7 @@ type Config struct {
 
 	AmazonOrdersFile string
 	GeminiThinking   string
+	AIDBFile         string
 
 	SearchEngine string // "google", "duckduckgo", or "" (disabled)
 
@@ -73,6 +74,7 @@ func Load() (*Config, *Store, error) {
 		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),
 		AmazonOrdersFile:        getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
 		GeminiThinking:          getEnv("GEMINI_THINKING", "low"),
+		AIDBFile:                getEnv("AI_DB_FILE", "/data/ai.db"),
 		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
 		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 5),
 	}
