@@ -112,6 +112,7 @@ func (c *Cache) ensureFresh(ctx context.Context) error {
 				GroupKey:             classifier.GroupKey(s.DestinationName, s.Description),
 				Amount:               amount,
 				DestinationAccountID: s.DestinationID,
+				Tags:                 classifier.SemanticTags(s.Tags),
 			})
 		}
 	}

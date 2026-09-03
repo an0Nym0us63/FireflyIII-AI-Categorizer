@@ -19,9 +19,10 @@ type HistoricalEntry struct {
 	DestinationName      string
 	Description          string
 	CategoryName         string
-	GroupKey             string  // effective lookup key — destination name, or description when destination is blank
-	Amount               float64 // 0 means unknown; used for history-match confidence check
-	DestinationAccountID string  // expense account ID from a previous classification (empty if unknown)
+	GroupKey             string   // effective lookup key — destination name, or description when destination is blank
+	Amount               float64  // 0 means unknown; used for history-match confidence check
+	DestinationAccountID string   // expense account ID from a previous classification (empty if unknown)
+	Tags                 []string // semantic (non-control) tags from the past transaction
 }
 
 // GroupKey returns the key used to group and look up transaction history.
@@ -42,6 +43,31 @@ func GroupKey(destinationName, description string) string {
 		return strings.ToLower(strings.TrimSpace(destinationName))
 	}
 	return strings.ToLower(strings.TrimSpace(description))
+}
+
+// tagControlMarkers identify the app's internal control tags (not semantic).
+var tagControlMarkers = []string{":classified", ":assumed", ":needs-review", ":dest-assumed", ":reviewed", ":suggest:", ":tags-assumed"}
+
+// SemanticTags returns the AI content tags, excluding the app's internal control
+// tags (ai:classified, ai:suggest:..., etc.).
+func SemanticTags(tags []string) []string {
+	var out []string
+	for _, t := range tags {
+		if strings.TrimSpace(t) == "" {
+			continue
+		}
+		ctrl := false
+		for _, m := range tagControlMarkers {
+			if strings.Contains(t, m) {
+				ctrl = true
+				break
+			}
+		}
+		if !ctrl {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // IsGenericAccountName reports whether name is blank or a generic placeholder
@@ -197,6 +223,9 @@ type Request struct {
 	// ExtraContext is optional per-transaction context injected into the prompt
 	// (e.g. Amazon order contents matched from an order-history export).
 	ExtraContext string
+
+	// Notes is the transaction's existing notes, surfaced to the LLM as hints.
+	Notes string
 
 	// DestinationMatching signals to the classifier that the system prompt
 	// and response parsing should include destination-account logic.

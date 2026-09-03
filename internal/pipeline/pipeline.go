@@ -219,6 +219,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			CategoryID:    categoryID,
 			DestinationID: historyMatchDestID,
 			Reason:        reason,
+			Tags:          tryHistoryTags(history, j.Amount),
 		}
 		if historyMatchDestID != "" {
 			outcome.DestConfidence = "CLASSIFIED"
@@ -276,6 +277,11 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
+	notes := ""
+	if len(splits) > 0 {
+		notes = splits[0].Notes
+	}
+
 	result, err := p.classifier.Classify(ctx, classifier.Request{
 		Categories:          clCats,
 		DestinationName:     j.DestinationName,
@@ -289,6 +295,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		TagSuggestion:       tagSuggest,
 		TagMax:              p.tagMax,
 		ExtraContext:        extraContext,
+		Notes:               notes,
 	})
 	if err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
@@ -505,6 +512,42 @@ func tryHistoryMatch(history []classifier.HistoricalEntry, amount *float64) (cat
 		}
 	}
 	return best, bestCount
+}
+
+// tryHistoryTags returns the semantic tags that recur across the amount-matching
+// history entries (present in at least historyMatchMinCount of them), so the
+// bypass path can apply consistent tags without calling the LLM.
+func tryHistoryTags(history []classifier.HistoricalEntry, amount *float64) []string {
+	counts := map[string]int{}
+	var order []string
+	for _, h := range history {
+		if amount != nil && *amount > 0 && h.Amount > 0 {
+			hi := math.Max(*amount, h.Amount)
+			lo := math.Min(*amount, h.Amount)
+			if hi/lo > historyMatchMaxRatio {
+				continue
+			}
+		}
+		seen := map[string]bool{}
+		for _, t := range h.Tags {
+			key := strings.ToLower(strings.TrimSpace(t))
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			if counts[key] == 0 {
+				order = append(order, t) // keep first-seen casing
+			}
+			counts[key]++
+		}
+	}
+	var out []string
+	for _, t := range order {
+		if counts[strings.ToLower(strings.TrimSpace(t))] >= historyMatchMinCount {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // tryDestinationHistoryMatch returns the best destination account ID from history

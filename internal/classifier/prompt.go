@@ -152,7 +152,11 @@ func buildUserPrompt(req Request) string {
 		gk := GroupKey(req.DestinationName, req.Description)
 		fmt.Fprintf(&sb, "Past classifications for %q:\n", gk)
 		for _, h := range req.History {
-			fmt.Fprintf(&sb, "  - %q → %s\n", h.Description, h.CategoryName)
+			if len(h.Tags) > 0 {
+				fmt.Fprintf(&sb, "  - %q → %s [tags: %s]\n", h.Description, h.CategoryName, strings.Join(h.Tags, ", "))
+			} else {
+				fmt.Fprintf(&sb, "  - %q → %s\n", h.Description, h.CategoryName)
+			}
 		}
 		sb.WriteString("\n")
 	}
@@ -209,6 +213,10 @@ func buildUserPrompt(req Request) string {
 	fmt.Fprintf(&sb, "  Description: %s\n", req.Description)
 	if req.Amount != nil {
 		fmt.Fprintf(&sb, "  Amount: %.2f\n", *req.Amount)
+	}
+
+	if strings.TrimSpace(req.Notes) != "" {
+		fmt.Fprintf(&sb, "\nExisting notes on this transaction (may contain useful hints):\n%s\n", strings.TrimSpace(req.Notes))
 	}
 
 	if strings.TrimSpace(req.ExtraContext) != "" {
