@@ -114,10 +114,15 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	before := date.AddDate(0, 0, fwdDays+1)
 	section := &imap.BodySectionName{}
 
-	searchUIDs := func(froms []string) ([]uint32, error) {
+	searchUIDs := func(froms []string, sentDate bool) ([]uint32, error) {
 		crit := imap.NewSearchCriteria()
-		crit.Since = since
-		crit.Before = before
+		if sentDate {
+			crit.SentSince = since
+			crit.SentBefore = before
+		} else {
+			crit.Since = since
+			crit.Before = before
+		}
 		if len(froms) > 0 {
 			crit.Header = textproto.MIMEHeader{}
 			for _, f := range froms {
@@ -125,6 +130,23 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			}
 		}
 		return c.Search(crit)
+	}
+	// unionSearch tries both internal-date and sent-date (Yahoo/others may set an
+	// INTERNALDATE that differs from the visible header date on older messages).
+	unionSearch := func(froms []string) []uint32 {
+		set := map[uint32]bool{}
+		for _, sent := range []bool{false, true} {
+			if ids, err := searchUIDs(froms, sent); err == nil {
+				for _, id := range ids {
+					set[id] = true
+				}
+			}
+		}
+		out := make([]uint32, 0, len(set))
+		for id := range set {
+			out = append(out, id)
+		}
+		return out
 	}
 
 	type cand struct {
@@ -190,28 +212,22 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			froms = append(froms, t)
 		}
 	}
-	uids, err := searchUIDs(froms)
-	if err != nil {
-		return SearchResult{}, fmt.Errorf("search: %w", err)
-	}
-	cands, err := fetchCands(uids)
+	cands, err := fetchCands(unionSearch(froms))
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("fetch: %w", err)
 	}
+	senderCount := len(cands)
 
-	// Pass 2: senders were set but no candidate matches the amount — the
-	// merchant's sender address may have changed over time. Retry ignoring the
-	// sender and let the amount identify the right email.
-	if len(froms) > 0 && !hasAmt(cands) {
-		if uids2, serr := searchUIDs(nil); serr == nil {
-			if c2, ferr := fetchCands(uids2); ferr == nil && len(c2) > 0 {
-				cands = c2
-			}
+	// Pass 2: no candidate matches the amount — retry ignoring the sender (its
+	// address may have changed) and let the amount identify the right email.
+	if !hasAmt(cands) && len(froms) > 0 {
+		if c2, ferr := fetchCands(unionSearch(nil)); ferr == nil && len(c2) > 0 {
+			cands = c2
 		}
 	}
 
 	if len(cands) == 0 {
-		return SearchResult{}, nil
+		return SearchResult{Candidates: senderCount}, nil
 	}
 
 	pick := func(list []cand) cand {

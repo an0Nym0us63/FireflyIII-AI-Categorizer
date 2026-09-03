@@ -200,9 +200,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	if skipIfEmpty && extraContext == "" {
 		reason := "Aucun email de commande trouvé — non catégorisé."
 		if mailCandidates > 0 {
-			reason = fmt.Sprintf("%d email(s) candidat(s) dans la fenêtre mais aucun au montant %.2f € — non catégorisé.", mailCandidates, derefAmount(j.Amount))
+			reason = fmt.Sprintf("%d email(s) dans la fenêtre de dates mais aucun au montant %.2f € — non catégorisé.", mailCandidates, derefAmount(j.Amount))
 		} else {
-			reason = "Aucun email candidat (expéditeur/dossier/fenêtre) — non catégorisé."
+			reason = "Aucun email dans la fenêtre de dates (±14j) — vérifier le dossier/les dates. Non catégorisé."
 		}
 		p.registry.SetFinished(j.ID, "SKIPPED", "", reason, "", "", "", "", "", nil, nil)
 		slog.Info("skipped opaque merchant with no order content", "id", transactionID, "candidates", mailCandidates)
