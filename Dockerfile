@@ -1,17 +1,9 @@
-FROM golang:1.24-alpine AS builder
-WORKDIR /app
-RUN apk add --no-cache git
-COPY . .
-ARG VERSION=dev
-ARG COMMIT=
-RUN CGO_ENABLED=0 GOOS=linux GOFLAGS=-mod=mod go build \
-    -ldflags="-s -w -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Version=${VERSION} -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Commit=${COMMIT}" \
-    -o /firefly-ai-categorize ./cmd/server
-
+# The Go binary is compiled on the CI runner (see .github/workflows/docker.yml)
+# and copied in here — this image only packages it.
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata && mkdir -p /data
 WORKDIR /app
-COPY --from=builder /firefly-ai-categorize .
+COPY firefly-ai-categorize .
 COPY public/ public/
 ENV CONFIG_FILE=/data/config.json
 VOLUME /data
