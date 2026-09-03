@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emersion/go-imap"
@@ -82,6 +83,53 @@ func Test(a Account) error {
 	return c.Logout()
 }
 
+// pooled is a reusable IMAP connection for one account, serialized by its mutex
+// so a batch of lookups reuses a single login instead of reconnecting each time.
+type pooled struct {
+	mu  sync.Mutex
+	cli *client.Client
+}
+
+func (p *pooled) ensure(a Account) (*client.Client, error) {
+	if p.cli != nil {
+		if err := p.cli.Noop(); err == nil {
+			return p.cli, nil
+		}
+		_ = p.cli.Logout()
+		p.cli = nil
+	}
+	c, err := dial(a)
+	if err != nil {
+		return nil, err
+	}
+	p.cli = c
+	return c, nil
+}
+
+func (p *pooled) drop() {
+	if p.cli != nil {
+		_ = p.cli.Logout()
+		p.cli = nil
+	}
+}
+
+var (
+	poolMu sync.Mutex
+	pool   = map[string]*pooled{}
+)
+
+func acquire(a Account) *pooled {
+	key := a.Host + "|" + strconv.Itoa(a.Port) + "|" + a.User
+	poolMu.Lock()
+	defer poolMu.Unlock()
+	p := pool[key]
+	if p == nil {
+		p = &pooled{}
+		pool[key] = p
+	}
+	return p
+}
+
 // FindOrderEmail searches the INBOX (never Spam/other folders) for an
 // order-confirmation email in [date-backDays, date+fwdDays] (order emails
 // usually precede the bank charge by a few days), restricted to the given
@@ -101,15 +149,24 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return SearchResult{}, nil
 	}
-	c, err := dial(a)
+	p := acquire(a)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c, err := p.ensure(a)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	defer c.Logout()
 
 	// Only the INBOX — never Bulk/Spam or other folders.
 	if _, err := c.Select("INBOX", true); err != nil {
-		return SearchResult{}, fmt.Errorf("select inbox: %w", err)
+		// Connection may have gone stale — reconnect once and retry.
+		p.drop()
+		if c, err = p.ensure(a); err != nil {
+			return SearchResult{}, err
+		}
+		if _, err := c.Select("INBOX", true); err != nil {
+			return SearchResult{}, fmt.Errorf("select inbox: %w", err)
+		}
 	}
 
 	since := date.AddDate(0, 0, -backDays)
