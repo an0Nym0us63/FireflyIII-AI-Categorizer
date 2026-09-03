@@ -2,10 +2,9 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache git
 COPY . .
-RUN go mod tidy
 ARG VERSION=dev
 ARG COMMIT=
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux GOFLAGS=-mod=mod go build \
     -ldflags="-s -w -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Version=${VERSION} -X github.com/openaccountants/firefly-iii-ai-categorize/internal/version.Commit=${COMMIT}" \
     -o /firefly-ai-categorize ./cmd/server
 
