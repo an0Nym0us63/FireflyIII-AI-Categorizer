@@ -51,20 +51,23 @@ func dial(a Account) (*client.Client, error) {
 // reMerchant captures the recipient/merchant from PayPal-style wording:
 // "Vous avez payé 12,95 € à MesBilles." / "Vous avez envoyé 2,00 € à tommy guilbert."
 var reMerchant = regexp.MustCompile(`(?i)vous avez (?:pay[eé]|envoy[eé]).*?\sà\s+([^\n.]+?)(?:\s+avec\b|[.\n]|$)`)
+var reMerchant2 = regexp.MustCompile(`(?i)en faveur de\s+([^\n.]+?)(?:[.\n]|$)`)
 
 // ExtractMerchant tries to pull the real merchant/recipient name out of an order
 // email body (currently PayPal patterns). Returns "" when nothing reliable found.
 func ExtractMerchant(body string) string {
-	m := reMerchant.FindStringSubmatch(body)
-	if len(m) < 2 {
-		return ""
+	for _, re := range []*regexp.Regexp{reMerchant, reMerchant2} {
+		m := re.FindStringSubmatch(body)
+		if len(m) < 2 {
+			continue
+		}
+		name := strings.TrimSpace(m[1])
+		if name == "" || len(name) > 60 || strings.Count(name, " ") > 6 {
+			continue
+		}
+		return name
 	}
-	name := strings.TrimSpace(m[1])
-	// Guard against grabbing a whole sentence.
-	if name == "" || len(name) > 60 || strings.Count(name, " ") > 6 {
-		return ""
-	}
-	return name
+	return ""
 }
 
 // Test verifies that the mailbox is reachable and the credentials work.
@@ -84,19 +87,27 @@ func Test(a Account) error {
 // usually precede the bank charge by a few days), restricted to the given
 // senders. Among candidates it prefers the email whose body contains the
 // transaction amount, then the closest date. Returns the text.
-func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (text string, found bool, installment bool, err error) {
+// SearchResult is the outcome of an order-email search.
+type SearchResult struct {
+	Text        string
+	Found       bool
+	Installment bool
+	Candidates  int // emails matching sender+date, before the amount filter
+}
+
+func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (SearchResult, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
-		return "", false, false, nil
+		return SearchResult{}, nil
 	}
 	c, err := dial(a)
 	if err != nil {
-		return "", false, false, err
+		return SearchResult{}, err
 	}
 	defer c.Logout()
 
 	// Only the INBOX — never Bulk/Spam or other folders.
 	if _, err := c.Select("INBOX", true); err != nil {
-		return "", false, false, fmt.Errorf("select inbox: %w", err)
+		return SearchResult{}, fmt.Errorf("select inbox: %w", err)
 	}
 
 	since := date.AddDate(0, 0, -backDays)
@@ -127,14 +138,14 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		}
 		ids, err := c.Search(crit)
 		if err != nil {
-			return "", false, false, fmt.Errorf("search: %w", err)
+			return SearchResult{}, fmt.Errorf("search: %w", err)
 		}
 		for _, id := range ids {
 			idset[id] = true
 		}
 	}
 	if len(idset) == 0 {
-		return "", false, false, nil
+		return SearchResult{}, nil
 	}
 
 	seqset := new(imap.SeqSet)
@@ -178,10 +189,10 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		cands = append(cands, cand{text: body, dayDiff: diff, amt: ok, installment: inst})
 	}
 	if err := <-done; err != nil {
-		return "", false, false, fmt.Errorf("fetch: %w", err)
+		return SearchResult{}, fmt.Errorf("fetch: %w", err)
 	}
 	if len(cands) == 0 {
-		return "", false, false, nil
+		return SearchResult{}, nil
 	}
 
 	pick := func(list []cand) cand {
@@ -207,13 +218,13 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		chosen = cands[0]
 	default:
 		// Amount known but no email matches it → don't guess.
-		return "", false, false, nil
+		return SearchResult{Candidates: len(cands)}, nil
 	}
 	out := chosen.text
 	if len(out) > 5000 {
 		out = out[:5000]
 	}
-	return out, true, chosen.installment, nil
+	return SearchResult{Text: out, Found: true, Installment: chosen.installment, Candidates: len(cands)}, nil
 }
 
 // amountMatch reports whether text contains the debit amount (±2%), and whether
