@@ -26,6 +26,8 @@ type Registry struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job
 
+	byTxn map[string]string // transaction ID -> job ID (one job per transaction)
+
 	subMu       sync.Mutex
 	subscribers []chan Event
 
@@ -33,7 +35,7 @@ type Registry struct {
 }
 
 func NewRegistry() *Registry {
-	return &Registry{jobs: make(map[string]*Job)}
+	return &Registry{jobs: make(map[string]*Job), byTxn: make(map[string]string)}
 }
 
 // Attach wires a persistence store and loads previously saved jobs into memory.
@@ -52,6 +54,9 @@ func (r *Registry) Attach(s Store) {
 		if json.Unmarshal([]byte(d), &j) == nil && j.ID != "" {
 			jj := j
 			r.jobs[j.ID] = &jj
+			if jj.TransactionID != "" {
+				r.byTxn[jj.TransactionID] = jj.ID
+			}
 		}
 	}
 	r.mu.Unlock()
@@ -67,19 +72,55 @@ func (r *Registry) persist(j *Job) {
 }
 
 func (r *Registry) Create(transactionID, batchID, destinationName, description string, amount *float64) *Job {
+	now := time.Now()
+
+	r.mu.Lock()
+	// Reuse the existing job for this transaction (reset it) rather than piling
+	// up duplicates when a transaction is reprocessed.
+	if transactionID != "" {
+		if id, ok := r.byTxn[transactionID]; ok {
+			if j := r.jobs[id]; j != nil {
+				j.BatchID = batchID
+				j.Status = StatusQueued
+				j.CreatedAt = now
+				j.UpdatedAt = now
+				j.DestinationName = destinationName
+				j.Description = description
+				j.Amount = amount
+				j.Outcome = ""
+				j.Category = ""
+				j.Reason = ""
+				j.Assumption = ""
+				j.RawPrompt = ""
+				j.RawResponse = ""
+				j.DestinationAccount = ""
+				j.DestinationAction = ""
+				j.Tags = nil
+				j.TagsAssumed = nil
+				j.Error = ""
+				r.mu.Unlock()
+				r.persist(j)
+				r.publish(Event{Type: "created", Job: j})
+				return j
+			}
+		}
+	}
+
 	j := &Job{
 		ID:              uuid.New().String(),
 		BatchID:         batchID,
 		Status:          StatusQueued,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 		TransactionID:   transactionID,
 		DestinationName: destinationName,
 		Description:     description,
 		Amount:          amount,
 	}
-	r.mu.Lock()
 	r.jobs[j.ID] = j
+	if transactionID != "" {
+		r.byTxn[transactionID] = j.ID
+	}
 	r.mu.Unlock()
 	r.persist(j)
 	r.publish(Event{Type: "created", Job: j})
