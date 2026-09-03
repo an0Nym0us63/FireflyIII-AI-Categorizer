@@ -60,6 +60,9 @@ type TransactionRow struct {
 	CategoryID      string   `json:"category_id"`
 	CategoryName    string   `json:"category_name"`
 	Tags            []string `json:"tags"`
+	// Populated by the API from the local AI store, not from Firefly.
+	AIStatus        string   `json:"ai_status,omitempty"`
+	AISuggestedTags []string `json:"ai_suggested_tags,omitempty"`
 }
 
 // TransactionsPage is the paginated response for the UI transactions list.

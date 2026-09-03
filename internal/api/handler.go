@@ -106,6 +106,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
 	r.Post("/api/transactions/{id}/tags/resolve", h.resolveTags)
+	r.Post("/api/purge-ai-tags", h.purgeAITags)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -771,14 +772,54 @@ func (h *Handler) refreshReviewCache() {
 }
 
 func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
-	rg, err := fc.GetReviewGroups(ctx)
+	records, err := h.aidb.PendingReview()
 	if err != nil {
 		return nil, err
 	}
+
+	// Only category/destination review belongs on this page; pending tag
+	// suggestions are validated from the Transactions table.
+	bucket := map[string]string{}
+	var ids []string
+	for _, r := range records {
+		var b string
+		switch {
+		case r.Outcome == "NEEDS_REVIEW":
+			b = "NEEDS_REVIEW"
+		case r.Outcome == "ASSUMED":
+			b = "ASSUMED"
+		case r.DestConfidence == "ASSUMED":
+			b = "DEST_ASSUMED"
+		default:
+			continue
+		}
+		bucket[r.TransactionID] = b
+		ids = append(ids, r.TransactionID)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	txns, err := fc.GetTransactionsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var needsReview, assumed, destAssumed []firefly.Transaction
+	for _, t := range txns {
+		switch bucket[t.ID] {
+		case "NEEDS_REVIEW":
+			needsReview = append(needsReview, t)
+		case "ASSUMED":
+			assumed = append(assumed, t)
+		case "DEST_ASSUMED":
+			destAssumed = append(destAssumed, t)
+		}
+	}
+
 	var result []*reviewGroup
-	result = append(result, buildReviewGroups("NEEDS_REVIEW", rg.NeedsReview)...)
-	result = append(result, buildReviewGroups("ASSUMED", rg.Assumed)...)
-	result = append(result, buildReviewGroups("DEST_ASSUMED", rg.DestAssumed)...)
+	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
+	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
+	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
 	return result, nil
 }
 
@@ -888,8 +929,25 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	_ = h.aidb.MarkReviewed(id)
 	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// purgeAITags removes the app's old AI control tags from all withdrawals.
+func (h *Handler) purgeAITags(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	n, err := fc.PurgeControlTags(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("purge failed: %v", err), http.StatusBadGateway)
+		return
+	}
+	h.invalidateReviewCache()
+	writeJSON(w, http.StatusOK, map[string]int{"updated": n})
 }
 
 type resolveTagsRequest struct {
@@ -926,6 +984,21 @@ func (h *Handler) resolveTags(w http.ResponseWriter, r *http.Request) {
 	if err := fc.ResolveSuggestedTags(r.Context(), id, txns[0].Splits, req.Apply, req.Reject); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
+	}
+
+	// Drop the resolved suggestions from the local store.
+	if rec, err := h.aidb.Get(id); err == nil && rec != nil {
+		resolved := map[string]bool{}
+		for _, n := range append(append([]string{}, req.Apply...), req.Reject...) {
+			resolved[strings.ToLower(strings.TrimSpace(n))] = true
+		}
+		var remaining []string
+		for _, t := range rec.SuggestedTags {
+			if !resolved[strings.ToLower(strings.TrimSpace(t))] {
+				remaining = append(remaining, t)
+			}
+		}
+		_ = h.aidb.SetSuggestedTags(id, remaining)
 	}
 
 	h.invalidateReviewCache()
@@ -1137,53 +1210,74 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	destFilter := q.Get("destination")
 	categoryFilter := q.Get("category")
 	statusFilter := q.Get("status")
+	idsOnly := q.Get("ids_only") == "true"
 
-	// When filtering is active, we must fetch all pages, filter, and re-paginate.
-	if missingCategory || missingDestination || destFilter != "" || categoryFilter != "" || (statusFilter != "" && statusFilter != "all") {
-		// ids_only mode with filters — collect all matching IDs.
-		if q.Get("ids_only") == "true" {
-			var ids []string
-			for page := 1; ; page++ {
-				result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
-				if err != nil {
-					http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
-					return
-				}
-				for _, row := range result.Data {
-					if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, statusFilter) {
-						ids = append(ids, row.ID)
-					}
-				}
-				if page >= result.TotalPages {
-					break
-				}
-			}
-			writeJSON(w, http.StatusOK, ids)
+	// enrich attaches AI status + pending tag suggestions from the local store.
+	enrich := func(rows []firefly.TransactionRow) {
+		if len(rows) == 0 {
 			return
 		}
+		ids := make([]string, len(rows))
+		for i := range rows {
+			ids[i] = rows[i].ID
+		}
+		recs, _ := h.aidb.GetMany(ids)
+		for i := range rows {
+			rec, ok := recs[rows[i].ID]
+			rows[i].AIStatus = aiStatusFromRecord(rec, ok)
+			if ok && len(rec.SuggestedTags) > 0 {
+				rows[i].AISuggestedTags = rec.SuggestedTags
+			}
+		}
+	}
 
-		// Normal paged mode with filters.
-		pageNum := queryInt(q.Get("page"), 1)
-		limit := queryInt(q.Get("limit"), 50)
-		var allFiltered []firefly.TransactionRow
+	filtersActive := missingCategory || missingDestination || destFilter != "" ||
+		categoryFilter != "" || (statusFilter != "" && statusFilter != "all")
+
+	if filtersActive {
+		// Fetch all pages in range, then filter (base fields + AI status).
+		var all []firefly.TransactionRow
 		for page := 1; ; page++ {
 			result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 				return
 			}
-			for _, row := range result.Data {
-				if matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, statusFilter) {
-					allFiltered = append(allFiltered, row)
-				}
-			}
+			all = append(all, result.Data...)
 			if page >= result.TotalPages {
 				break
 			}
 		}
+		ids := make([]string, len(all))
+		for i := range all {
+			ids[i] = all[i].ID
+		}
+		recs, _ := h.aidb.GetMany(ids)
 
-		// Paginate filtered results.
-		total := len(allFiltered)
+		var filtered []firefly.TransactionRow
+		for _, row := range all {
+			if !matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+				continue
+			}
+			rec, ok := recs[row.ID]
+			if !aiFilterMatch(rec, ok, statusFilter) {
+				continue
+			}
+			filtered = append(filtered, row)
+		}
+
+		if idsOnly {
+			out := make([]string, len(filtered))
+			for i := range filtered {
+				out[i] = filtered[i].ID
+			}
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+
+		pageNum := queryInt(q.Get("page"), 1)
+		limit := queryInt(q.Get("limit"), 50)
+		total := len(filtered)
 		totalPages := (total + limit - 1) / limit
 		if totalPages < 1 {
 			totalPages = 1
@@ -1196,7 +1290,8 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		if endIdx > total {
 			endIdx = total
 		}
-		pageData := allFiltered[startIdx:endIdx]
+		pageData := filtered[startIdx:endIdx]
+		enrich(pageData)
 
 		writeJSON(w, http.StatusOK, firefly.TransactionsPage{
 			Data:       pageData,
@@ -1207,8 +1302,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ids_only=true: return all matching IDs across all pages (used for select-all)
-	if q.Get("ids_only") == "true" {
+	if idsOnly {
 		var ids []string
 		for page := 1; ; page++ {
 			result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
@@ -1229,20 +1323,49 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	pageNum := queryInt(q.Get("page"), 1)
 	limit := queryInt(q.Get("limit"), 50)
-
 	result, err := fc.GetWithdrawalsPage(r.Context(), pageNum, limit, start, end)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 		return
 	}
+	enrich(result.Data)
 	writeJSON(w, http.StatusOK, result)
 }
 
-// matchesTxnFilter checks whether a transaction row matches the active UI filters.
-func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter, status string) bool {
-	if !txnStatusMatches(row.Tags, status) {
-		return false
+// aiStatusFromRecord derives the UI status string from a stored AI record.
+func aiStatusFromRecord(rec aidb.Record, ok bool) string {
+	if !ok {
+		return "untreated"
 	}
+	if rec.Reviewed {
+		return "reviewed"
+	}
+	switch {
+	case rec.Outcome == "NEEDS_REVIEW":
+		return "needs_review"
+	case rec.Outcome == "ASSUMED":
+		return "assumed"
+	case rec.DestConfidence == "ASSUMED":
+		return "dest_assumed"
+	default:
+		return "classified"
+	}
+}
+
+// aiFilterMatch reports whether a record matches the requested status filter.
+func aiFilterMatch(rec aidb.Record, ok bool, status string) bool {
+	switch status {
+	case "", "all":
+		return true
+	case "suggested":
+		return ok && len(rec.SuggestedTags) > 0
+	default:
+		return aiStatusFromRecord(rec, ok) == status
+	}
+}
+
+// matchesTxnFilter checks whether a transaction row matches the active UI filters.
+func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter string) bool {
 	if missingCategory && row.CategoryName != "" {
 		return false
 	}
@@ -1266,40 +1389,6 @@ func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestin
 		}
 	}
 	return true
-}
-
-// txnStatusMatches filters a transaction by its AI-processing status, derived
-// from the control tags applied automatically during classification.
-func txnStatusMatches(tags []string, status string) bool {
-	has := func(needle string) bool {
-		for _, t := range tags {
-			if strings.Contains(t, needle) {
-				return true
-			}
-		}
-		return false
-	}
-	switch status {
-	case "", "all":
-		return true
-	case "untreated":
-		return !has(":classified") && !has(":assumed") && !has(":needs-review") &&
-			!has(":dest-assumed") && !has(":reviewed") && !has(":suggest:")
-	case "classified":
-		return has(":classified")
-	case "assumed":
-		return has(":assumed")
-	case "needs_review":
-		return has(":needs-review")
-	case "dest_assumed":
-		return has(":dest-assumed")
-	case "reviewed":
-		return has(":reviewed")
-	case "suggested":
-		return has(":suggest:")
-	default:
-		return true
-	}
 }
 
 // --- Job endpoints ---

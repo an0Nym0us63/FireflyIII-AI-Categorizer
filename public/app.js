@@ -417,8 +417,8 @@ function renderTxnTable(rows) {
         var checked = selectedTxns.has(r.id) ? 'checked' : '';
         var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
         var date = r.date ? r.date.substring(0, 10) : '';
-        var stateBadge = processedBadge(r.tags);
-        var semTags = semanticTagLabels(r.tags, r.id);
+        var stateBadge = statusBadge(r.ai_status);
+        var semTags = tagLabels(r, r.id);
         return '<tr' + cls + '>'
             + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
             + '<td style="white-space:nowrap">' + esc(date) + '</td>'
@@ -432,63 +432,49 @@ function renderTxnTable(rows) {
     $('#txn-tbody').html(html);
 }
 
-function aiTagLabel(tags) {
-    if (!tags || !tags.length) return '';
-    for (var i = 0; i < tags.length; i++) {
-        if (tags[i].indexOf(':classified') >= 0) return '<span class="label label-success">classified</span>';
-        if (tags[i].indexOf(':assumed') >= 0) return '<span class="label label-warning">assumed</span>';
-        if (tags[i].indexOf(':needs-review') >= 0) return '<span class="label label-danger">needs review</span>';
-        if (tags[i].indexOf(':reviewed') >= 0) return '<span class="label label-info">reviewed</span>';
-    }
-    return '';
+// statusBadge renders the AI processing status (from the local store) for a row.
+function purgeAITags() {
+    if (!confirm("Remove all old ai:* control tags from your Firefly transactions? The AI status is now stored in a local database, so this only cleans up your tag statistics. This can take a while on large accounts.")) return;
+    var st = $('#save-status');
+    st.html('<i class="fa fa-spinner fa-spin"></i> Purging old AI tags…');
+    $.ajax({ url: '/api/purge-ai-tags', method: 'POST' })
+        .done(function (d) { st.html('<span class="text-success">Purged control tags from ' + (d && d.updated != null ? d.updated : '?') + ' transactions.</span>'); })
+        .fail(function (x) { st.html('<span class="text-danger">Purge failed: ' + (x.responseText || x.status) + '</span>'); });
 }
 
-// processedBadge tells, from the auto-applied AI control tags, whether a
-// transaction has already been through the classifier. Shows the classification
-// status when present, a generic "traité" when processed without a primary
-// outcome tag, or a muted "non traité" when the AI never touched it.
-function processedBadge(tags) {
-    var status = aiTagLabel(tags);
-    if (status) return status;
-    var suffixes = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':reviewed', ':suggest:'];
-    if (tags && tags.length) {
-        for (var i = 0; i < tags.length; i++) {
-            for (var k = 0; k < suffixes.length; k++) {
-                if (tags[i].indexOf(suffixes[k]) >= 0) return '<span class="label label-success">traité</span>';
-            }
-        }
+function statusBadge(status) {
+    switch (status) {
+        case 'classified': return '<span class="label label-success">classified</span>';
+        case 'assumed': return '<span class="label label-warning">assumed</span>';
+        case 'needs_review': return '<span class="label label-danger">needs review</span>';
+        case 'dest_assumed': return '<span class="label label-warning">dest assumed</span>';
+        case 'reviewed': return '<span class="label label-info">reviewed</span>';
+        default: return '<span class="label label-default" title="Pas encore traité par l\'IA">non traité</span>';
     }
-    return '<span class="label label-default" title="Pas encore traité par l\'IA">non traité</span>';
 }
 
-// semanticTagLabels renders the AI's content tags: applied tags as plain
-// labels, and pending suggestions (ai:suggest:<name>) as orange chips with
-// inline apply (✓) / reject (✗) actions.
-function semanticTagLabels(tags, txnId) {
-    if (!tags || !tags.length) return '';
-    var ctrl = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':tags-assumed', ':reviewed'];
+// tagLabels renders a row's real applied tags (blue) plus any pending AI tag
+// suggestions (orange, with inline apply ✓ / reject ✗). Leftover ai:* control
+// tags from before the DB migration are filtered out for display.
+function tagLabels(r, txnId) {
     var out = [];
-    for (var i = 0; i < tags.length; i++) {
-        var t = tags[i];
-        var si = t.indexOf(':suggest:');
-        if (si >= 0) {
-            var name = t.substring(si + 9);
-            var enc = encodeURIComponent(name);
-            out.push('<span class="label label-warning" style="margin-right:3px" title="Tag suggéré — à valider">'
-                + esc(name)
-                + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer"'
-                + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',true);return false">\u2713</a>'
-                + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter"'
-                + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',false);return false">\u2717</a>'
-                + '</span>');
-            continue;
-        }
-        var isCtrl = false;
+    var ctrl = [':classified', ':assumed', ':needs-review', ':dest-assumed', ':reviewed', ':suggest:', ':tags-assumed'];
+    (r.tags || []).forEach(function (t) {
         for (var k = 0; k < ctrl.length; k++) {
-            if (t.indexOf(ctrl[k]) >= 0) { isCtrl = true; break; }
+            if (t.indexOf(ctrl[k]) >= 0) return;
         }
-        if (!isCtrl) out.push('<span class="label label-primary" style="margin-right:3px">' + esc(t) + '</span>');
-    }
+        out.push('<span class="label label-primary" style="margin-right:3px">' + esc(t) + '</span>');
+    });
+    (r.ai_suggested_tags || []).forEach(function (name) {
+        var enc = encodeURIComponent(name);
+        out.push('<span class="label label-warning" style="margin-right:3px" title="Tag suggéré — à valider">'
+            + esc(name)
+            + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer"'
+            + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',true);return false">\u2713</a>'
+            + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter"'
+            + ' onclick="resolveTag(\'' + txnId + '\',\'' + enc + '\',false);return false">\u2717</a>'
+            + '</span>');
+    });
     return out.join('');
 }
 

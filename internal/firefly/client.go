@@ -501,14 +501,6 @@ func (c *Client) GetDestAssumedWithdrawals(ctx context.Context) ([]Transaction, 
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
 // When destinationID is non-empty, it also sets the destination expense account.
 func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
-	aiOutcomeTags := map[string]bool{
-		c.tagPrefix + ":needs-review": true,
-		c.tagPrefix + ":assumed":      true,
-		c.tagPrefix + ":dest-assumed": true,
-		c.tagPrefix + ":tags-assumed": true,
-	}
-	reviewedTag := c.tagPrefix + ":reviewed"
-
 	type splitUpdate struct {
 		TransactionJournalID string   `json:"transaction_journal_id"`
 		Tags                 []string `json:"tags"`
@@ -523,14 +515,13 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 
 	b := body{ApplyRules: true, FireWebhooks: false}
 	for _, s := range splits {
+		// Drop any old AI control tags; review status now lives in the local DB.
 		tags := make([]string, 0, len(s.Tags))
 		for _, t := range s.Tags {
-			if !aiOutcomeTags[t] {
-				tags = append(tags, t)
+			if c.isControlTag(t) {
+				continue
 			}
-		}
-		if !contains(tags, reviewedTag) {
-			tags = append(tags, reviewedTag)
+			tags = append(tags, t)
 		}
 		su := splitUpdate{
 			TransactionJournalID: s.JournalID,
@@ -605,6 +596,57 @@ func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []S
 	return c.put(ctx, u, b)
 }
 
+// PurgeControlTags removes all of the app's old AI control tags (ai:classified,
+// ai:assumed, ai:needs-review, ai:dest-assumed, ai:reviewed, ai:suggest:*) from
+// every withdrawal. One-time cleanup after moving AI state to the local DB.
+func (c *Client) PurgeControlTags(ctx context.Context) (int, error) {
+	type splitUpdate struct {
+		TransactionJournalID string   `json:"transaction_journal_id"`
+		Tags                 []string `json:"tags"`
+	}
+	type body struct {
+		ApplyRules   bool          `json:"apply_rules"`
+		FireWebhooks bool          `json:"fire_webhooks"`
+		Transactions []splitUpdate `json:"transactions"`
+	}
+
+	updated := 0
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/transactions?type=withdrawal&limit=200&page=%d", c.baseURL, page)
+		var resp transactionsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return updated, fmt.Errorf("purge scan page %d: %w", page, err)
+		}
+		for _, item := range resp.Data {
+			txn := toTransaction(item)
+			changed := false
+			var sus []splitUpdate
+			for _, s := range txn.Splits {
+				kept := make([]string, 0, len(s.Tags))
+				for _, t := range s.Tags {
+					if c.isControlTag(t) {
+						changed = true
+						continue
+					}
+					kept = append(kept, t)
+				}
+				sus = append(sus, splitUpdate{TransactionJournalID: s.JournalID, Tags: kept})
+			}
+			if changed {
+				if err := c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, txn.ID),
+					body{ApplyRules: false, FireWebhooks: false, Transactions: sus}); err != nil {
+					return updated, fmt.Errorf("purge update %s: %w", txn.ID, err)
+				}
+				updated++
+			}
+		}
+		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return updated, nil
+}
+
 // GetTransactionsByIDs fetches specific transaction groups by ID.
 func (c *Client) GetTransactionsByIDs(ctx context.Context, ids []string) ([]Transaction, error) {
 	var txns []Transaction
@@ -668,8 +710,6 @@ func (c *Client) GetWithdrawalsPage(ctx context.Context, page, limit int, startD
 
 // UpdateTransaction writes classification results back to Firefly III.
 func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Split, outcome UpdateOutcome) error {
-	tag := c.tagForOutcome(outcome.Outcome)
-
 	type splitUpdate struct {
 		TransactionJournalID string   `json:"transaction_journal_id"`
 		Tags                 []string `json:"tags"`
@@ -686,38 +726,22 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 
 	b := body{ApplyRules: true, FireWebhooks: false}
 	for _, s := range splits {
-		tags := make([]string, len(s.Tags))
-		copy(tags, s.Tags)
-		if !contains(tags, tag) {
-			tags = append(tags, tag)
-		}
-		// When destination was assumed (not classified), tag it for human review.
-		if outcome.DestConfidence == "ASSUMED" && outcome.DestinationID != "" {
-			destTag := c.tagPrefix + ":dest-assumed"
-			if !contains(tags, destTag) {
-				tags = append(tags, destTag)
+		// Keep the user's existing tags, but drop any of OUR old control tags
+		// (self-cleaning on reprocess) — AI status now lives in the local DB.
+		tags := make([]string, 0, len(s.Tags))
+		for _, t := range s.Tags {
+			if c.isControlTag(t) {
+				continue
 			}
+			tags = append(tags, t)
 		}
-		// Apply confident semantic tags suggested by the AI.
+		// Apply confident semantic tags (real, meaningful tags only).
 		for _, t := range outcome.Tags {
 			t = strings.TrimSpace(t)
 			if t == "" || contains(tags, t) {
 				continue
 			}
 			tags = append(tags, t)
-		}
-		// Store low-confidence tag suggestions durably as control tags, one per
-		// suggestion, so they can be validated later from the UI (applied or
-		// rejected) rather than silently dropped.
-		for _, t := range outcome.TagsAssumed {
-			t = strings.TrimSpace(t)
-			if t == "" {
-				continue
-			}
-			suggestTag := c.tagPrefix + ":suggest:" + t
-			if !contains(tags, suggestTag) {
-				tags = append(tags, suggestTag)
-			}
 		}
 
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
@@ -740,6 +764,23 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
 	return c.put(ctx, u, b)
+}
+
+// isControlTag reports whether a tag is one of the app's old AI control tags
+// (kept for cleanup of pre-migration transactions).
+func (c *Client) isControlTag(t string) bool {
+	if !strings.HasPrefix(t, c.tagPrefix+":") {
+		return false
+	}
+	suffix := strings.TrimPrefix(t, c.tagPrefix+":")
+	switch {
+	case suffix == "classified", suffix == "assumed", suffix == "needs-review",
+		suffix == "dest-assumed", suffix == "reviewed", suffix == "tags-assumed":
+		return true
+	case strings.HasPrefix(suffix, "suggest:"):
+		return true
+	}
+	return false
 }
 
 func (c *Client) tagForOutcome(outcome string) string {
