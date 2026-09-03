@@ -210,6 +210,47 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		return false
 	}
 
+	// searchFrom searches by sender only (no server-side date filter), so a
+	// provider whose date SEARCH is unreliable on old mail still returns hits.
+	searchFrom := func(froms []string) []uint32 {
+		crit := imap.NewSearchCriteria()
+		if len(froms) > 0 {
+			crit.Header = textproto.MIMEHeader{}
+			for _, f := range froms {
+				crit.Header.Add("From", f)
+			}
+		}
+		ids, err := c.Search(crit)
+		if err != nil && searchErr == nil {
+			searchErr = err
+		}
+		return ids
+	}
+	// filterByDate keeps only the seq numbers whose envelope date is in-window
+	// (client-side date filtering, cheap: envelope fetch only).
+	filterByDate := func(ids []uint32) []uint32 {
+		if len(ids) == 0 {
+			return nil
+		}
+		seqset := new(imap.SeqSet)
+		seqset.AddNum(ids...)
+		messages := make(chan *imap.Message, 256)
+		done := make(chan error, 1)
+		go func() { done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages) }()
+		var out []uint32
+		for msg := range messages {
+			if msg == nil || msg.Envelope == nil || msg.Envelope.Date.IsZero() {
+				continue
+			}
+			d := msg.Envelope.Date
+			if (d.After(since) || d.Equal(since)) && d.Before(before) {
+				out = append(out, msg.SeqNum)
+			}
+		}
+		<-done
+		return out
+	}
+
 	// Pass 1: filter by the configured sender(s) — fast and precise.
 	var froms []string
 	for _, s := range senders {
@@ -217,7 +258,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			froms = append(froms, t)
 		}
 	}
-	uids := unionSearch(froms)
+	uids := filterByDate(searchFrom(froms))
 	cands, err := fetchCands(uids)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("fetch: %w", err)
