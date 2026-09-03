@@ -408,6 +408,7 @@ function jobLabel(j) {
     if (j.status === 'in_progress') return {cls: 'label-info', txt: 'Running'};
     if (j.status === 'failed') return {cls: 'label-danger', txt: 'Failed'};
     if (j.outcome === 'REVIEWED') return {cls: 'label-info', txt: 'Reviewed'};
+    if (j.outcome === 'SKIPPED') return {cls: 'label-default', txt: 'Ignoré'};
     if (j.outcome === 'CLASSIFIED') return {cls: 'label-success', txt: 'Classified'};
     if (j.outcome === 'ASSUMED') return {cls: 'label-warning', txt: 'Assumed'};
     if (j.outcome === 'NEEDS_REVIEW') return {cls: 'label-danger', txt: 'Needs Review'};

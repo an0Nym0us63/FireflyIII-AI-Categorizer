@@ -15,8 +15,10 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/amazon"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/config"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/mailorder"
 )
 
 const categoryTTL = 5 * time.Minute
@@ -52,6 +54,8 @@ type Pipeline struct {
 
 	aidb *aidb.DB
 
+	mailMappings []config.MailMapping
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
@@ -79,6 +83,7 @@ func New(
 	tagMax int,
 	amz *amazon.Index,
 	adb *aidb.DB,
+	mailMappings []config.MailMapping,
 ) *Pipeline {
 	return &Pipeline{
 		firefly:          fc,
@@ -91,6 +96,7 @@ func New(
 		tagMax:           tagMax,
 		amazon:           amz,
 		aidb:             adb,
+		mailMappings:     mailMappings,
 	}
 }
 
@@ -159,18 +165,31 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	historyMatchCat, histCatCount := tryHistoryMatch(history, j.Amount)
 	historyMatchDestID, histDestCount := tryDestinationHistoryMatch(history, j.Amount)
 
+	var extraContext string
+	var amazonUncertain bool
+	var skipIfEmpty bool
+
+	var fireflyDate time.Time
+	if len(splits) > 0 && len(splits[0].Date) >= 10 {
+		if t, err := time.Parse("2006-01-02", splits[0].Date[:10]); err == nil {
+			fireflyDate = t
+		}
+	}
+
+	// Opaque merchants configured with a mail mapping (PayPal, Amazon,
+	// AliExpress…): find the order-confirmation email and feed it to the LLM.
+	if mm := p.matchMailMapping(j.Description); mm != nil {
+		skipIfEmpty = true
+		if body, ok := p.findOrderEmail(mm, fireflyDate); ok {
+			extraContext = "Order confirmation email (use it to choose category and tags):\n" + body
+			slog.Info("order email matched", "id", transactionID)
+		}
+	}
+
 	// For Amazon purchases, try to match the bank transaction to an order in the
 	// user's Amazon order-history export and feed the product names to the LLM
 	// so it categorizes from the actual contents rather than just "Amazon".
-	var extraContext string
-	var amazonUncertain bool
-	if p.amazon.Loaded() && amazonTxn {
-		var fireflyDate time.Time
-		if len(splits) > 0 && len(splits[0].Date) >= 10 {
-			if t, err := time.Parse("2006-01-02", splits[0].Date[:10]); err == nil {
-				fireflyDate = t
-			}
-		}
+	if extraContext == "" && p.amazon.Loaded() && amazonTxn {
 		labelDate := amazon.ParseLabelDate(j.Description, fireflyDate)
 		card := ""
 		if m := reCardLast4.FindStringSubmatch(j.Description); m != nil {
@@ -183,11 +202,21 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
+	// Opaque merchant with no order content found → leave the transaction
+	// untouched (don't waste an LLM call on a useless label).
+	if skipIfEmpty && extraContext == "" {
+		p.registry.SetFinished(j.ID, "SKIPPED", "", "Aucun email/CSV de commande trouvé — non catégorisé.", "", "", "", "", "", nil, nil)
+		slog.Info("skipped opaque merchant with no order content", "id", transactionID)
+		return nil
+	}
+
 	// Amazon is a meta-merchant — past category is not predictive. When we have
 	// the order contents, skip the category history match so the LLM categorizes
 	// from those contents. Without contents, keep the history match as a
 	// fallback rather than sending the transaction to review empty-handed.
-	if amazonTxn && extraContext != "" {
+	// When we have real order content (email or Amazon CSV), let the LLM
+	// categorize from it rather than reusing a possibly-wrong past category.
+	if extraContext != "" {
 		historyMatchCat = ""
 		histCatCount = 0
 	}
@@ -618,6 +647,38 @@ func tryDestinationHistoryMatch(history []classifier.HistoricalEntry, amount *fl
 }
 
 var reCardLast4 = regexp.MustCompile(`X(\d{4})`)
+
+const mailWindowDays = 4
+
+// matchMailMapping returns the first mail mapping whose keyword appears in the
+// transaction description (case-insensitive), or nil.
+func (p *Pipeline) matchMailMapping(description string) *config.MailMapping {
+	d := strings.ToLower(description)
+	for i := range p.mailMappings {
+		for _, kw := range p.mailMappings[i].Keywords {
+			kw = strings.ToLower(strings.TrimSpace(kw))
+			if kw != "" && strings.Contains(d, kw) {
+				return &p.mailMappings[i]
+			}
+		}
+	}
+	return nil
+}
+
+// findOrderEmail searches the mapping's mailbox for the order email near date.
+func (p *Pipeline) findOrderEmail(mm *config.MailMapping, date time.Time) (string, bool) {
+	if mm.IMAPHost == "" || mm.IMAPUser == "" || date.IsZero() {
+		return "", false
+	}
+	body, ok, err := mailorder.FindOrderEmail(mailorder.Account{
+		Host: mm.IMAPHost, Port: mm.IMAPPort, User: mm.IMAPUser, Password: mm.IMAPPassword,
+	}, mm.Recipient, date, mailWindowDays)
+	if err != nil {
+		slog.Warn("order email search failed", "error", err)
+		return "", false
+	}
+	return body, ok
+}
 
 // isAmazon reports whether a transaction is an Amazon purchase, from its
 // description or destination name.
