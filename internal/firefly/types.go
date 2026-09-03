@@ -48,6 +48,7 @@ type UpdateOutcome struct {
 
 	Tags        []string // confident semantic tags to apply to the transaction
 	TagsAssumed []string // low-confidence semantic tags surfaced for review (not applied)
+	Items       []string // individual order items (for notes / later splitting)
 }
 
 // TransactionRow is a flat summary used by the UI transactions list.

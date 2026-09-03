@@ -805,6 +805,9 @@ func buildNotes(existing string, outcome UpdateOutcome) string {
 	if outcome.Assumption != "" {
 		parts = append(parts, "Assumption: "+outcome.Assumption)
 	}
+	if len(outcome.Items) > 0 {
+		parts = append(parts, "Articles: "+strings.Join(outcome.Items, " ; "))
+	}
 	return strings.Join(parts, "\n\n")
 }
 

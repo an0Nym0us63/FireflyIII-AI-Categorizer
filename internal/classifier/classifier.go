@@ -259,6 +259,9 @@ type Result struct {
 
 	// Tags holds semantic tag suggestions when TagSuggestion was enabled.
 	Tags []TagResult
+
+	// Items lists the individual products in the order (from ExtraContext), for notes.
+	Items []string
 }
 
 type Classifier interface {

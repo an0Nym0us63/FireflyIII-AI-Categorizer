@@ -378,6 +378,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		CategoryID: categoryID,
 		Reason:     result.Reason,
 		Assumption: result.Assumption,
+		Items:      result.Items,
 	}
 
 	// An Amazon match disambiguated by amount (several orders that day) is not
@@ -715,7 +716,7 @@ func cleanNotes(s string) string {
 			continue
 		}
 		if strings.HasPrefix(t, "AI:") || strings.HasPrefix(t, "Reason:") || strings.HasPrefix(t, "Assumption:") ||
-			strings.HasPrefix(t, "Étiquettes suggérées") {
+			strings.HasPrefix(t, "Articles:") || strings.HasPrefix(t, "Étiquettes suggérées") {
 			continue
 		}
 		out = append(out, t)

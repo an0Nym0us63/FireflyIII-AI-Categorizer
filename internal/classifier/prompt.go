@@ -30,7 +30,8 @@ You MUST respond with valid JSON matching this schema:
     "confidence": "CLASSIFIED" | "ASSUMED"
   } | null,
   "reason": "<one sentence, written in French, explaining your classification>",
-  "assumption": "<if ASSUMED: in French, what you assumed and what the alternative is; otherwise null>"
+  "assumption": "<if ASSUMED: in French, what you assumed and what the alternative is; otherwise null>",
+  "items": ["<one entry per distinct product in the order, in French — only when order contents are provided; otherwise omit or []>"]
 }
 
 Rules:
@@ -41,6 +42,8 @@ Rules:
 - Reuse an existing category whenever one reasonably fits; only introduce a new one when the list has nothing suitable
 - When uncertain between two categories, prefer the more general / most likely everyday one rather than a niche category
 - If the description is too vague to even assume, use NEEDS_REVIEW
+- Do NOT use a food/grocery category (e.g. "Course") as a generic fallback: only use it when the items are clearly groceries/food. For non-food, mixed, or unclear purchases, prefer a general miscellaneous category such as "Divers" if it exists, otherwise NEEDS_REVIEW
+- When order contents are provided, populate "items" with the individual products (one entry each), so the user can later split the transaction
 - Write the "reason" and "assumption" fields in natural, concise French. Never translate category names — copy them exactly as provided in the list.
 - Respond ONLY with the JSON object, no markdown, no code fences`
 
@@ -76,7 +79,8 @@ You MUST respond with valid JSON matching this schema:
     "confidence": "CLASSIFIED" | "ASSUMED"
   } | null,
   "reason": "<one sentence, written in French, explaining your classification>",
-  "assumption": "<if ASSUMED: in French, what you assumed and what the alternative is; otherwise null>"
+  "assumption": "<if ASSUMED: in French, what you assumed and what the alternative is; otherwise null>",
+  "items": ["<one entry per distinct product in the order, in French — only when order contents are provided; otherwise omit or []>"]
 }
 
 Category rules:
@@ -97,6 +101,8 @@ Rules:
 - Reuse an existing category whenever one reasonably fits; only introduce a new one when the list has nothing suitable
 - When uncertain between two categories, prefer the more general / most likely everyday one rather than a niche category
 - If the description is too vague to even assume, use NEEDS_REVIEW
+- Do NOT use a food/grocery category (e.g. "Course") as a generic fallback: only use it when the items are clearly groceries/food. For non-food, mixed, or unclear purchases, prefer a general miscellaneous category such as "Divers" if it exists, otherwise NEEDS_REVIEW
+- When order contents are provided, populate "items" with the individual products (one entry each), so the user can later split the transaction
 - Write the "reason" and "assumption" fields in natural, concise French. Never translate category names or account names — copy them exactly as provided.
 - Respond ONLY with the JSON object, no markdown, no code fences`
 

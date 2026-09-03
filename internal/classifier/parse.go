@@ -32,6 +32,7 @@ type rawResponse struct {
 	Assumption  *string         `json:"assumption"`
 	Destination *rawDestination `json:"destination"`
 	Tags        []rawTag        `json:"tags"`
+	Items       []string        `json:"items"`
 }
 
 // parseResponse validates and converts a raw JSON string into a Result.
@@ -150,6 +151,7 @@ func parseResponse(raw, prompt string, req Request) Result {
 		RawResponse: raw,
 		Destination: dest,
 		Tags:        tags,
+		Items:       r.Items,
 	}
 }
 
