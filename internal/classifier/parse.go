@@ -38,7 +38,6 @@ type rawResponse struct {
 // It falls back to NeedsReview on any structural or validation error.
 // When destinationMatching is true, the destination field is also parsed.
 func parseResponse(raw, prompt string, req Request) Result {
-	categories := req.Categories
 	expenseAccounts := req.ExpenseAccounts
 	destinationMatching := req.DestinationMatching
 	cleaned := stripMarkdown(raw)
@@ -78,14 +77,8 @@ func parseResponse(raw, prompt string, req Request) Result {
 		}
 	}
 
-	if category != "" && !categoryNameIn(categories, category) {
-		// Don't use the unknown category name in the reason message since we've already
-		// overwritten category to "" below — capture it first.
-		badCat := category
-		outcome = NeedsReview
-		category = ""
-		r.Reason = fmt.Sprintf("classifier returned unknown category %q", badCat)
-	}
+	// A category name not in the list is allowed: it will be created in Firefly.
+	// (Previously such categories were rejected and sent to review.)
 
 	assumption := ""
 	if r.Assumption != nil {
@@ -163,15 +156,6 @@ func parseResponse(raw, prompt string, req Request) Result {
 func tagNameIn(tags []string, name string) bool {
 	for _, t := range tags {
 		if strings.EqualFold(t, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func categoryNameIn(cats []Category, name string) bool {
-	for _, c := range cats {
-		if c.Name == name {
 			return true
 		}
 	}

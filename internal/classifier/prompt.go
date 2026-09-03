@@ -34,11 +34,11 @@ You MUST respond with valid JSON matching this schema:
 }
 
 Rules:
-- category MUST be an exact match from the provided list, or null
+- Prefer an exact match from the provided category list. If none genuinely fits, you MAY create a new, concise category by returning its name (do not force a poor fit) — but never create a near-duplicate of an existing category
 - When outcome is CLASSIFIED, category.confidence must be CLASSIFIED
 - When outcome is ASSUMED, category.confidence must be ASSUMED
 - When outcome is NEEDS_REVIEW, category must be null
-- Never invent categories
+- Reuse an existing category whenever one reasonably fits; only introduce a new one when the list has nothing suitable
 - When uncertain between two categories, prefer the more general / most likely everyday one rather than a niche category
 - If the description is too vague to even assume, use NEEDS_REVIEW
 - Write the "reason" and "assumption" fields in natural, concise French. Never translate category names — copy them exactly as provided in the list.
@@ -80,7 +80,7 @@ You MUST respond with valid JSON matching this schema:
 }
 
 Category rules:
-- category MUST be an exact match from the provided list, or null
+- Prefer an exact match from the provided category list. If none genuinely fits, you MAY create a new, concise category by returning its name (do not force a poor fit) — but never create a near-duplicate of an existing category
 - When outcome is CLASSIFIED, category.confidence must be CLASSIFIED
 - When outcome is ASSUMED, category.confidence must be ASSUMED
 - When outcome is NEEDS_REVIEW, category must be null
@@ -90,10 +90,11 @@ Destination account rules:
 - Category confidence and destination confidence are completely independent.
 - When an existing expense account clearly matches the payee, use MATCH with the exact account name from the list.
 - When you are confident the payee represents a new expense account not in the list, use CREATE with a reasonable, concise account name (e.g. "Amazon", "Netflix", "EDF", "SNCF", "Leclerc"). Prefer the canonical business name.
+- Never force a poor match: if no listed account clearly corresponds to the payee, prefer CREATE over picking an unrelated existing account.
 - Only set destination to null when the destination_name is truly ambiguous (e.g. generic names like "CB", "PAIEMENT CB", "VIR", "RETRAIT", or empty).
 
 Rules:
-- Never invent categories
+- Reuse an existing category whenever one reasonably fits; only introduce a new one when the list has nothing suitable
 - When uncertain between two categories, prefer the more general / most likely everyday one rather than a niche category
 - If the description is too vague to even assume, use NEEDS_REVIEW
 - Write the "reason" and "assumption" fields in natural, concise French. Never translate category names or account names — copy them exactly as provided.
@@ -189,7 +190,7 @@ func buildUserPrompt(req Request) string {
 
 		fmt.Fprintf(&sb, "Tagging is enabled. In ADDITION to the fields above, include a \"tags\" array in your JSON (at most %d items). Each item: {\"name\": <tag>, \"action\": \"MATCH\"|\"CREATE\", \"confidence\": \"CLASSIFIED\"|\"ASSUMED\"}.\n", max)
 		sb.WriteString("- Tags must ADD information beyond the category and destination. NEVER output a tag that repeats, translates, or is a synonym of the chosen category (e.g. category \"Restauration\" → do NOT tag \"restaurant\"/\"resto\"). If you have nothing that adds information, return an empty array — that is expected and fine.\n")
-		sb.WriteString("- A good tag captures a DIFFERENT dimension of the expense: recurrence (abonnement, récurrent, ponctuel), context (professionnel, cadeau, vacances, urgence), or channel (en-ligne, espèces). These are only illustrations — find the tags that genuinely fit THIS purchase, don't just copy the examples.\n")
+		sb.WriteString("- Favour tags that describe the concrete CONTEXT or subject of the purchase — what it is really about — and be specific and imaginative; go well beyond obvious words. Do NOT use generic transaction metadata as tags (avoid \"ponctuel\", \"récurrent\", \"en-ligne\", \"espèces\" and the like — they add nothing). If nothing specific and useful comes to mind, return an empty array.\n")
 		if strings.TrimSpace(req.ExtraContext) != "" {
 			fmt.Fprintf(&sb, "- The exact contents of this purchase are given below. Be thorough and specific: derive SEVERAL tags (use the full budget of %d when the product supports it) describing the product from different angles — its BRAND, its PRODUCT TYPE/object, and a clear ATTRIBUTE or use. Example: contents \"Anker Soundcore casque bluetooth\" → anker, casque audio, bluetooth (three useful tags, not just \"anker\"). When SEVERAL distinct products are listed, give one CONCRETE product-type tag per item (e.g. contents \"gourde ... ciseaux ...\" → gourde, ciseaux) rather than a single vague umbrella theme like \"scolarité\". If several items are the SAME type, use that tag only once (don't repeat it). Adapt to whatever the products actually are. Facts read directly from the contents (brand, product type) are certain — mark those CLASSIFIED.\n", max)
 		}

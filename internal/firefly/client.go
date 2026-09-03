@@ -674,6 +674,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		TransactionJournalID string   `json:"transaction_journal_id"`
 		Tags                 []string `json:"tags"`
 		CategoryID           string   `json:"category_id,omitempty"`
+		CategoryName         string   `json:"category_name,omitempty"`
 		DestinationID        string   `json:"destination_id,omitempty"`
 		Notes                string   `json:"notes,omitempty"`
 	}
@@ -720,8 +721,13 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		}
 
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
-		if outcome.Outcome != "NEEDS_REVIEW" && outcome.CategoryID != "" {
-			su.CategoryID = outcome.CategoryID
+		if outcome.Outcome != "NEEDS_REVIEW" {
+			if outcome.CategoryID != "" {
+				su.CategoryID = outcome.CategoryID
+			} else if strings.TrimSpace(outcome.Category) != "" {
+				// No ID: category is new — Firefly creates it (or matches by name).
+				su.CategoryName = outcome.Category
+			}
 		}
 		if outcome.DestinationID != "" {
 			su.DestinationID = outcome.DestinationID
