@@ -93,6 +93,7 @@ type SearchResult struct {
 	Found       bool
 	Installment bool
 	Candidates  int // emails matching sender+date, before the amount filter
+	SearchHits  int // raw UID hits from the date search (diagnostic)
 }
 
 func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (SearchResult, error) {
@@ -212,22 +213,44 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			froms = append(froms, t)
 		}
 	}
-	cands, err := fetchCands(unionSearch(froms))
+	uids := unionSearch(froms)
+	cands, err := fetchCands(uids)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("fetch: %w", err)
 	}
 	senderCount := len(cands)
+	rawHits := len(uids)
 
 	// Pass 2: no candidate matches the amount — retry ignoring the sender (its
 	// address may have changed) and let the amount identify the right email.
 	if !hasAmt(cands) && len(froms) > 0 {
-		if c2, ferr := fetchCands(unionSearch(nil)); ferr == nil && len(c2) > 0 {
+		u := unionSearch(nil)
+		rawHits = len(u)
+		if c2, ferr := fetchCands(u); ferr == nil && len(c2) > 0 {
 			cands = c2
 		}
 	}
 
+	// Pass 3: still nothing — search other non-spam folders (Archive, custom
+	// folders). Some providers file older mail outside the INBOX.
+	if !hasAmt(cands) {
+		for _, mb := range otherMailboxes(c) {
+			if _, err := c.Select(mb, true); err != nil {
+				continue
+			}
+			u := unionSearch(nil)
+			rawHits += len(u)
+			if fc, ferr := fetchCands(u); ferr == nil {
+				cands = append(cands, fc...)
+			}
+			if hasAmt(cands) {
+				break
+			}
+		}
+	}
+
 	if len(cands) == 0 {
-		return SearchResult{Candidates: senderCount}, nil
+		return SearchResult{Candidates: senderCount, SearchHits: rawHits}, nil
 	}
 
 	pick := func(list []cand) cand {
@@ -259,7 +282,41 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	if len(out) > 5000 {
 		out = out[:5000]
 	}
-	return SearchResult{Text: out, Found: true, Installment: chosen.installment, Candidates: len(cands)}, nil
+	return SearchResult{Text: out, Found: true, Installment: chosen.installment, Candidates: len(cands), SearchHits: rawHits}, nil
+}
+
+// otherMailboxes lists mailboxes worth searching as a fallback (everything
+// except INBOX and spam/trash/drafts/sent), so archived/foldered mail is found.
+func otherMailboxes(c *client.Client) []string {
+	ch := make(chan *imap.MailboxInfo, 64)
+	done := make(chan error, 1)
+	go func() { done <- c.List("", "*", ch) }()
+	var out []string
+	for m := range ch {
+		if m == nil || strings.EqualFold(m.Name, "INBOX") {
+			continue
+		}
+		skip := false
+		for _, a := range m.Attributes {
+			la := strings.ToLower(a)
+			if strings.Contains(la, "junk") || strings.Contains(la, "trash") ||
+				strings.Contains(la, "drafts") || strings.Contains(la, "sent") ||
+				strings.Contains(la, "noselect") {
+				skip = true
+			}
+		}
+		ln := strings.ToLower(m.Name)
+		for _, bad := range []string{"spam", "junk", "bulk", "trash", "deleted", "draft", "sent", "brouillon", "corbeille", "indésir", "envoyé"} {
+			if strings.Contains(ln, bad) {
+				skip = true
+			}
+		}
+		if !skip {
+			out = append(out, m.Name)
+		}
+	}
+	<-done
+	return out
 }
 
 // amountMatch reports whether text contains the debit amount (±2%), and whether
