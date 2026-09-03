@@ -505,10 +505,11 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
-	// Deterministic override: when replacing the destination and we extracted the
-	// real merchant/recipient from the email, use it (MATCH existing, else CREATE)
-	// regardless of what the LLM chose — this reliably removes "Paypal".
-	if forceDestination && mailMerchant != "" {
+	// Prefer the LLM's destination (it can name things intelligently). Fall back
+	// to the merchant extracted from the email only when the LLM gave nothing or
+	// kept the payment processor (the bank payee) as the destination.
+	llmGaveRealMerchant := outcome.DestinationID != "" && !strings.EqualFold(destAccount, j.DestinationName)
+	if forceDestination && mailMerchant != "" && !llmGaveRealMerchant {
 		matchedID := ""
 		for _, a := range expenseAccounts {
 			if strings.EqualFold(a.Name, mailMerchant) {
