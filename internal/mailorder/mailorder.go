@@ -265,11 +265,12 @@ func amountMatch(text string, amount float64) (matched bool, installment bool) {
 
 // reMoney captures a number immediately adjacent to a currency symbol/code,
 // e.g. "12,95 €", "€12.95", "EUR 12.95", "12.95 EUR", "$1,234.56".
-var reMoney = regexp.MustCompile(`(?i)(?:€|eur|\$|usd|£|gbp|chf)\s?([0-9][0-9 \x{00a0}.,]*[0-9])|([0-9][0-9 \x{00a0}.,]*[0-9])\s?(?:€|eur|\$|usd|£|gbp|chf)`)
+var reMoney = regexp.MustCompile(`(?i)(?:€|eur|\$|usd|£|gbp|chf)[ \x{00a0}\x{202f}\x{2009}]?([0-9][0-9 \x{00a0}\x{202f}\x{2009}.,]*[0-9])|([0-9][0-9 \x{00a0}\x{202f}\x{2009}.,]*[0-9])[ \x{00a0}\x{202f}\x{2009}]?(?:€|eur|\$|usd|£|gbp|chf)`)
 
 func parseAmountToken(s string) (float64, bool) {
-	s = strings.ReplaceAll(s, "\u00a0", "")
-	s = strings.ReplaceAll(s, " ", "")
+	for _, sp := range []string{"\u00a0", "\u202f", "\u2009", " "} {
+		s = strings.ReplaceAll(s, sp, "")
+	}
 	lastDot := strings.LastIndex(s, ".")
 	lastComma := strings.LastIndex(s, ",")
 	dec := lastDot
@@ -308,8 +309,7 @@ func stripHTML(html string) string {
 	s := reStyleScript.ReplaceAllString(html, " ")
 	s = reHTMLTag.ReplaceAllString(s, " ")
 	s = stdhtml.UnescapeString(s)
-	s = strings.ReplaceAll(s, "\u00a0", " ") // non-breaking space
-	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.NewReplacer("\u00a0", " ", "\u202f", " ", "\u2009", " ", "\r", "").Replace(s)
 	s = reWhitespace.ReplaceAllString(s, " ")
 	// Trim each line, drop empty runs.
 	lines := strings.Split(s, "\n")
