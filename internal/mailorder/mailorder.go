@@ -6,6 +6,7 @@ package mailorder
 import (
 	"crypto/tls"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"net/textproto"
 	"regexp"
@@ -159,16 +160,39 @@ func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int)
 	return bestText, true, nil
 }
 
-var reHTMLTag = regexp.MustCompile(`(?s)<[^>]*>`)
+var (
+	reHTMLTag     = regexp.MustCompile(`(?s)<[^>]*>`)
+	reStyleScript = regexp.MustCompile(`(?is)<(style|script|head)[^>]*>.*?</\s*(style|script|head)\s*>`)
+	reWhitespace  = regexp.MustCompile(`[ \t]{2,}`)
+	reBlankLines  = regexp.MustCompile(`\n{3,}`)
+)
+
+// stripHTML turns an HTML body into readable plain text.
+func stripHTML(html string) string {
+	s := reStyleScript.ReplaceAllString(html, " ")
+	s = reHTMLTag.ReplaceAllString(s, " ")
+	s = stdhtml.UnescapeString(s)
+	s = strings.ReplaceAll(s, "\u00a0", " ") // non-breaking space
+	s = strings.ReplaceAll(s, "\r", "")
+	s = reWhitespace.ReplaceAllString(s, " ")
+	// Trim each line, drop empty runs.
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, l := range lines {
+		out = append(out, strings.TrimSpace(l))
+	}
+	s = strings.Join(out, "\n")
+	s = reBlankLines.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
+}
 
 // extractText reads an email body and returns its text (preferring text/plain,
 // falling back to stripped HTML).
 func extractText(r io.Reader) string {
 	mr, err := mail.CreateReader(r)
 	if err != nil {
-		// Not MIME multipart — read raw.
 		b, _ := io.ReadAll(r)
-		return strings.TrimSpace(string(b))
+		return stripHTML(string(b))
 	}
 	var plain, html string
 	for {
@@ -184,7 +208,7 @@ func extractText(r io.Reader) string {
 		}
 		ct, _, _ := p.Header.(*mail.InlineHeader).ContentType()
 		b, _ := io.ReadAll(p.Body)
-		if strings.HasPrefix(ct, "text/plain") && plain == "" {
+		if strings.HasPrefix(ct, "text/plain") && strings.TrimSpace(plain) == "" {
 			plain = string(b)
 		} else if strings.HasPrefix(ct, "text/html") && html == "" {
 			html = string(b)
@@ -194,7 +218,7 @@ func extractText(r io.Reader) string {
 		return strings.TrimSpace(plain)
 	}
 	if html != "" {
-		return strings.TrimSpace(reHTMLTag.ReplaceAllString(html, " "))
+		return stripHTML(html)
 	}
 	return ""
 }

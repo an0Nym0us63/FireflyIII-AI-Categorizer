@@ -328,9 +328,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
-	notes := ""
+	notes := cleanNotes("")
 	if len(splits) > 0 {
-		notes = splits[0].Notes
+		notes = cleanNotes(splits[0].Notes)
 	}
 
 	result, err := p.classifier.Classify(ctx, classifier.Request{
@@ -652,6 +652,36 @@ func tryDestinationHistoryMatch(history []classifier.HistoricalEntry, amount *fl
 var reCardLast4 = regexp.MustCompile(`X(\d{4})`)
 
 const mailWindowDays = 4
+
+// cleanNotes strips bank-import boilerplate ("MORE DETAILS" block) and our own
+// generated "AI:" lines so only genuine human hints reach the LLM.
+func cleanNotes(s string) string {
+	if s == "" {
+		return ""
+	}
+	// Drop the bank import boilerplate block and everything after it.
+	if i := strings.Index(strings.ToUpper(s), "MORE DETAILS"); i >= 0 {
+		// back up to the start of that line
+		start := strings.LastIndex(s[:i], "\n")
+		if start < 0 {
+			start = 0
+		}
+		s = s[:start]
+	}
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, "AI:") || strings.HasPrefix(t, "Reason:") || strings.HasPrefix(t, "Assumption:") ||
+			strings.HasPrefix(t, "Étiquettes suggérées") {
+			continue
+		}
+		out = append(out, t)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
 
 // matchMailDetector returns the first detector whose keyword appears in the
 // transaction description (case-insensitive), or nil.
