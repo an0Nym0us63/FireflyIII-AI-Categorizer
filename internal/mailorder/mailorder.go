@@ -187,15 +187,15 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	var chosen string
 	switch {
 	case len(withAmt) > 0:
+		// One or more emails contain the exact amount → decisive.
 		chosen = pick(withAmt)
-	case len(cands) == 1 && amount <= 0:
-		chosen = cands[0].text
-	case len(cands) == 1:
-		// Single candidate but amount didn't match — accept only if it's the
-		// lone email from this sender in the window.
+	case amount <= 0 && len(cands) == 1:
+		// Amount unknown and a single candidate → accept.
 		chosen = cands[0].text
 	default:
-		return "", false, nil // multiple candidates, none matches the amount
+		// Amount known but no email matches it → don't guess (avoids attaching
+		// an unrelated order, e.g. a PayPal "4X" installment vs a different total).
+		return "", false, nil
 	}
 	if chosen == "" {
 		return "", false, nil
