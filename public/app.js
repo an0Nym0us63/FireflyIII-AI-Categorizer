@@ -720,9 +720,8 @@ function renderCurrentBatch() {
 
     // Main Review section
     if (batch.length) {
-        body.innerHTML = renderReviewGroups(batch);
-        actionBar.style.display = '';
-        updateSubmitBar();
+        body.innerHTML = renderReviewTable(batch);
+        actionBar.style.display = 'none';
     } else {
         body.innerHTML = '<p class="text-muted">No transactions need review &mdash; all caught up!</p>';
         actionBar.style.display = 'none';
@@ -824,6 +823,126 @@ function buildSearchIcon(g) {
         + ' style="opacity:.5;color:inherit;text-decoration:none;transition:opacity .2s"'
         + ' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5">'
         + '<i class="fa fa-search"></i></a>';
+}
+
+// ─── table-based review (per-row validate/reject) ───────────────────────────
+function reviewTypeBadge(o) {
+    if (o === 'NEEDS_REVIEW') return '<span class="label label-danger">à classer</span>';
+    if (o === 'ASSUMED') return '<span class="label label-warning">catégorie ?</span>';
+    if (o === 'DEST_ASSUMED') return '<span class="label label-warning">destination ?</span>';
+    return '';
+}
+
+function reviewCatOptions(selectedId) {
+    var opts = '<option value="">— choisir —</option>';
+    (reviewCategories || []).forEach(function (c) {
+        opts += '<option value="' + esc(c.id) + '"' + (c.id === selectedId ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    });
+    return opts;
+}
+
+function renderReviewTable(groups) {
+    var destList = '<datalist id="rev-dest-accounts">'
+        + (reviewAccounts || []).map(function (a) { return '<option value="' + esc(a.name) + '">'; }).join('')
+        + '</datalist>';
+
+    var rows = groups.map(function (g) {
+        var gi = reviewGroupCounter++;
+        reviewGroupMap[gi] = g;
+        var lbl = resolveGroupLabel(g);
+        var count = (g.transactions || []).length;
+        var amountCell;
+        if (count === 1) {
+            var a = parseFloat(g.transactions[0].amount);
+            amountCell = isNaN(a) ? '—' : a.toFixed(2);
+        } else {
+            amountCell = count + ' txns';
+        }
+        var sub = lbl.sub ? '<br><small class="text-muted">' + esc(lbl.sub) + '</small>' : '';
+
+        var destCell = '<span class="text-muted">—</span>';
+        if (g.outcome === 'DEST_ASSUMED') {
+            destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
+                + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:140px">';
+        }
+
+        return '<tr id="rev-row-' + gi + '">'
+            + '<td style="white-space:nowrap">' + reviewTypeBadge(g.outcome) + '</td>'
+            + '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + '</td>'
+            + '<td class="text-right" style="white-space:nowrap">' + amountCell + '</td>'
+            + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:150px">'
+            + reviewCatOptions(g.category_id || '') + '</select></td>'
+            + '<td>' + destCell + '</td>'
+            + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
+            + '<button class="btn btn-warning btn-sm" onclick="confirmReviewRow(' + gi + ')" title="Appliquer et valider"><i class="fa fa-check"></i> Valider</button> '
+            + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button>'
+            + '</td>'
+            + '</tr>';
+    }).join('');
+
+    return destList
+        + '<div class="table-responsive"><table class="table table-condensed table-hover" style="margin-bottom:0">'
+        + '<thead><tr>'
+        + '<th>Type</th><th>Bénéficiaire / Libellé</th><th class="text-right">Montant</th>'
+        + '<th>Catégorie</th><th>Destination</th><th>Actions</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function removeReviewRow(gi) {
+    var g = reviewGroupMap[gi];
+    var row = document.getElementById('rev-row-' + gi);
+    if (row) row.remove();
+    if (g) {
+        var ids = (g.transactions || []).map(function (t) { return t.id; });
+        allReviewGroups = allReviewGroups.filter(function (x) {
+            var xids = (x.transactions || []).map(function (t) { return t.id; });
+            return !arraysEqual(ids, xids);
+        });
+    }
+    updateProgressIndicator();
+    updateReviewBadge();
+    if (!document.querySelector('#review-body tbody tr')) {
+        renderCurrentBatch();
+    }
+}
+
+function confirmReviewRow(gi) {
+    var g = reviewGroupMap[gi];
+    if (!g) return;
+    var catSel = document.getElementById('rev-cat-' + gi);
+    var categoryId = catSel ? catSel.value : (g.category_id || '');
+    if (!categoryId) { alert('Choisis une catégorie.'); return; }
+
+    var body = { category_id: categoryId };
+    var destInput = document.getElementById('rev-dest-' + gi);
+    if (destInput) {
+        var name = destInput.value.trim();
+        if (name) {
+            var match = (reviewAccounts || []).find(function (a) { return a.name.toLowerCase() === name.toLowerCase(); });
+            if (match) { body.destination_action = 'MATCH'; body.destination_id = match.id; }
+            else { body.destination_action = 'CREATE'; body.destination_name = name; }
+        }
+    }
+
+    var cell = document.getElementById('rev-actions-' + gi);
+    if (cell) cell.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+    var ids = (g.transactions || []).map(function (t) { return t.id; });
+    Promise.all(ids.map(function (id) {
+        return fetch('/api/transactions/' + encodeURIComponent(id) + '/categorize', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function (res) { return res.ok; }).catch(function () { return false; });
+    })).then(function (results) {
+        if (results.every(Boolean)) {
+            removeReviewRow(gi);
+        } else if (cell) {
+            cell.innerHTML = '<span class="text-danger">Échec</span> '
+                + '<button class="btn btn-warning btn-sm" onclick="confirmReviewRow(' + gi + ')">Réessayer</button>';
+        }
+    });
+}
+
+function dismissReviewRow(gi) {
+    removeReviewRow(gi);
 }
 
 function renderReviewGroups(groups) {
