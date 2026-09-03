@@ -116,43 +116,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	before := date.AddDate(0, 0, fwdDays+1)
 	section := &imap.BodySectionName{}
 
-	searchUIDs := func(froms []string, sentDate bool) ([]uint32, error) {
-		crit := imap.NewSearchCriteria()
-		if sentDate {
-			crit.SentSince = since
-			crit.SentBefore = before
-		} else {
-			crit.Since = since
-			crit.Before = before
-		}
-		if len(froms) > 0 {
-			crit.Header = textproto.MIMEHeader{}
-			for _, f := range froms {
-				crit.Header.Add("From", f)
-			}
-		}
-		return c.Search(crit)
-	}
 	var searchErr error
-	// unionSearch tries both internal-date and sent-date (Yahoo/others may set an
-	// INTERNALDATE that differs from the visible header date on older messages).
-	unionSearch := func(froms []string) []uint32 {
-		set := map[uint32]bool{}
-		for _, sent := range []bool{false, true} {
-			if ids, err := searchUIDs(froms, sent); err == nil {
-				for _, id := range ids {
-					set[id] = true
-				}
-			} else if searchErr == nil {
-				searchErr = err
-			}
-		}
-		out := make([]uint32, 0, len(set))
-		for id := range set {
-			out = append(out, id)
-		}
-		return out
-	}
 
 	type cand struct {
 		text        string
@@ -271,26 +235,17 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	rawHits := len(uids)
 	senderTotal := len(fromSeq)
 
-	// Pass 2: no candidate matches the amount — retry ignoring the sender (its
-	// address may have changed) and let the amount identify the right email.
-	if !hasAmt(cands) && len(froms) > 0 {
-		u := unionSearch(nil)
-		rawHits = len(u)
-		if c2, ferr := fetchCands(u); ferr == nil && len(c2) > 0 {
-			cands = c2
-		}
-	}
-
-	// Pass 3: still nothing — search other non-spam folders (Archive, custom
-	// folders). Some providers file older mail outside the INBOX.
+	// Pass 2: no candidate matches the amount in INBOX — search other non-spam
+	// folders (Archive, custom folders) with the same robust method.
+	scanned := []string{"INBOX"}
 	if !hasAmt(cands) {
 		for _, mb := range otherMailboxes(c) {
 			if _, err := c.Select(mb, true); err != nil {
 				continue
 			}
-			u := unionSearch(nil)
-			rawHits += len(u)
-			if fc, ferr := fetchCands(u); ferr == nil {
+			scanned = append(scanned, mb)
+			w, _ := filterByDate(searchFrom(froms))
+			if fc, ferr := fetchCands(w); ferr == nil {
 				cands = append(cands, fc...)
 			}
 			if hasAmt(cands) {
@@ -308,7 +263,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			if !oldest.IsZero() {
 				od = oldest.Format("2006-01-02")
 			}
-			note = fmt.Sprintf("expéditeur: %d email(s) accessibles, plus ancien: %s", senderTotal, od)
+			note = fmt.Sprintf("expéditeur: %d email(s) accessibles (INBOX), plus ancien: %s ; dossiers scannés: %s", senderTotal, od, strings.Join(scanned, ", "))
 		}
 		return SearchResult{Candidates: senderCount, SearchHits: rawHits, Note: note}, nil
 	}
