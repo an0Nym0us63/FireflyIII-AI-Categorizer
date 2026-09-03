@@ -109,7 +109,13 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/events", h.events)
 
 	if h.baseCfg.EnableUI {
-		r.Handle("/*", http.FileServer(http.Dir("public")))
+		fs := http.FileServer(http.Dir("public"))
+		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// Force revalidation so a freshly deployed UI is never served stale
+			// from the browser cache (ETag/Last-Modified still yield 304s).
+			w.Header().Set("Cache-Control", "no-cache")
+			fs.ServeHTTP(w, req)
+		}))
 	}
 
 	return r
