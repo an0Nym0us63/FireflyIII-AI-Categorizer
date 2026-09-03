@@ -10,6 +10,8 @@ $(document).on('expanded.pushMenu', function () {
 var jobs = {};
 var txnPage = 1, txnTotalPages = 1, txnTotal = 0;
 var selectedTxns = new Set();
+var txnPageIds = [];
+var lastTxnClickIndex = -1;
 var cachedCategories = null; // {html, data} — rendered cache for instant display
 var cachedAccounts = null;   // {html, data} — rendered cache for instant display
 var reviewAccountsFetching = false; // prevents duplicate account fetches
@@ -573,14 +575,15 @@ function renderTxnTable(rows) {
         $('#txn-footer').hide(); return;
     }
     $('#txn-footer').show();
-    var html = rows.map(function (r) {
+    txnPageIds = rows.map(function (r) { return r.id; });
+    var html = rows.map(function (r, idx) {
         var checked = selectedTxns.has(r.id) ? 'checked' : '';
         var cls = selectedTxns.has(r.id) ? ' class="selected"' : '';
         var date = r.date ? r.date.substring(0, 10) : '';
         var stateBadge = statusBadge(r.ai_status);
         var semTags = tagLabels(r, r.id);
         return '<tr' + cls + '>'
-            + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onchange="toggleTxn(this,\'' + r.id + '\')"></td>'
+            + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td style="white-space:nowrap">' + esc(date) + '</td>'
             + '<td><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
             + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
@@ -690,6 +693,42 @@ function toggleTxn(cb, id) {
     if (cb.checked) {selectedTxns.add(id); $(cb).closest('tr').addClass('selected');}
     else {selectedTxns.delete(id); $(cb).closest('tr').removeClass('selected');}
     updateTxnSel();
+}
+
+// txnCheckboxClick handles a row checkbox click, with shift-click range select.
+function txnCheckboxClick(ev, cb, id, idx) {
+    if (ev.shiftKey && lastTxnClickIndex >= 0 && lastTxnClickIndex !== idx) {
+        var lo = Math.min(lastTxnClickIndex, idx), hi = Math.max(lastTxnClickIndex, idx);
+        var want = cb.checked; // apply the new state of the clicked box to the range
+        for (var i = lo; i <= hi; i++) {
+            var rid = txnPageIds[i];
+            if (!rid) continue;
+            var box = document.querySelector('#txn-tbody input[data-id="' + rid + '"]');
+            if (box) { box.checked = want; }
+            if (want) { selectedTxns.add(rid); if (box) $(box).closest('tr').addClass('selected'); }
+            else { selectedTxns.delete(rid); if (box) $(box).closest('tr').removeClass('selected'); }
+        }
+    } else {
+        if (cb.checked) { selectedTxns.add(id); $(cb).closest('tr').addClass('selected'); }
+        else { selectedTxns.delete(id); $(cb).closest('tr').removeClass('selected'); }
+    }
+    lastTxnClickIndex = idx;
+    updateTxnSel();
+}
+
+// markSelectedTreated flags the selected transactions as treated.
+async function markSelectedTreated() {
+    var ids = Array.from(selectedTxns);
+    if (!ids.length) return;
+    if (!confirm('Marquer ' + ids.length + ' transaction(s) comme traité(s) ?')) return;
+    try {
+        var res = await fetch('/api/transactions/mark-treated', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: ids})
+        });
+        if (!res.ok) throw new Error(await res.text());
+        clearSelection();
+        loadTransactions(txnPage);
+    } catch (e) { alert('Échec: ' + e.message); }
 }
 
 function toggleSelectAll(master) {

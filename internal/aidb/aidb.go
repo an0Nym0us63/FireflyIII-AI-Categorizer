@@ -158,6 +158,17 @@ ORDER BY updated_at DESC`)
 	return out, rows.Err()
 }
 
+// MarkTreated flags a transaction as treated/reviewed, creating a record if
+// none exists (used for the manual "mark as treated" bulk action).
+func (d *DB) MarkTreated(id string) error {
+	_, err := d.db.Exec(`
+INSERT INTO ai_records (transaction_id, outcome, reviewed, suggested_tags, updated_at)
+VALUES (?, 'REVIEWED', 1, '[]', ?)
+ON CONFLICT(transaction_id) DO UPDATE SET reviewed = 1, updated_at = excluded.updated_at`,
+		id, time.Now().Unix())
+	return err
+}
+
 // MarkReviewed flags a transaction as human-reviewed and clears its pending tags.
 // ListReviewed returns the most recently human-reviewed records.
 func (d *DB) ListReviewed(limit int) ([]Record, error) {

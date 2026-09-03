@@ -113,6 +113,7 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/transactions/{id}/dismiss", h.dismissTransaction)
 	r.Post("/api/transactions/{id}/rerun", h.rerunTransaction)
 	r.Post("/api/jobs/purge", h.purgeJobs)
+	r.Post("/api/transactions/mark-treated", h.markTreated)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -825,6 +826,23 @@ func (h *Handler) unreviewTransaction(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) purgeJobs(w http.ResponseWriter, r *http.Request) {
 	h.registry.Clear()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// markTreated flags the given transactions as treated (reviewed) in bulk.
+func (h *Handler) markTreated(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	for _, id := range req.IDs {
+		_ = h.aidb.MarkTreated(id)
+		h.registry.MarkReviewedByTxn(id)
+	}
+	h.invalidateReviewCache()
+	writeJSON(w, http.StatusOK, map[string]int{"updated": len(req.IDs)})
 }
 
 // rerunTransaction re-runs the classifier on a single transaction (reuses its
