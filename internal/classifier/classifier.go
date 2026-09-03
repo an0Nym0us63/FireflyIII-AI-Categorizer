@@ -227,6 +227,10 @@ type Request struct {
 	// Notes is the transaction's existing notes, surfaced to the LLM as hints.
 	Notes string
 
+	// MerchantFromContent asks the LLM to set the destination to the real
+	// merchant found in ExtraContext (the bank payee is a payment processor).
+	MerchantFromContent bool
+
 	// DestinationMatching signals to the classifier that the system prompt
 	// and response parsing should include destination-account logic.
 	DestinationMatching bool

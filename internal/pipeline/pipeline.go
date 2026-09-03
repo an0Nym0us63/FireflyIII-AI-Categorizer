@@ -223,9 +223,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		historyMatchCat = ""
 		histCatCount = 0
 	}
-	// When replacing the destination from the email, ignore the (paypal) history
-	// destination so the LLM's real-merchant choice wins.
-	if forceDestination {
+	// For mail-detector merchants with order content, history reuse makes no
+	// sense — never let the (e.g. PayPal) history destination win.
+	if skipIfEmpty && extraContext != "" {
 		historyMatchDestID = ""
 		histDestCount = 0
 	}
@@ -353,6 +353,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		TagMax:              p.tagMax,
 		ExtraContext:        extraContext,
 		Notes:               notes,
+		MerchantFromContent: forceDestination,
 	})
 	if err != nil {
 		p.registry.SetFailed(j.ID, err.Error())

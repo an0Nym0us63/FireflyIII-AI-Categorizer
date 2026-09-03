@@ -223,5 +223,9 @@ func buildUserPrompt(req Request) string {
 		fmt.Fprintf(&sb, "\nKnown contents of this purchase (use this to choose the category):\n%s\n", strings.TrimSpace(req.ExtraContext))
 	}
 
+	if req.MerchantFromContent && req.DestinationMatching {
+		sb.WriteString("\nIMPORTANT — destination: the bank payee is a payment processor (e.g. PayPal), NOT the real merchant. Identify the ACTUAL merchant/shop from the content above and set the destination to it: MATCH it if it is in the accounts list, otherwise CREATE it (this is read from the order, so you can be confident → CLASSIFIED). Never set the destination to the payment processor itself.\n")
+	}
+
 	return sb.String()
 }
