@@ -406,6 +406,12 @@
                                 <div class="box-header with-border">
                                     <h3 class="box-title"><i class="fa fa-flag-o"></i> Review</h3>
                                     <div class="box-tools pull-right">
+                                        <div class="btn-group btn-group-sm" style="margin-right:6px">
+                                            <button type="button" class="btn btn-primary" id="rev-tab-pending"
+                                                onclick="setReviewMode('pending')">À traiter</button>
+                                            <button type="button" class="btn btn-default" id="rev-tab-reviewed"
+                                                onclick="setReviewMode('reviewed')">Traités</button>
+                                        </div>
                                         <button type="button" class="btn btn-default btn-sm" onclick="loadReview()">
                                             <i class="fa fa-refresh"></i> Refresh
                                         </button>

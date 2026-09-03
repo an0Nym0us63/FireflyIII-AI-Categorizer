@@ -107,6 +107,7 @@ func (h *Handler) Router() http.Handler {
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
 	r.Post("/api/transactions/{id}/tags/resolve", h.resolveTags)
 	r.Post("/api/purge-ai-tags", h.purgeAITags)
+	r.Post("/api/transactions/{id}/unreview", h.unreviewTransaction)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -695,6 +696,7 @@ type reviewGroup struct {
 	CategoryName         string      `json:"category_name,omitempty"`
 	CategoryID           string      `json:"category_id,omitempty"`
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
+	SuggestedTags        []string    `json:"suggested_tags,omitempty"`
 	Transactions         []reviewTxn `json:"transactions"`
 }
 
@@ -705,6 +707,16 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("reviewed") == "true" {
+		groups, err := h.computeReviewedGroups(r.Context(), fc)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to fetch reviewed items: %v", err), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusOK, groups)
+		return
+	}
+
 	groups, err := h.cachedReviewGroups(r.Context(), fc)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch review groups: %v", err), http.StatusBadGateway)
@@ -712,6 +724,17 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, groups)
+}
+
+// unreviewTransaction clears the reviewed flag so an item returns to the queue.
+func (h *Handler) unreviewTransaction(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.aidb.Unreview(id); err != nil {
+		http.Error(w, fmt.Sprintf("failed to unreview: %v", err), http.StatusInternalServerError)
+		return
+	}
+	h.invalidateReviewCache()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 const reviewCacheTTL = 2 * time.Minute
@@ -777,24 +800,32 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 		return nil, err
 	}
 
-	// Only category/destination review belongs on this page; pending tag
-	// suggestions are validated from the Transactions table.
-	bucket := map[string]string{}
+	catBucket := map[string]string{}   // txn id -> NEEDS_REVIEW / ASSUMED / DEST_ASSUMED
+	suggested := map[string][]string{} // txn id -> pending tag suggestions
 	var ids []string
+	seen := map[string]bool{}
+	addID := func(id string) {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
 	for _, r := range records {
-		var b string
 		switch {
 		case r.Outcome == "NEEDS_REVIEW":
-			b = "NEEDS_REVIEW"
+			catBucket[r.TransactionID] = "NEEDS_REVIEW"
+			addID(r.TransactionID)
 		case r.Outcome == "ASSUMED":
-			b = "ASSUMED"
+			catBucket[r.TransactionID] = "ASSUMED"
+			addID(r.TransactionID)
 		case r.DestConfidence == "ASSUMED":
-			b = "DEST_ASSUMED"
-		default:
-			continue
+			catBucket[r.TransactionID] = "DEST_ASSUMED"
+			addID(r.TransactionID)
 		}
-		bucket[r.TransactionID] = b
-		ids = append(ids, r.TransactionID)
+		if len(r.SuggestedTags) > 0 {
+			suggested[r.TransactionID] = r.SuggestedTags
+			addID(r.TransactionID)
+		}
 	}
 	if len(ids) == 0 {
 		return nil, nil
@@ -804,9 +835,19 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	if err != nil {
 		return nil, err
 	}
-	var needsReview, assumed, destAssumed []firefly.Transaction
+	txnByID := map[string]firefly.Transaction{}
 	for _, t := range txns {
-		switch bucket[t.ID] {
+		txnByID[t.ID] = t
+	}
+
+	// Category / destination review (grouped by payee), in record order.
+	var needsReview, assumed, destAssumed []firefly.Transaction
+	for _, id := range ids {
+		t, ok := txnByID[id]
+		if !ok {
+			continue
+		}
+		switch catBucket[id] {
 		case "NEEDS_REVIEW":
 			needsReview = append(needsReview, t)
 		case "ASSUMED":
@@ -820,6 +861,68 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
 	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
+
+	// Tag suggestions — one row per transaction (not merged), in record order.
+	for _, id := range ids {
+		tags := suggested[id]
+		if len(tags) == 0 {
+			continue
+		}
+		t, ok := txnByID[id]
+		if !ok || len(t.Splits) == 0 {
+			continue
+		}
+		s := t.Splits[0]
+		result = append(result, &reviewGroup{
+			Outcome:         "TAGS",
+			Description:     s.Description,
+			DestinationName: s.DestinationName,
+			CategoryName:    s.CategoryName,
+			SuggestedTags:   tags,
+			Transactions:    []reviewTxn{{ID: t.ID, Date: s.Date, Amount: s.Amount}},
+		})
+	}
+	return result, nil
+}
+
+// computeReviewedGroups returns recently human-reviewed transactions (read-only).
+func (h *Handler) computeReviewedGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
+	records, err := h.aidb.ListReviewed(200)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(records))
+	for _, r := range records {
+		ids = append(ids, r.TransactionID)
+	}
+	txns, err := fc.GetTransactionsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	txnByID := map[string]firefly.Transaction{}
+	for _, t := range txns {
+		txnByID[t.ID] = t
+	}
+
+	var result []*reviewGroup
+	for _, r := range records {
+		t, ok := txnByID[r.TransactionID]
+		if !ok || len(t.Splits) == 0 {
+			continue
+		}
+		s := t.Splits[0]
+		result = append(result, &reviewGroup{
+			Outcome:         "REVIEWED",
+			Description:     s.Description,
+			DestinationName: s.DestinationName,
+			CategoryName:    s.CategoryName,
+			CategoryID:      s.CategoryID,
+			Transactions:    []reviewTxn{{ID: t.ID, Date: s.Date, Amount: s.Amount}},
+		})
+	}
 	return result, nil
 }
 

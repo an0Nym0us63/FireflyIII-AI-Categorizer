@@ -152,9 +152,39 @@ ORDER BY updated_at DESC`)
 }
 
 // MarkReviewed flags a transaction as human-reviewed and clears its pending tags.
+// ListReviewed returns the most recently human-reviewed records.
+func (d *DB) ListReviewed(limit int) ([]Record, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := d.db.Query(`
+SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at
+FROM ai_records WHERE reviewed = 1 ORDER BY updated_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *rec)
+	}
+	return out, rows.Err()
+}
+
+// Unreview clears the reviewed flag so a transaction returns to the review list.
+func (d *DB) Unreview(id string) error {
+	_, err := d.db.Exec(`UPDATE ai_records SET reviewed = 0, updated_at = ? WHERE transaction_id = ?`,
+		time.Now().Unix(), id)
+	return err
+}
+
 func (d *DB) MarkReviewed(id string) error {
 	_, err := d.db.Exec(`UPDATE ai_records SET reviewed = 1, suggested_tags = '[]', updated_at = ? WHERE transaction_id = ?`,
-		time.Now().UTC().Format(time.RFC3339), id)
+		time.Now().Unix(), id)
 	return err
 }
 
@@ -162,7 +192,7 @@ func (d *DB) MarkReviewed(id string) error {
 func (d *DB) SetSuggestedTags(id string, tags []string) error {
 	b, _ := json.Marshal(tags)
 	_, err := d.db.Exec(`UPDATE ai_records SET suggested_tags = ?, updated_at = ? WHERE transaction_id = ?`,
-		string(b), time.Now().UTC().Format(time.RFC3339), id)
+		string(b), time.Now().Unix(), id)
 	return err
 }
 

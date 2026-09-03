@@ -665,7 +665,7 @@ async function loadReview(silent) {
     }
     try {
         var catRes = fetch('/api/categories');
-        var reviewRes = fetch('/api/review');
+        var reviewRes = fetch(reviewMode === 'reviewed' ? '/api/review?reviewed=true' : '/api/review');
         var acctRes = fetch('/api/accounts');
         catRes = await catRes;
         reviewRes = await reviewRes;
@@ -826,6 +826,15 @@ function buildSearchIcon(g) {
 }
 
 // ─── table-based review (per-row validate/reject) ───────────────────────────
+var reviewMode = 'pending'; // 'pending' | 'reviewed'
+
+function setReviewMode(mode) {
+    reviewMode = mode;
+    $('#rev-tab-pending').toggleClass('btn-primary', mode === 'pending').toggleClass('btn-default', mode !== 'pending');
+    $('#rev-tab-reviewed').toggleClass('btn-primary', mode === 'reviewed').toggleClass('btn-default', mode !== 'reviewed');
+    loadReview();
+}
+
 function reviewTypeBadge(o) {
     if (o === 'NEEDS_REVIEW') return '<span class="label label-danger">à classer</span>';
     if (o === 'ASSUMED') return '<span class="label label-warning">catégorie ?</span>';
@@ -851,6 +860,7 @@ function renderReviewTable(groups) {
         reviewGroupMap[gi] = g;
         var lbl = resolveGroupLabel(g);
         var count = (g.transactions || []).length;
+        var txnId = count ? g.transactions[0].id : '';
         var amountCell;
         if (count === 1) {
             var a = parseFloat(g.transactions[0].amount);
@@ -859,17 +869,51 @@ function renderReviewTable(groups) {
             amountCell = count + ' txns';
         }
         var sub = lbl.sub ? '<br><small class="text-muted">' + esc(lbl.sub) + '</small>' : '';
+        var labelCell = '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + '</td>';
+        var amtCell = '<td class="text-right" style="white-space:nowrap">' + amountCell + '</td>';
 
+        // Reviewed (read-only) rows.
+        if (g.outcome === 'REVIEWED') {
+            return '<tr id="rev-row-' + gi + '">'
+                + '<td><span class="label label-info">traité</span></td>'
+                + labelCell + amtCell
+                + '<td>' + (g.category_name ? esc(g.category_name) : '<span class="text-muted">—</span>') + '</td>'
+                + '<td class="text-muted">—</td>'
+                + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
+                + '<button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button>'
+                + '</td></tr>';
+        }
+
+        // Tag-suggestion rows: chips with per-tag apply/reject.
+        if (g.outcome === 'TAGS') {
+            var chips = (g.suggested_tags || []).map(function (name) {
+                var enc = encodeURIComponent(name);
+                return '<span class="label label-warning" style="margin-right:4px" title="Tag suggéré">'
+                    + esc(name)
+                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer"'
+                    + ' onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',true,' + gi + ');return false">\u2713</a>'
+                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter"'
+                    + ' onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',false,' + gi + ');return false">\u2717</a>'
+                    + '</span>';
+            }).join('');
+            return '<tr id="rev-row-' + gi + '">'
+                + '<td><span class="label label-warning">tags ?</span></td>'
+                + labelCell + amtCell
+                + '<td colspan="2" id="rev-tags-' + gi + '">' + chips + '</td>'
+                + '<td id="rev-actions-' + gi + '" style="white-space:nowrap">'
+                + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button>'
+                + '</td></tr>';
+        }
+
+        // Category / destination review rows.
         var destCell = '<span class="text-muted">—</span>';
         if (g.outcome === 'DEST_ASSUMED') {
             destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
                 + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:140px">';
         }
-
         return '<tr id="rev-row-' + gi + '">'
             + '<td style="white-space:nowrap">' + reviewTypeBadge(g.outcome) + '</td>'
-            + '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + '</td>'
-            + '<td class="text-right" style="white-space:nowrap">' + amountCell + '</td>'
+            + labelCell + amtCell
             + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:150px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
             + '<td>' + destCell + '</td>'
@@ -943,6 +987,42 @@ function confirmReviewRow(gi) {
 
 function dismissReviewRow(gi) {
     removeReviewRow(gi);
+}
+
+// resolveReviewTag applies/rejects one suggested tag from a review TAGS row.
+function resolveReviewTag(txnId, encName, accept, gi) {
+    var name = decodeURIComponent(encName);
+    var body = accept ? { apply: [name] } : { reject: [name] };
+    $.ajax({
+        url: '/api/transactions/' + txnId + '/tags/resolve',
+        method: 'POST', contentType: 'application/json', data: JSON.stringify(body)
+    }).done(function () {
+        var g = reviewGroupMap[gi];
+        if (g) {
+            g.suggested_tags = (g.suggested_tags || []).filter(function (t) { return t !== name; });
+        }
+        var cell = document.getElementById('rev-tags-' + gi);
+        if (g && cell) {
+            if (!g.suggested_tags.length) { removeReviewRow(gi); return; }
+            cell.innerHTML = g.suggested_tags.map(function (nm) {
+                var enc = encodeURIComponent(nm);
+                return '<span class="label label-warning" style="margin-right:4px" title="Tag suggéré">' + esc(nm)
+                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Appliquer" onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',true,' + gi + ');return false">\u2713</a>'
+                    + ' <a href="#" style="color:#fff;text-decoration:none" title="Rejeter" onclick="resolveReviewTag(\'' + txnId + '\',\'' + enc + '\',false,' + gi + ');return false">\u2717</a>'
+                    + '</span>';
+            }).join('');
+        }
+    }).fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
+}
+
+// unreviewRow puts a reviewed item back into the queue.
+function unreviewRow(gi) {
+    var g = reviewGroupMap[gi];
+    if (!g || !g.transactions || !g.transactions.length) return;
+    var id = g.transactions[0].id;
+    $.ajax({ url: '/api/transactions/' + id + '/unreview', method: 'POST' })
+        .done(function () { removeReviewRow(gi); })
+        .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }
 
 function renderReviewGroups(groups) {
