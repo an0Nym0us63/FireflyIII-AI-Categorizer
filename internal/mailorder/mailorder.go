@@ -60,10 +60,11 @@ func Test(a Account) error {
 }
 
 // FindOrderEmail searches the INBOX (never Spam/other folders) for an
-// order-confirmation email near the given date (± windowDays), restricted to the
-// given sender addresses. Among candidates it prefers the email whose body
-// contains the transaction amount, then the closest date. Returns the text.
-func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, windowDays int) (string, bool, error) {
+// order-confirmation email in [date-backDays, date+fwdDays] (order emails
+// usually precede the bank charge by a few days), restricted to the given
+// senders. Among candidates it prefers the email whose body contains the
+// transaction amount, then the closest date. Returns the text.
+func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (string, bool, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return "", false, nil
 	}
@@ -78,8 +79,8 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		return "", false, fmt.Errorf("select inbox: %w", err)
 	}
 
-	since := date.AddDate(0, 0, -windowDays)
-	before := date.AddDate(0, 0, windowDays+1)
+	since := date.AddDate(0, 0, -backDays)
+	before := date.AddDate(0, 0, fwdDays+1)
 
 	// Collect matching UIDs. When senders are given, search each (OR); otherwise
 	// fall back to a date-only search.

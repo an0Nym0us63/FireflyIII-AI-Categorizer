@@ -671,7 +671,10 @@ func tryDestinationHistoryMatch(history []classifier.HistoricalEntry, amount *fl
 
 var reCardLast4 = regexp.MustCompile(`X(\d{4})`)
 
-const mailWindowDays = 4
+const (
+	mailBackDays = 14 // order emails can precede the bank charge by many days
+	mailFwdDays  = 2
+)
 
 // cleanNotes strips bank-import boilerplate ("MORE DETAILS" block) and our own
 // generated "AI:" lines so only genuine human hints reach the LLM.
@@ -735,7 +738,7 @@ func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amou
 	}
 	body, ok, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
-	}, det.Senders, date, amount, mailWindowDays)
+	}, det.Senders, date, amount, mailBackDays, mailFwdDays)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
 		return "", false
