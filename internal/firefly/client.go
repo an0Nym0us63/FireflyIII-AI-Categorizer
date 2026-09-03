@@ -209,6 +209,15 @@ func (c *Client) CreateExpenseAccount(ctx context.Context, name string) (Account
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
+		// The account probably already exists — fall back to matching it by name
+		// so re-runs and existing merchants resolve instead of failing.
+		if accts, ferr := c.GetExpenseAccounts(ctx); ferr == nil {
+			for _, a := range accts {
+				if strings.EqualFold(a.Name, name) {
+					return a, nil
+				}
+			}
+		}
 		return Account{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
 	}
 
