@@ -138,39 +138,8 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		clCats[i] = classifier.Category{Name: c.Name, Notes: c.Notes}
 	}
 
-	var expenseAccounts []firefly.Account
-	if opts.MatchDestination {
-		var err error
-		expenseAccounts, err = p.getExpenseAccounts(ctx)
-		if err != nil {
-			slog.Warn("failed to fetch expense accounts, continuing without destination matching", "error", err)
-		}
-	}
-	clAccounts := make([]classifier.AccountCandidate, len(expenseAccounts))
-	for i, a := range expenseAccounts {
-		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
-	}
-
 	gkey := classifier.GroupKey(j.DestinationName, j.Description)
 	amazonTxn := isAmazon(j.Description, j.DestinationName)
-
-	// Fetch enough history for both the match check and the AI prompt.
-	lookupLimit := historyMatchLookup
-	if p.contextN > lookupLimit {
-		lookupLimit = p.contextN
-	}
-	history := excludeTransaction(p.cache.GetHistory(ctx, gkey, lookupLimit), transactionID)
-
-	// Try independent history matches for category and destination.
-	// When both match, the LLM call can be skipped entirely. When only one
-	// matches, the LLM is still called but the matched value overrides the
-	// LLM's result for that field.
-	historyMatchCat, histCatCount := tryHistoryMatch(history, j.Amount)
-	historyMatchDestID, histDestCount := tryDestinationHistoryMatch(history, j.Amount)
-
-	var extraContext string
-	var amazonUncertain bool
-	var skipIfEmpty bool
 
 	var fireflyDate time.Time
 	if len(splits) > 0 && len(splits[0].Date) >= 10 {
@@ -179,19 +148,31 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
-	// Opaque merchants configured with a mail mapping (PayPal, Amazon,
+	var extraContext string
+	var amazonUncertain bool
+	var skipIfEmpty bool
+	var paymentTag string
+	var forceDestination bool
+
+	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
 		if body, ok := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
-			extraContext = "Order confirmation email (use it to choose category and tags):\n" + body
+			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			slog.Info("order email matched", "id", transactionID)
+			if det.ReplaceDestination {
+				opts.MatchDestination = true // determine the real merchant from the email
+				forceDestination = true
+			}
+			if t := strings.TrimSpace(det.Tag); t != "" {
+				paymentTag = t
+			}
 		}
 	}
 
-	// For Amazon purchases, try to match the bank transaction to an order in the
-	// user's Amazon order-history export and feed the product names to the LLM
-	// so it categorizes from the actual contents rather than just "Amazon".
+	// For Amazon purchases, match the bank transaction to an order in the
+	// order-history export and feed the product names to the LLM.
 	if extraContext == "" && p.amazon.Loaded() && amazonTxn {
 		labelDate := amazon.ParseLabelDate(j.Description, fireflyDate)
 		card := ""
@@ -213,15 +194,40 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		return nil
 	}
 
-	// Amazon is a meta-merchant — past category is not predictive. When we have
-	// the order contents, skip the category history match so the LLM categorizes
-	// from those contents. Without contents, keep the history match as a
-	// fallback rather than sending the transaction to review empty-handed.
-	// When we have real order content (email or Amazon CSV), let the LLM
-	// categorize from it rather than reusing a possibly-wrong past category.
+	var expenseAccounts []firefly.Account
+	if opts.MatchDestination {
+		var err error
+		expenseAccounts, err = p.getExpenseAccounts(ctx)
+		if err != nil {
+			slog.Warn("failed to fetch expense accounts, continuing without destination matching", "error", err)
+		}
+	}
+	clAccounts := make([]classifier.AccountCandidate, len(expenseAccounts))
+	for i, a := range expenseAccounts {
+		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
+	}
+
+	// Fetch enough history for both the match check and the AI prompt.
+	lookupLimit := historyMatchLookup
+	if p.contextN > lookupLimit {
+		lookupLimit = p.contextN
+	}
+	history := excludeTransaction(p.cache.GetHistory(ctx, gkey, lookupLimit), transactionID)
+
+	historyMatchCat, histCatCount := tryHistoryMatch(history, j.Amount)
+	historyMatchDestID, histDestCount := tryDestinationHistoryMatch(history, j.Amount)
+
+	// With real order content, let the LLM decide the category from it rather
+	// than reusing a possibly-wrong past category.
 	if extraContext != "" {
 		historyMatchCat = ""
 		histCatCount = 0
+	}
+	// When replacing the destination from the email, ignore the (paypal) history
+	// destination so the LLM's real-merchant choice wins.
+	if forceDestination {
+		historyMatchDestID = ""
+		histDestCount = 0
 	}
 
 	// Validate the destination history match against the current account list.
@@ -385,6 +391,19 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			outcome.Tags = append(outcome.Tags, t.Name)
 		} else {
 			outcome.TagsAssumed = append(outcome.TagsAssumed, t.Name)
+		}
+	}
+	// Payment-method tag from the mail detector (e.g. "paypal").
+	if paymentTag != "" {
+		has := false
+		for _, t := range outcome.Tags {
+			if strings.EqualFold(t, paymentTag) {
+				has = true
+				break
+			}
+		}
+		if !has {
+			outcome.Tags = append(outcome.Tags, paymentTag)
 		}
 	}
 

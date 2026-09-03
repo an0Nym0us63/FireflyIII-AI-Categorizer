@@ -218,6 +218,12 @@ function renderMailDetectors() {
             + '<select class="form-control input-sm" onchange="mailDetectors[' + i + '].account_id=this.value">' + accountOptions(d.account_id) + '</select></div>'
             + '<div class="col-sm-8"><label style="font-size:11px;display:block">Expéditeurs</label>' + senders
             + ' <input type="text" class="input-sm" placeholder="ex: auto-confirm@amazon.fr + Entrée" style="width:230px" onkeydown="if(event.key===\'Enter\'){addDetSender(' + i + ',this.value);this.value=\'\';event.preventDefault();}"></div></div>'
+            + '<div class="row"><div class="col-sm-12" style="margin-top:6px">'
+            + '<label style="font-weight:normal;margin-right:14px"><input type="checkbox" ' + (d.replace_destination ? 'checked' : '')
+            + ' onchange="mailDetectors[' + i + '].replace_destination=this.checked"> Déterminer et remplacer la destination (vrai marchand)</label>'
+            + '<span style="margin-left:6px">Tag à ajouter : <input type="text" class="input-sm" style="width:110px" value="' + esc(d.tag || '') + '"'
+            + ' placeholder="ex: paypal" oninput="mailDetectors[' + i + '].tag=this.value"></span>'
+            + '</div></div>'
             + '<div class="row"><div class="col-sm-12" style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" onclick="removeMailDetector(' + i + ')"><i class="fa fa-trash"></i> Supprimer</button></div></div>'
             + '</div>';
     }).join('');
@@ -235,7 +241,7 @@ function testMailAccount(i) {
         .fail(function (x) { if (st) st.innerHTML = '<span class="text-danger">' + esc(x.responseText || ('' + x.status)) + '</span>'; });
 }
 
-function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: []}); renderMailConfig(); }
+function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: [], replace_destination: false, tag: ''}); renderMailConfig(); }
 function removeMailDetector(i) { mailDetectors.splice(i, 1); renderMailConfig(); }
 function addDetKeyword(i, v) { v = (v || '').trim().toLowerCase(); if (!v) return; mailDetectors[i].keywords = mailDetectors[i].keywords || []; if (mailDetectors[i].keywords.indexOf(v) < 0) mailDetectors[i].keywords.push(v); renderMailDetectors(); }
 function removeDetKeyword(i, ki) { mailDetectors[i].keywords.splice(ki, 1); renderMailDetectors(); }
@@ -1142,7 +1148,12 @@ function confirmReviewRow(gi) {
 }
 
 function dismissReviewRow(gi) {
-    removeReviewRow(gi);
+    var g = reviewGroupMap[gi];
+    var id = (g && g.transactions && g.transactions[0]) ? g.transactions[0].id : '';
+    if (!id) { removeReviewRow(gi); return; }
+    $.ajax({url: '/api/transactions/' + id + '/dismiss', method: 'POST'})
+        .done(function () { removeReviewRow(gi); })
+        .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }
 
 // resolveReviewTag applies/rejects one suggested tag from a review TAGS row.

@@ -63,10 +63,12 @@ type MailAccount struct {
 
 // MailDetector maps description keywords to a mailbox + expected sender(s).
 type MailDetector struct {
-	ID        string   `json:"id"`
-	Keywords  []string `json:"keywords"`   // matched in the bank description
-	AccountID string   `json:"account_id"` // which MailAccount to search
-	Senders   []string `json:"senders"`    // From addresses of the order emails
+	ID                 string   `json:"id"`
+	Keywords           []string `json:"keywords"`            // matched in the bank description
+	AccountID          string   `json:"account_id"`          // which MailAccount to search
+	Senders            []string `json:"senders"`             // From addresses of the order emails
+	ReplaceDestination bool     `json:"replace_destination"` // let the AI set the real merchant as destination
+	Tag                string   `json:"tag"`                 // extra tag to always apply (e.g. "paypal")
 }
 
 // Load reads config from environment variables and overlays the config file.

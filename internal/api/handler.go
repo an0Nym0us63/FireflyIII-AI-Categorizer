@@ -110,6 +110,7 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/transactions/{id}/tags/resolve", h.resolveTags)
 	r.Post("/api/purge-ai-tags", h.purgeAITags)
 	r.Post("/api/transactions/{id}/unreview", h.unreviewTransaction)
+	r.Post("/api/transactions/{id}/dismiss", h.dismissTransaction)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -813,6 +814,19 @@ func (h *Handler) unreviewTransaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to unreview: %v", err), http.StatusInternalServerError)
 		return
 	}
+	h.invalidateReviewCache()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// dismissTransaction marks an item reviewed (dismissed) without changing it, so
+// it stops appearing in the review queue.
+func (h *Handler) dismissTransaction(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.aidb.MarkReviewed(id); err != nil {
+		http.Error(w, fmt.Sprintf("failed to dismiss: %v", err), http.StatusInternalServerError)
+		return
+	}
+	h.registry.MarkReviewedByTxn(id)
 	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)
 }
