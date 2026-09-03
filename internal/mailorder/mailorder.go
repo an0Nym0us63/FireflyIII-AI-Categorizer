@@ -92,8 +92,9 @@ type SearchResult struct {
 	Text        string
 	Found       bool
 	Installment bool
-	Candidates  int // emails matching sender+date, before the amount filter
-	SearchHits  int // raw UID hits from the date search (diagnostic)
+	Candidates  int    // emails matching sender+date, before the amount filter
+	SearchHits  int    // raw UID hits from the date search (diagnostic)
+	Note        string // diagnostic note (e.g. a swallowed IMAP search error)
 }
 
 func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (SearchResult, error) {
@@ -132,6 +133,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		}
 		return c.Search(crit)
 	}
+	var searchErr error
 	// unionSearch tries both internal-date and sent-date (Yahoo/others may set an
 	// INTERNALDATE that differs from the visible header date on older messages).
 	unionSearch := func(froms []string) []uint32 {
@@ -141,6 +143,8 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 				for _, id := range ids {
 					set[id] = true
 				}
+			} else if searchErr == nil {
+				searchErr = err
 			}
 		}
 		out := make([]uint32, 0, len(set))
@@ -250,7 +254,11 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	}
 
 	if len(cands) == 0 {
-		return SearchResult{Candidates: senderCount, SearchHits: rawHits}, nil
+		note := ""
+		if searchErr != nil {
+			note = "IMAP search error: " + searchErr.Error()
+		}
+		return SearchResult{Candidates: senderCount, SearchHits: rawHits, Note: note}, nil
 	}
 
 	pick := func(list []cand) cand {

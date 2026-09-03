@@ -157,12 +157,13 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var mailMerchant string
 	var mailCandidates int
 	var mailSearchHits int
+	var mailNote string
 
 	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
-		if body, inst, ok, cands, hits := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
+		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			slog.Info("order email matched", "id", transactionID, "installment", inst)
 			if det.ReplaceDestination {
@@ -179,6 +180,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		} else {
 			mailCandidates = cands
 			mailSearchHits = hits
+			mailNote = note
 		}
 	}
 
@@ -200,14 +202,24 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// Opaque merchant with no order content found → leave the transaction
 	// untouched (don't waste an LLM call on a useless label).
 	if skipIfEmpty && extraContext == "" {
+		win := ""
+		if !fireflyDate.IsZero() {
+			win = fmt.Sprintf(" [fenêtre %s → %s]",
+				fireflyDate.AddDate(0, 0, -mailBackDays).Format("2006-01-02"),
+				fireflyDate.AddDate(0, 0, mailFwdDays).Format("2006-01-02"))
+		}
 		reason := "Aucun email de commande trouvé — non catégorisé."
 		if mailCandidates > 0 {
 			reason = fmt.Sprintf("%d email(s) dans la fenêtre de dates mais aucun au montant %.2f € — non catégorisé.", mailCandidates, derefAmount(j.Amount))
 		} else {
 			reason = fmt.Sprintf("Aucun email au montant dans la fenêtre (±14j) — %d résultat(s) de recherche brut(s). Non catégorisé.", mailSearchHits)
 		}
+		reason += win
+		if mailNote != "" {
+			reason += " (" + mailNote + ")"
+		}
 		p.registry.SetFinished(j.ID, "SKIPPED", "", reason, "", "", "", "", "", nil, nil)
-		slog.Info("skipped opaque merchant with no order content", "id", transactionID, "candidates", mailCandidates)
+		slog.Info("skipped opaque merchant with no order content", "id", transactionID, "candidates", mailCandidates, "hits", mailSearchHits, "note", mailNote)
 		return nil
 	}
 
@@ -794,19 +806,19 @@ func (p *Pipeline) accountByID(id string) *config.MailAccount {
 // findOrderEmail searches the detector's mailbox for the order email near date.
 // Returns the body, whether it's a 4x installment, whether found, and how many
 // candidate emails (sender+date) were seen (for diagnostics).
-func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool, bool, int, int) {
+func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool, bool, int, int, string) {
 	acc := p.accountByID(det.AccountID)
 	if acc == nil || acc.IMAPHost == "" || acc.IMAPUser == "" || date.IsZero() {
-		return "", false, false, 0, 0
+		return "", false, false, 0, 0, ""
 	}
 	res, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
 	}, det.Senders, date, amount, mailBackDays, mailFwdDays)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
-		return "", false, false, 0, 0
+		return "", false, false, 0, 0, err.Error()
 	}
-	return res.Text, res.Installment, res.Found, res.Candidates, res.SearchHits
+	return res.Text, res.Installment, res.Found, res.Candidates, res.SearchHits, res.Note
 }
 
 // isAmazon reports whether a transaction is an Amazon purchase, from its
