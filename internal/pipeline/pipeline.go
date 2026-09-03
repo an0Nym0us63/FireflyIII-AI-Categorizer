@@ -183,7 +183,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
-		if body, ok := p.findOrderEmail(det, fireflyDate); ok {
+		if body, ok := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category and tags):\n" + body
 			slog.Info("order email matched", "id", transactionID)
 		}
@@ -708,14 +708,14 @@ func (p *Pipeline) accountByID(id string) *config.MailAccount {
 }
 
 // findOrderEmail searches the detector's mailbox for the order email near date.
-func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time) (string, bool) {
+func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool) {
 	acc := p.accountByID(det.AccountID)
 	if acc == nil || acc.IMAPHost == "" || acc.IMAPUser == "" || date.IsZero() {
 		return "", false
 	}
 	body, ok, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
-	}, det.Senders, date, mailWindowDays)
+	}, det.Senders, date, amount, mailWindowDays)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
 		return "", false

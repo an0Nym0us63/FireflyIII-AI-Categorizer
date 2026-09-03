@@ -59,10 +59,11 @@ func Test(a Account) error {
 	return c.Logout()
 }
 
-// FindOrderEmail searches the mailbox for an order-confirmation email near the
-// given date (± windowDays), restricted to the given sender addresses, and
-// returns the text content of the closest match (truncated).
-func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int) (string, bool, error) {
+// FindOrderEmail searches the INBOX (never Spam/other folders) for an
+// order-confirmation email near the given date (± windowDays), restricted to the
+// given sender addresses. Among candidates it prefers the email whose body
+// contains the transaction amount, then the closest date. Returns the text.
+func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, windowDays int) (string, bool, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return "", false, nil
 	}
@@ -72,6 +73,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int)
 	}
 	defer c.Logout()
 
+	// Only the INBOX — never Bulk/Spam or other folders.
 	if _, err := c.Select("INBOX", true); err != nil {
 		return "", false, fmt.Errorf("select inbox: %w", err)
 	}
@@ -124,7 +126,15 @@ func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int)
 	done := make(chan error, 1)
 	go func() { done <- c.Fetch(seqset, items, messages) }()
 
+	// Amount variants to look for in the body (12.95 and 12,95).
+	var amtStrs []string
+	if amount > 0 {
+		a1 := fmt.Sprintf("%.2f", amount)
+		amtStrs = append(amtStrs, a1, strings.Replace(a1, ".", ",", 1))
+	}
+
 	bestText := ""
+	bestAmt := false
 	bestDiff := time.Duration(1<<62 - 1)
 	for msg := range messages {
 		if msg == nil {
@@ -143,9 +153,27 @@ func FindOrderEmail(a Account, senders []string, date time.Time, windowDays int)
 			continue
 		}
 		text := extractText(r)
-		if text != "" && diff < bestDiff {
-			bestDiff = diff
+		if text == "" {
+			continue
+		}
+		amtMatch := false
+		for _, s := range amtStrs {
+			if strings.Contains(text, s) {
+				amtMatch = true
+				break
+			}
+		}
+		// Prefer amount-matching emails; among equal, the closest date.
+		better := false
+		if amtMatch != bestAmt {
+			better = amtMatch // an amount match beats a non-match
+		} else {
+			better = diff < bestDiff
+		}
+		if bestText == "" || better {
 			bestText = text
+			bestAmt = amtMatch
+			bestDiff = diff
 		}
 	}
 	if err := <-done; err != nil {
