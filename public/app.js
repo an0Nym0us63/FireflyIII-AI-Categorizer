@@ -363,6 +363,13 @@ function rerunJob(ev, txnId) {
         .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }
 
+function purgeJobs() {
+    if (!confirm("Vider le journal des jobs ? Cela n'affecte NI tes catégorisations (dans Firefly) NI le statut IA / review (base séparée) — seulement l'historique d'exécution affiché ici.")) return;
+    $.ajax({url: '/api/jobs/purge', method: 'POST'})
+        .done(function () { jobs = {}; jobPage = 1; renderJobTable(); })
+        .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
+}
+
 function toggleDetail(id) {
     var existing = document.getElementById('detail-' + id);
     var icon = document.getElementById('ic-' + id);

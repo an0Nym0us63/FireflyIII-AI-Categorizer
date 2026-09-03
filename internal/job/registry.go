@@ -14,6 +14,7 @@ import (
 type Store interface {
 	SaveJobJSON(id, data string) error
 	LoadJobsJSON(limit int) ([]string, error)
+	DeleteAllJobs() error
 }
 
 // Event is emitted on every job state change and consumed by SSE subscribers.
@@ -69,6 +70,17 @@ func (r *Registry) persist(j *Job) {
 	}
 	if b, err := json.Marshal(j); err == nil {
 		_ = r.store.SaveJobJSON(j.ID, string(b))
+	}
+}
+
+// Clear removes all jobs from memory and the persistent store (Jobs log purge).
+func (r *Registry) Clear() {
+	r.mu.Lock()
+	r.jobs = make(map[string]*Job)
+	r.byTxn = make(map[string]string)
+	r.mu.Unlock()
+	if r.store != nil {
+		_ = r.store.DeleteAllJobs()
 	}
 }
 

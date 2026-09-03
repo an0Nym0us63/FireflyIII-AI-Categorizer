@@ -213,12 +213,17 @@
                                                 placeholder="Rechercher…" oninput="onJobSearch(this.value)"
                                                 style="width:180px;display:inline-block">
                                         </div>
+                                        <button type="button" class="btn btn-default btn-sm" onclick="purgeJobs()"
+                                            title="Vider le journal des jobs (n'affecte pas les catégorisations ni le statut IA)">
+                                            <i class="fa fa-eraser"></i> Purger
+                                        </button>
                                         <button type="button" class="btn btn-box-tool" data-widget="collapse">
                                             <i class="fa fa-minus"></i>
                                         </button>
                                     </div>
                                 </div>
                                 <div class="box-body no-padding">
+                                    <div class="table-responsive">
                                     <table class="table table-hover" id="job-table">
                                         <thead>
                                             <tr>
@@ -243,6 +248,7 @@
                                             </tr>
                                         </tbody>
                                     </table>
+                                    </div>
                                     <div id="job-pager" style="padding:8px 12px;text-align:center"></div>
                                 </div>
                             </div>

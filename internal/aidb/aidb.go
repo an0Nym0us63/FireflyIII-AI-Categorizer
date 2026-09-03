@@ -233,6 +233,12 @@ ON CONFLICT(id) DO UPDATE SET data=excluded.data`, id, data, time.Now().Unix())
 	return err
 }
 
+// DeleteAllJobs removes every persisted job (clears the Jobs log).
+func (d *DB) DeleteAllJobs() error {
+	_, err := d.db.Exec(`DELETE FROM jobs`)
+	return err
+}
+
 // LoadJobsJSON returns the most recent job JSON blobs (newest first).
 func (d *DB) LoadJobsJSON(limit int) ([]string, error) {
 	if limit <= 0 {

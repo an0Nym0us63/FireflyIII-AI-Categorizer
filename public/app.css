@@ -27,7 +27,11 @@ body,
 pre.detail-pre {
     font-size: 11px;
     max-height: 180px;
-    overflow-y: auto;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
     background: #f4f4f5;
     border: none;
 }

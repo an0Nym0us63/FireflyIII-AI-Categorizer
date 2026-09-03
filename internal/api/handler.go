@@ -112,6 +112,7 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/transactions/{id}/unreview", h.unreviewTransaction)
 	r.Post("/api/transactions/{id}/dismiss", h.dismissTransaction)
 	r.Post("/api/transactions/{id}/rerun", h.rerunTransaction)
+	r.Post("/api/jobs/purge", h.purgeJobs)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -816,6 +817,13 @@ func (h *Handler) unreviewTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.invalidateReviewCache()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// purgeJobs clears the Jobs log (in-memory + DB). Categorizations and AI review
+// status are unaffected (they live in Firefly and the ai_records table).
+func (h *Handler) purgeJobs(w http.ResponseWriter, r *http.Request) {
+	h.registry.Clear()
 	w.WriteHeader(http.StatusNoContent)
 }
 
