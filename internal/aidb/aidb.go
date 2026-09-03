@@ -52,7 +52,14 @@ CREATE TABLE IF NOT EXISTS ai_records (
 	suggested_tags  TEXT,
 	reviewed        INTEGER DEFAULT 0,
 	updated_at      TEXT
-);`
+);
+CREATE TABLE IF NOT EXISTS jobs (
+	id         TEXT PRIMARY KEY,
+	data       TEXT NOT NULL,
+	created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+`
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate ai db: %w", err)
@@ -216,6 +223,35 @@ func scanRecord(s scanner) (*Record, error) {
 		r.UpdatedAt = t
 	}
 	return &r, nil
+}
+
+// SaveJobJSON upserts a job's JSON blob, preserving its original created_at.
+func (d *DB) SaveJobJSON(id, data string) error {
+	_, err := d.db.Exec(`
+INSERT INTO jobs (id, data, created_at) VALUES (?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET data=excluded.data`, id, data, time.Now().Unix())
+	return err
+}
+
+// LoadJobsJSON returns the most recent job JSON blobs (newest first).
+func (d *DB) LoadJobsJSON(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 2000
+	}
+	rows, err := d.db.Query(`SELECT data FROM jobs ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		out = append(out, data)
+	}
+	return out, rows.Err()
 }
 
 func boolToInt(b bool) int {

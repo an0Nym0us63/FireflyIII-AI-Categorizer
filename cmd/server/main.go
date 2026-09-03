@@ -46,6 +46,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer adb.Close()
+	reg.Attach(adb)
 
 	webhookPool.Start()
 	batchPool.Start()
