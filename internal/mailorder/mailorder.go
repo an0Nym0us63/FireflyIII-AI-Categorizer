@@ -8,7 +8,6 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
-	"math"
 	"net/textproto"
 	"regexp"
 	"strconv"
@@ -207,14 +206,28 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 }
 
 // bodyHasAmount reports whether text contains a monetary value equal to amount
-// (to the cent), tolerant of formats: 12,95 / 12.95 / 1 234,56 / EUR 12.95 / 12.95€.
+// within 2%, OR equal to amount*4 within 2% (a PayPal "4X" installment, where the
+// email shows the full total). Tolerant of formats: 12,95 / 12.95 / 1 234,56 / €12.95.
 func bodyHasAmount(text string, amount float64) bool {
 	if amount <= 0 {
 		return false
 	}
-	target := int64(math.Round(amount * 100))
+	within := func(v, target float64) bool {
+		if target <= 0 {
+			return false
+		}
+		diff := v - target
+		if diff < 0 {
+			diff = -diff
+		}
+		return diff <= 0.02*target
+	}
 	for _, tok := range reMoney.FindAllString(text, -1) {
-		if v, ok := parseAmountToken(tok); ok && int64(math.Round(v*100)) == target {
+		v, ok := parseAmountToken(tok)
+		if !ok {
+			continue
+		}
+		if within(v, amount) || within(v, amount*4) {
 			return true
 		}
 	}
