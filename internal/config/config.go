@@ -160,6 +160,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	if sc.SearchEngine != "" {
 		cfg.SearchEngine = sc.SearchEngine
 	}
+	if sc.GeminiThinking != "" {
+		cfg.GeminiThinking = sc.GeminiThinking
+	}
 }
 
 // IsConfigured returns true if all fields required to run the pipeline are present.

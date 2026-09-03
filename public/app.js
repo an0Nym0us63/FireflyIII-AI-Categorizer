@@ -493,6 +493,24 @@ function semanticTagLabels(tags, txnId) {
 }
 
 // resolveTag applies or rejects a single suggested tag then refreshes the list.
+function loadGeminiModels() {
+    var hint = $('#gemini-model-hint');
+    hint.text('Loading available models…');
+    $.getJSON('/api/gemini/models').done(function (models) {
+        var dl = $('#gemini-model-list').empty();
+        (models || []).forEach(function (name) {
+            dl.append($('<option>').attr('value', name));
+        });
+        if (models && models.length) {
+            hint.text('Pick from the ' + models.length + ' available models, or type your own.');
+        } else {
+            hint.text('No models returned — you can still type a model name.');
+        }
+    }).fail(function (x) {
+        hint.text('Could not load model list (' + (x.status || 'error') + ') — type a model name manually.');
+    });
+}
+
 function resolveTag(txnId, encName, accept) {
     var name = decodeURIComponent(encName);
     var body = accept ? {apply: [name]} : {reject: [name]};
@@ -1681,6 +1699,8 @@ async function loadSettings() {
         $('#cfg-gemini-key').val('');
         $('#gemini-key-hint').toggle(!!d.gemini_key_set);
         $('#cfg-gemini-model').val(d.gemini_model || '');
+        $('#cfg-gemini-thinking').val(d.gemini_thinking || 'low');
+        if (d.gemini_key_set) loadGeminiModels();
         $('#cfg-deepseek-key').val('');
         $('#deepseek-key-hint').toggle(!!d.deepseek_key_set);
         $('#cfg-deepseek-model').val(d.deepseek_model || '');
@@ -1775,6 +1795,7 @@ async function saveSettings() {
         var k = $('#cfg-gemini-key').val(), m = $('#cfg-gemini-model').val().trim();
         if (k) payload.gemini_api_key = k;
         if (m) payload.gemini_model = m;
+        payload.gemini_thinking = $('#cfg-gemini-thinking').val();
     } else if (p === 'deepseek') {
         var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
         if (k) payload.deepseek_api_key = k;

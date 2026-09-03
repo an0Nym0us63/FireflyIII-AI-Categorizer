@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,6 +83,7 @@ func (h *Handler) Router() http.Handler {
 
 	r.Get("/health", h.health)
 	r.Get("/api/version", h.getVersion)
+	r.Get("/api/gemini/models", h.getGeminiModels)
 	r.Post("/webhook", h.webhookHandler)
 	r.Post("/batch/run", h.batchRun)
 
@@ -117,6 +119,80 @@ func (h *Handler) Router() http.Handler {
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) getGeminiModels(w http.ResponseWriter, r *http.Request) {
+	cfg := h.effectiveConfig()
+	if cfg.GeminiKey == "" {
+		http.Error(w, "Gemini API key not configured", http.StatusBadRequest)
+		return
+	}
+
+	type modelEntry struct {
+		Name                       string   `json:"name"`
+		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+	}
+	type modelsResp struct {
+		Models        []modelEntry `json:"models"`
+		NextPageToken string       `json:"nextPageToken"`
+	}
+
+	var names []string
+	seen := map[string]bool{}
+	pageToken := ""
+	client := &http.Client{Timeout: 20 * time.Second}
+
+	for page := 0; page < 10; page++ {
+		u := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s&pageSize=200", cfg.GeminiKey)
+		if pageToken != "" {
+			u += "&pageToken=" + pageToken
+		}
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u, nil)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to reach Gemini API: %v", err), http.StatusBadGateway)
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, fmt.Sprintf("Gemini API returned %d", resp.StatusCode), http.StatusBadGateway)
+			return
+		}
+		var mr modelsResp
+		if err := json.Unmarshal(body, &mr); err != nil {
+			http.Error(w, "failed to parse Gemini models", http.StatusBadGateway)
+			return
+		}
+		for _, m := range mr.Models {
+			name := strings.TrimPrefix(m.Name, "models/")
+			if !strings.Contains(strings.ToLower(name), "gemini") {
+				continue
+			}
+			supportsGenerate := false
+			for _, meth := range m.SupportedGenerationMethods {
+				if meth == "generateContent" {
+					supportsGenerate = true
+					break
+				}
+			}
+			if supportsGenerate && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+		if mr.NextPageToken == "" {
+			break
+		}
+		pageToken = mr.NextPageToken
+	}
+
+	sort.Strings(names)
+	writeJSON(w, http.StatusOK, names)
 }
 
 func (h *Handler) getVersion(w http.ResponseWriter, _ *http.Request) {
@@ -368,7 +444,8 @@ type configResponse struct {
 
 	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
 
-	SearchEngine string `json:"search_engine"`
+	SearchEngine   string `json:"search_engine"`
+	GeminiThinking string `json:"gemini_thinking"`
 
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
@@ -397,7 +474,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 
 		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
-		SearchEngine: cfg.SearchEngine,
+		SearchEngine:   cfg.SearchEngine,
+		GeminiThinking: cfg.GeminiThinking,
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -427,7 +505,8 @@ type configUpdateRequest struct {
 
 	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
-	SearchEngine *string `json:"search_engine"`
+	SearchEngine   *string `json:"search_engine"`
+	GeminiThinking *string `json:"gemini_thinking"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -1413,6 +1492,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.SearchEngine != nil {
 		existing.SearchEngine = *req.SearchEngine
+	}
+	if req.GeminiThinking != nil {
+		existing.GeminiThinking = *req.GeminiThinking
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

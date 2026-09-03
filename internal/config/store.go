@@ -31,6 +31,7 @@ type StoredConfig struct {
 	TagSuggestEnabled       *bool  `json:"tag_suggest_enabled,omitempty"`
 	TagSuggestMax           int    `json:"tag_suggest_max,omitempty"`
 	SearchEngine            string `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
+	GeminiThinking          string `json:"gemini_thinking,omitempty"`
 	WorkerConcurrency       int    `json:"worker_concurrency,omitempty"`
 	BatchConcurrency        int    `json:"batch_concurrency,omitempty"`
 }
