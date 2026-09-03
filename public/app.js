@@ -283,7 +283,7 @@ function renderJobTable() {
 
     tbody.innerHTML = '';
     if (!slice.length) {
-        tbody.innerHTML = '<tr id="job-empty-row"><td colspan="8" class="text-center text-muted" style="padding:40px 0">'
+        tbody.innerHTML = '<tr id="job-empty-row"><td colspan="9" class="text-center text-muted" style="padding:40px 0">'
             + '<i class="fa fa-inbox fa-3x" style="display:block;margin-bottom:10px;opacity:.3"></i>'
             + (jobSearch ? 'No jobs match your search.' : 'No jobs yet &mdash; waiting for webhooks or run a batch.') + '</td></tr>';
     } else {
@@ -351,8 +351,16 @@ function buildJobRow(j) {
         + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
         + '<td class="hidden-xs">' + jobTagsHtml(j) + '</td>'
         + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
-        + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>';
+        + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
+        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
     return tr;
+}
+
+function rerunJob(ev, txnId) {
+    ev.stopPropagation();
+    if (!txnId) return;
+    $.ajax({url: '/api/transactions/' + encodeURIComponent(txnId) + '/rerun', method: 'POST'})
+        .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }
 
 function toggleDetail(id) {

@@ -111,6 +111,7 @@ func (h *Handler) Router() http.Handler {
 	r.Post("/api/purge-ai-tags", h.purgeAITags)
 	r.Post("/api/transactions/{id}/unreview", h.unreviewTransaction)
 	r.Post("/api/transactions/{id}/dismiss", h.dismissTransaction)
+	r.Post("/api/transactions/{id}/rerun", h.rerunTransaction)
 	r.Get("/api/transfers/suggest", h.suggestTransferDestination)
 	r.Post("/api/transactions/{id}/convert-to-transfer", h.convertToTransfer)
 
@@ -818,6 +819,35 @@ func (h *Handler) unreviewTransaction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// rerunTransaction re-runs the classifier on a single transaction (reuses its
+// job) — used by the per-row "relancer" button.
+func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	pipe := h.getPipe()
+	if fc == nil || pipe == nil {
+		http.Error(w, "not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+	txn := txns[0]
+	first := txn.Splits[0]
+	amount := parseAmount(first.Amount)
+	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount)
+	splits := txn.Splits
+	h.webhookPool.Submit(worker.Task{
+		JobID: j.ID,
+		Execute: func(ctx context.Context) error {
+			return pipe.Run(ctx, j, id, splits)
+		},
+	})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": j.ID})
+}
+
 // dismissTransaction marks an item reviewed (dismissed) without changing it, so
 // it stops appearing in the review queue.
 func (h *Handler) dismissTransaction(w http.ResponseWriter, r *http.Request) {
@@ -1201,6 +1231,7 @@ func (h *Handler) resolveTags(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = h.aidb.SetSuggestedTags(id, remaining)
 	}
+	h.registry.UpdateTagsByTxn(id, req.Apply, req.Reject)
 
 	h.invalidateReviewCache()
 	w.WriteHeader(http.StatusNoContent)

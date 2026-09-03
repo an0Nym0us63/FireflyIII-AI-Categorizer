@@ -2,6 +2,7 @@ package job
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,6 +153,51 @@ func (r *Registry) SetFailed(id, errMsg string) {
 		j.Status = StatusFailed
 		j.Error = errMsg
 	})
+}
+
+// UpdateTagsByTxn reflects a tag validation on the matching jobs: applied tags
+// move from suggested to applied, rejected ones are removed.
+func (r *Registry) UpdateTagsByTxn(txnID string, applied, rejected []string) {
+	resolved := map[string]bool{}
+	for _, n := range applied {
+		resolved[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	for _, n := range rejected {
+		resolved[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	var updated []*Job
+	r.mu.Lock()
+	for _, j := range r.jobs {
+		if j.TransactionID != txnID {
+			continue
+		}
+		var newAssumed []string
+		for _, t := range j.TagsAssumed {
+			if !resolved[strings.ToLower(strings.TrimSpace(t))] {
+				newAssumed = append(newAssumed, t)
+			}
+		}
+		j.TagsAssumed = newAssumed
+		for _, a := range applied {
+			has := false
+			for _, t := range j.Tags {
+				if strings.EqualFold(t, a) {
+					has = true
+					break
+				}
+			}
+			if !has {
+				j.Tags = append(j.Tags, a)
+			}
+		}
+		j.UpdatedAt = time.Now()
+		updated = append(updated, j)
+	}
+	r.mu.Unlock()
+	for _, j := range updated {
+		r.persist(j)
+		r.publish(Event{Type: "updated", Job: j})
+	}
 }
 
 // MarkReviewedByTxn marks any jobs for a transaction as reviewed, so the Jobs
