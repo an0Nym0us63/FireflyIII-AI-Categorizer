@@ -153,20 +153,24 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var skipIfEmpty bool
 	var paymentTag string
 	var forceDestination bool
+	var installmentTag bool
 
 	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
-		if body, ok := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
+		if body, inst, ok := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
-			slog.Info("order email matched", "id", transactionID)
+			slog.Info("order email matched", "id", transactionID, "installment", inst)
 			if det.ReplaceDestination {
 				opts.MatchDestination = true // determine the real merchant from the email
 				forceDestination = true
 			}
 			if t := strings.TrimSpace(det.Tag); t != "" {
 				paymentTag = t
+			}
+			if inst {
+				installmentTag = true
 			}
 		}
 	}
@@ -405,6 +409,19 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 		if !has {
 			outcome.Tags = append(outcome.Tags, paymentTag)
+		}
+	}
+	// 4-installment payment.
+	if installmentTag {
+		has := false
+		for _, t := range outcome.Tags {
+			if strings.EqualFold(t, "4x") {
+				has = true
+				break
+			}
+		}
+		if !has {
+			outcome.Tags = append(outcome.Tags, "4x")
 		}
 	}
 
@@ -731,19 +748,19 @@ func (p *Pipeline) accountByID(id string) *config.MailAccount {
 }
 
 // findOrderEmail searches the detector's mailbox for the order email near date.
-func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool) {
+func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool, bool) {
 	acc := p.accountByID(det.AccountID)
 	if acc == nil || acc.IMAPHost == "" || acc.IMAPUser == "" || date.IsZero() {
-		return "", false
+		return "", false, false
 	}
-	body, ok, err := mailorder.FindOrderEmail(mailorder.Account{
+	body, ok, inst, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
 	}, det.Senders, date, amount, mailBackDays, mailFwdDays)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
-		return "", false
+		return "", false, false
 	}
-	return body, ok
+	return body, inst, ok
 }
 
 // isAmazon reports whether a transaction is an Amazon purchase, from its

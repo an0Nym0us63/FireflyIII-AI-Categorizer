@@ -65,19 +65,19 @@ func Test(a Account) error {
 // usually precede the bank charge by a few days), restricted to the given
 // senders. Among candidates it prefers the email whose body contains the
 // transaction amount, then the closest date. Returns the text.
-func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (string, bool, error) {
+func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (text string, found bool, installment bool, err error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
-		return "", false, nil
+		return "", false, false, nil
 	}
 	c, err := dial(a)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	defer c.Logout()
 
 	// Only the INBOX — never Bulk/Spam or other folders.
 	if _, err := c.Select("INBOX", true); err != nil {
-		return "", false, fmt.Errorf("select inbox: %w", err)
+		return "", false, false, fmt.Errorf("select inbox: %w", err)
 	}
 
 	since := date.AddDate(0, 0, -backDays)
@@ -129,9 +129,10 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	go func() { done <- c.Fetch(seqset, items, messages) }()
 
 	type cand struct {
-		text    string
-		dayDiff time.Duration
-		amt     bool
+		text        string
+		dayDiff     time.Duration
+		amt         bool
+		installment bool
 	}
 	var cands []cand
 	for msg := range messages {
@@ -150,29 +151,25 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		if r == nil {
 			continue
 		}
-		text := extractText(r)
-		if text == "" {
+		body := extractText(r)
+		if body == "" {
 			continue
 		}
-		cands = append(cands, cand{text: text, dayDiff: diff, amt: bodyHasAmount(text, amount)})
+		ok, inst := amountMatch(body, amount)
+		cands = append(cands, cand{text: body, dayDiff: diff, amt: ok, installment: inst})
 	}
 	if err := <-done; err != nil {
-		return "", false, fmt.Errorf("fetch: %w", err)
+		return "", false, false, fmt.Errorf("fetch: %w", err)
 	}
 	if len(cands) == 0 {
-		return "", false, nil
+		return "", false, false, nil
 	}
 
-	// Selection: the amount is the key. Prefer emails whose body contains the
-	// exact amount; among those, the closest date. If several candidates and
-	// NONE matches the amount, refuse to guess (avoid the wrong email).
-	pick := func(list []cand) string {
-		best := ""
-		bestDiff := time.Duration(1<<62 - 1)
-		for _, c := range list {
-			if best == "" || c.dayDiff < bestDiff {
-				best = c.text
-				bestDiff = c.dayDiff
+	pick := func(list []cand) cand {
+		best := list[0]
+		for _, c := range list[1:] {
+			if c.dayDiff < best.dayDiff {
+				best = c
 			}
 		}
 		return best
@@ -183,34 +180,29 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			withAmt = append(withAmt, c)
 		}
 	}
-	var chosen string
+	var chosen cand
 	switch {
 	case len(withAmt) > 0:
-		// One or more emails contain the exact amount → decisive.
 		chosen = pick(withAmt)
 	case amount <= 0 && len(cands) == 1:
-		// Amount unknown and a single candidate → accept.
-		chosen = cands[0].text
+		chosen = cands[0]
 	default:
-		// Amount known but no email matches it → don't guess (avoids attaching
-		// an unrelated order, e.g. a PayPal "4X" installment vs a different total).
-		return "", false, nil
+		// Amount known but no email matches it → don't guess.
+		return "", false, false, nil
 	}
-	if chosen == "" {
-		return "", false, nil
+	out := chosen.text
+	if len(out) > 5000 {
+		out = out[:5000]
 	}
-	if len(chosen) > 5000 {
-		chosen = chosen[:5000]
-	}
-	return chosen, true, nil
+	return out, true, chosen.installment, nil
 }
 
-// bodyHasAmount reports whether text contains a monetary value equal to amount
-// within 2%, OR equal to amount*4 within 2% (a PayPal "4X" installment, where the
-// email shows the full total). Tolerant of formats: 12,95 / 12.95 / 1 234,56 / €12.95.
-func bodyHasAmount(text string, amount float64) bool {
+// amountMatch reports whether text contains the debit amount (±2%), and whether
+// the match was via the full total of a 4-installment payment (amount*4 ±2%).
+// An exact match takes precedence over an installment match.
+func amountMatch(text string, amount float64) (matched bool, installment bool) {
 	if amount <= 0 {
-		return false
+		return false, false
 	}
 	within := func(v, target float64) bool {
 		if target <= 0 {
@@ -222,16 +214,26 @@ func bodyHasAmount(text string, amount float64) bool {
 		}
 		return diff <= 0.02*target
 	}
+	exact, four := false, false
 	for _, tok := range reMoney.FindAllString(text, -1) {
 		v, ok := parseAmountToken(tok)
 		if !ok {
 			continue
 		}
-		if within(v, amount) || within(v, amount*4) {
-			return true
+		if within(v, amount) {
+			exact = true
+		}
+		if within(v, amount*4) {
+			four = true
 		}
 	}
-	return false
+	if exact {
+		return true, false
+	}
+	if four {
+		return true, true
+	}
+	return false, false
 }
 
 var reMoney = regexp.MustCompile(`\d[\d \x{00a0}.,]*\d`)
