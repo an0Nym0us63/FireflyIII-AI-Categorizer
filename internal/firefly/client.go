@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -28,15 +27,7 @@ func New(baseURL, token, tagPrefix string) *Client {
 		token:      token,
 		tagPrefix:  tagPrefix,
 		applyRules: true,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				Proxy:              nil,
-				DisableKeepAlives:  true,
-				DisableCompression: true,
-				ForceAttemptHTTP2:  false,
-			},
-		},
+		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -595,7 +586,7 @@ func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split,
 func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
 	type splitUpdate struct {
 		TransactionJournalID string   `json:"transaction_journal_id"`
-		Tags                 []string `json:"tags,omitempty"`
+		Tags                 []string `json:"tags"`
 		CategoryID           string   `json:"category_id,omitempty"`
 		DestinationID        string   `json:"destination_id,omitempty"`
 	}
@@ -617,25 +608,17 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		}
 		su := splitUpdate{
 			TransactionJournalID: s.JournalID,
+			Tags:                 tags,
 			CategoryID:           categoryID,
 		}
 		if destinationID != "" {
 			su.DestinationID = destinationID
 		}
-		// Only send tags when we actually removed a control tag. Re-sending the
-		// full tag set makes Firefly reprocess every tag (find/create/link),
-		// which is extremely slow on large tag tables.
-		if len(tags) != len(s.Tags) {
-			su.Tags = tags
-		}
 		b.Transactions = append(b.Transactions, su)
 	}
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	start := time.Now()
-	err := c.put(ctx, u, b)
-	slog.Info("firefly apply category", "id", id, "duration", time.Since(start).Round(time.Millisecond).String(), "err", err != nil)
-	return err
+	return c.put(ctx, u, b)
 }
 
 // ResolveSuggestedTags applies or rejects previously suggested tags on a
@@ -863,10 +846,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 	}
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	start := time.Now()
-	err := c.put(ctx, u, b)
-	slog.Info("firefly update transaction (AI)", "id", id, "duration", time.Since(start).Round(time.Millisecond).String(), "err", err != nil)
-	return err
+	return c.put(ctx, u, b)
 }
 
 // isControlTag reports whether a tag is one of the app's old AI control tags
@@ -1013,25 +993,10 @@ func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*h
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if method != http.MethodGet {
-		start := time.Now()
-		since := func() string { return time.Since(start).Round(time.Millisecond).String() }
-		trace := &httptrace.ClientTrace{
-			GotConn:              func(httptrace.GotConnInfo) { slog.Info("trace gotconn", "t", since()) },
-			WroteRequest:         func(httptrace.WroteRequestInfo) { slog.Info("trace wrote-request", "t", since()) },
-			GotFirstResponseByte: func() { slog.Info("trace first-byte", "t", since()) },
-		}
-		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		slog.Warn("firefly http error", "method", method, "err", err.Error())
-	}
-	return resp, err
+	return c.httpClient.Do(req)
 }
 
 func (c *Client) get(ctx context.Context, u string, out interface{}) error {
