@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -27,7 +28,15 @@ func New(baseURL, token, tagPrefix string) *Client {
 		token:      token,
 		tagPrefix:  tagPrefix,
 		applyRules: true,
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		httpClient: &http.Client{
+			Timeout: 120 * time.Second,
+			Transport: &http.Transport{
+				Proxy:              nil,
+				DisableKeepAlives:  true,
+				DisableCompression: true,
+				ForceAttemptHTTP2:  false,
+			},
+		},
 	}
 }
 
@@ -1004,10 +1013,25 @@ func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*h
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return c.httpClient.Do(req)
+	if method != http.MethodGet {
+		start := time.Now()
+		since := func() string { return time.Since(start).Round(time.Millisecond).String() }
+		trace := &httptrace.ClientTrace{
+			GotConn:              func(httptrace.GotConnInfo) { slog.Info("trace gotconn", "t", since()) },
+			WroteRequest:         func(httptrace.WroteRequestInfo) { slog.Info("trace wrote-request", "t", since()) },
+			GotFirstResponseByte: func() { slog.Info("trace first-byte", "t", since()) },
+		}
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		slog.Warn("firefly http error", "method", method, "err", err.Error())
+	}
+	return resp, err
 }
 
 func (c *Client) get(ctx context.Context, u string, out interface{}) error {
