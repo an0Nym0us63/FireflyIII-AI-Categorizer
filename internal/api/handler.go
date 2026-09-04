@@ -1275,6 +1275,7 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 			CategoryName:    s.CategoryName,
 			SuggestedTags:   tags,
 			AppliedTags:     classifier.SemanticTags(s.Tags),
+			Reason:          reasonByID[id],
 			Transactions:    []reviewTxn{{ID: t.ID, Date: s.Date, Amount: s.Amount}},
 		})
 	}
