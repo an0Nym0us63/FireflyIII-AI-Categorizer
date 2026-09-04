@@ -193,6 +193,20 @@ pre.detail-pre {
         padding: 8px !important;
     }
 
+    /* Tables must not impose their own (wide) layout on phones, or the grid
+       rows overflow and the tags scroll off-screen. Make them block. */
+    #tab-transactions .table,
+    #tab-transactions .table > tbody,
+    #job-table,
+    #job-table > tbody {
+        display: block;
+        width: 100%;
+    }
+    #tab-transactions .table-responsive,
+    #tab-jobs .table-responsive {
+        overflow-x: hidden !important;
+    }
+
     /* ── Transactions: precise card via CSS grid (no horizontal scroll) ── */
     #txn-tbody > tr {
         display: grid;
@@ -256,30 +270,49 @@ pre.detail-pre {
         margin-left: 14px;
     }
 
-    /* ── Jobs & Review: flow cells to use the full tile width ──────── */
-    #job-table > tbody > tr,
-    #review-body table > tbody > tr {
-        display: block;
+    /* ── Jobs: same card philosophy via grid ──────────────────────── */
+    #job-table > tbody > tr {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas:
+            "chevron dest    actions"
+            "chevron cat     actions"
+            "status  tags    tags"
+            "desc    desc    desc";
+        gap: 3px 8px;
+        align-items: center;
         border: 1px solid rgba(128, 128, 128, .25);
         border-radius: 6px;
         margin: 0 0 6px;
-        padding: 6px 10px;
+        padding: 8px 10px;
     }
-    #job-table > tbody > tr > td,
-    #review-body table > tbody > tr > td {
-        display: inline-block;
-        vertical-align: middle;
+    #job-table > tbody > tr > td {
+        padding: 0;
         border: none !important;
-        padding: 1px 8px 1px 0;
         white-space: normal !important;
-        text-align: left !important;
         width: auto !important;
+        text-align: left !important;
+        min-width: 0;
     }
-    #job-table > tbody > tr > td:nth-child(2) {
-        display: block;
-        font-size: 15px;
+    #job-table .j-chevron { grid-area: chevron; }
+    #job-table .j-dest    { grid-area: dest; font-size: 15px; font-weight: 600; }
+    #job-table .j-cat     { grid-area: cat; }
+    #job-table .j-tags    { grid-area: tags; }
+    #job-table .j-status  { grid-area: status; }
+    #job-table .j-desc    { grid-area: desc; font-size: 12px; color: #8a8a8a; }
+    #job-table .j-amount  { display: none; }
+    #job-table .j-time    { display: none; }
+    #job-table .j-actions {
+        grid-area: actions;
+        text-align: right;
+        align-self: start;
+        white-space: nowrap;
     }
     #job-table .job-real {
+        display: block;
+    }
+    /* Job detail (expanded) row spans full width. */
+    #job-table > tbody > tr.job-detail-row {
         display: block;
     }
     /* Column headers are meaningless once rows are stacked. */

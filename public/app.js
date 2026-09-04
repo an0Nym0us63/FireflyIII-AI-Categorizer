@@ -23,8 +23,6 @@ var TAB_META = {
     jobs: {title: 'Jobs', sub: 'Recent classification activity'},
     transactions: {title: 'Transactions', sub: 'Select and re-categorize transactions'},
     review: {title: 'Review', sub: 'Review categories, destinations, and conversions'},
-    categories: {title: 'Categories', sub: 'Categories available to the AI'},
-    accounts: {title: 'Accounts', sub: 'Expense accounts for destination matching'},
     help: {title: 'Help', sub: 'Documentation and setup guide'},
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
@@ -628,15 +626,15 @@ function buildJobRow(j) {
     var realDiv = function (f) { return '<div class="job-real" data-f="' + f + '" data-txn="' + tid + '" style="font-size:11px;color:#8a8a8a"></div>'; };
 
     tr.innerHTML =
-        '<td style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
-        + '<td>' + destHtml + srcBadge + realDiv('dest') + '</td>'
-        + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + realDiv('date') + '</td>'
-        + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
-        + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'
-        + '<td class="hidden-xs">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
-        + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
-        + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
-        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
+        '<td class="j-chevron" style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
+        + '<td class="j-dest">' + destHtml + srcBadge + realDiv('dest') + '</td>'
+        + '<td class="j-desc text-muted">' + esc(trunc(j.description, 55)) + realDiv('date') + '</td>'
+        + '<td class="j-amount text-right">' + amount + '</td>'
+        + '<td class="j-cat">' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'
+        + '<td class="j-tags">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
+        + '<td class="j-status"><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
+        + '<td class="j-time text-right text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
+        + '<td class="j-actions text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
     return tr;
