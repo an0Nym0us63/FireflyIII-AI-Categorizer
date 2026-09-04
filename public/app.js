@@ -294,6 +294,88 @@ function renderTagRules() {
 function addTagRule() { tagRules.push({from: '', to: ''}); renderTagRules(); }
 function removeTagRule(i) { tagRules.splice(i, 1); renderTagRules(); }
 
+// ─── Edit-transaction modal (shared across pages) ──────────────────────────
+var editTxnId = null;
+var editTxnTags = [];
+var editListsLoaded = false;
+
+function loadEditLists() {
+    if (editListsLoaded) return Promise.resolve();
+    return Promise.all([
+        fetch('/api/accounts').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+        fetch('/api/categories').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+        fetch('/api/tags').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
+    ]).then(function (res) {
+        var opts = function (arr, name) {
+            return (arr || []).map(function (x) { return typeof x === 'string' ? x : (x.name || x.Name); })
+                .filter(Boolean).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('');
+        };
+        document.getElementById('edit-accounts-list').innerHTML = opts(res[0]);
+        document.getElementById('edit-categories-list').innerHTML = opts(res[1]);
+        document.getElementById('edit-tags-list').innerHTML = opts(res[2]);
+        editListsLoaded = true;
+    });
+}
+
+function openEditModal(txnId) {
+    editTxnId = txnId;
+    editTxnTags = [];
+    $('#edit-txn-status').html('');
+    $('#edit-txn-desc').text('Chargement…');
+    $('#edit-txn-dest').val('');
+    $('#edit-txn-cat').val('');
+    renderEditTags();
+    $('#edit-txn-modal').modal('show');
+    loadEditLists();
+    fetch('/api/transactions/' + encodeURIComponent(txnId))
+        .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
+        .then(function (t) {
+            $('#edit-txn-desc').text((t.description || '') + (t.amount ? '  —  ' + t.amount : '') + (t.date ? '  (' + (t.date || '').substring(0, 10) + ')' : ''));
+            $('#edit-txn-dest').val(t.destination_name || '');
+            $('#edit-txn-cat').val(t.category_name || '');
+            editTxnTags = (t.tags || []).slice();
+            renderEditTags();
+        })
+        .catch(function () { $('#edit-txn-desc').text('Impossible de charger la transaction.'); });
+}
+
+function renderEditTags() {
+    var el = document.getElementById('edit-txn-tags');
+    if (!el) return;
+    el.innerHTML = editTxnTags.length ? editTxnTags.map(function (t, i) {
+        return '<span class="label label-primary" style="margin-right:4px">' + esc(t)
+            + ' <a href="#" style="color:#fff;text-decoration:none" onclick="removeEditTag(' + i + ');return false">\u00d7</a></span>';
+    }).join('') : '<span class="text-muted" style="font-size:12px">aucun tag</span>';
+}
+function addEditTag(v) {
+    v = (v || '').trim();
+    if (v && editTxnTags.indexOf(v) < 0) editTxnTags.push(v);
+    renderEditTags();
+}
+function removeEditTag(i) { editTxnTags.splice(i, 1); renderEditTags(); }
+
+function saveEditTxn() {
+    if (!editTxnId) return;
+    var body = {
+        destination_name: $('#edit-txn-dest').val().trim(),
+        category_name: $('#edit-txn-cat').val().trim(),
+        tags: editTxnTags
+    };
+    $('#edit-txn-status').html('<i class="fa fa-spinner fa-spin"></i> Enregistrement…');
+    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/edit', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+        $('#edit-txn-modal').modal('hide');
+        // Refresh whatever view is active.
+        if (typeof loadTransactions === 'function' && document.getElementById('txn-tbody')) loadTransactions(txnPage);
+        if (typeof loadReview === 'function' && reviewMode) { /* review refreshes on next open */ }
+    }).catch(function (e) {
+        $('#edit-txn-status').html('<span class="text-danger">Échec: ' + esc(e.message) + '</span>');
+    });
+}
+
+// ─── Edit-transaction modal (shared across pages) ── end ────────────────────
 function jobTagsHtml(j) {
     var out = (j.tags || []).map(function (t) {
         return '<span class="label label-primary" style="margin-right:2px">' + esc(t) + '</span>';
@@ -398,7 +480,8 @@ function buildJobRow(j) {
         + '<td class="hidden-xs">' + jobTagsHtml(j) + '</td>'
         + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
         + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
-        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
+        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
+        + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
     return tr;
 }
 
@@ -633,7 +716,8 @@ function renderTxnTable(rows) {
             + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
             + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-            + '<td class="hidden-xs">' + stateBadge + (semTags ? ' ' + semTags : '') + '</td>'
+            + '<td class="hidden-xs">' + stateBadge + (semTags ? ' ' + semTags : '')
+            + ' <a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer" style="margin-left:4px"><i class="fa fa-pencil"></i></a></td>'
             + '</tr>';
     }).join('');
     $('#txn-tbody').html(html);
@@ -1151,7 +1235,7 @@ function renderReviewTable(groups) {
                 + '<td>' + (g.category_name ? esc(g.category_name) : '<span class="text-muted">—</span>') + '</td>'
                 + '<td class="text-muted">—</td>'
                 + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
-                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button></td>'
+                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button> <button class="btn btn-default btn-sm" onclick="openEditModal(\'' + txnId + '\')" title="Éditer"><i class="fa fa-pencil"></i></button></td>'
                 + '</tr>';
         }
 
@@ -1161,7 +1245,7 @@ function renderReviewTable(groups) {
                 + labelCell + amtCell
                 + '<td class="text-muted">—</td><td class="text-muted">—</td>'
                 + '<td id="rev-tags-' + gi + '">' + reviewSuggestChips(txnId, gi, g.suggested_tags) + '</td>'
-                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button></td>'
+                + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button> <button class="btn btn-default btn-sm" onclick="openEditModal(\'' + txnId + '\')" title="Éditer"><i class="fa fa-pencil"></i></button></td>'
                 + '</tr>';
         }
 
@@ -1179,7 +1263,7 @@ function renderReviewTable(groups) {
             + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
             + '<td style="white-space:nowrap">'
             + '<button class="btn btn-warning btn-sm" onclick="confirmReviewRow(' + gi + ')" title="Appliquer et valider"><i class="fa fa-check"></i> Valider</button> '
-            + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button>'
+            + '<button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button> <button class="btn btn-default btn-sm" onclick="openEditModal(\'' + txnId + '\')" title="Éditer"><i class="fa fa-pencil"></i></button>'
             + '</td>'
             + '</tr>';
     }).join('');

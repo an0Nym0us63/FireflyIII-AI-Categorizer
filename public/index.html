@@ -1306,6 +1306,45 @@
         </div>
     </div>
 
+    <div class="modal fade" id="edit-txn-modal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 class="modal-title"><i class="fa fa-pencil"></i> Éditer la transaction</h4>
+                </div>
+                <div class="modal-body">
+                    <p id="edit-txn-desc" class="text-muted" style="margin-bottom:12px"></p>
+                    <div class="form-group">
+                        <label style="font-size:12px">Destination</label>
+                        <input type="text" class="form-control" id="edit-txn-dest" list="edit-accounts-list"
+                            placeholder="taper pour rechercher / créer">
+                        <datalist id="edit-accounts-list"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:12px">Catégorie</label>
+                        <input type="text" class="form-control" id="edit-txn-cat" list="edit-categories-list"
+                            placeholder="taper pour rechercher / créer">
+                        <datalist id="edit-categories-list"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:12px">Tags</label>
+                        <div id="edit-txn-tags" style="margin-bottom:6px"></div>
+                        <input type="text" class="form-control" id="edit-txn-tag-input" list="edit-tags-list"
+                            placeholder="ajouter un tag + Entrée"
+                            onkeydown="if(event.key==='Enter'){addEditTag(this.value);this.value='';event.preventDefault();}">
+                        <datalist id="edit-tags-list"></datalist>
+                    </div>
+                    <span id="edit-txn-status" style="font-size:12px"></span>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditTxn()"><i class="fa fa-check"></i> Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/js/adminlte.min.js"></script>

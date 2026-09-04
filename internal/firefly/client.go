@@ -506,6 +506,37 @@ func (c *Client) GetDestAssumedWithdrawals(ctx context.Context) ([]Transaction, 
 	})
 }
 
+// EditTransaction sets the category, destination and tags on a transaction from
+// a manual edit (category/destination created by name if they don't exist).
+func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName string, tags []string) error {
+	type splitUpdate struct {
+		TransactionJournalID string   `json:"transaction_journal_id"`
+		Tags                 []string `json:"tags"`
+		CategoryName         string   `json:"category_name,omitempty"`
+		DestinationName      string   `json:"destination_name,omitempty"`
+	}
+	type body struct {
+		ApplyRules   bool          `json:"apply_rules"`
+		FireWebhooks bool          `json:"fire_webhooks"`
+		Transactions []splitUpdate `json:"transactions"`
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	b := body{ApplyRules: false, FireWebhooks: false}
+	for _, s := range splits {
+		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
+		if strings.TrimSpace(categoryName) != "" {
+			su.CategoryName = categoryName
+		}
+		if strings.TrimSpace(destinationName) != "" {
+			su.DestinationName = destinationName
+		}
+		b.Transactions = append(b.Transactions, su)
+	}
+	return c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id), b)
+}
+
 // ApplyHumanCategory sets a category on a previously-flagged transaction.
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
 // When destinationID is non-empty, it also sets the destination expense account.

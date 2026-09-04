@@ -104,6 +104,9 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/theme", h.getTheme)
 	r.Get("/api/categories", h.getCategories)
 	r.Get("/api/accounts", h.getAccounts)
+	r.Get("/api/tags", h.getTags)
+	r.Get("/api/transactions/{id}", h.getTransaction)
+	r.Put("/api/transactions/{id}/edit", h.editTransaction)
 	r.Get("/api/transactions", h.getTransactions)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
@@ -723,6 +726,78 @@ func (h *Handler) testFirefly(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"categories": len(cats),
 	})
+}
+
+// getTransaction returns a single transaction's editable fields.
+func (h *Handler) getTransaction(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+	s := txns[0].Splits[0]
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":               id,
+		"description":      s.Description,
+		"destination_name": s.DestinationName,
+		"category_name":    s.CategoryName,
+		"tags":             classifier.SemanticTags(s.Tags),
+		"amount":           s.Amount,
+		"date":             s.Date,
+	})
+}
+
+// editTransaction applies a manual edit (category / destination / tags).
+func (h *Handler) editTransaction(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req struct {
+		CategoryName    string   `json:"category_name"`
+		DestinationName string   `json:"destination_name"`
+		Tags            []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+		http.Error(w, "transaction not found", http.StatusNotFound)
+		return
+	}
+	if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+		http.Error(w, fmt.Sprintf("failed to edit: %v", err), http.StatusBadGateway)
+		return
+	}
+	_ = h.aidb.MarkTreated(id)
+	h.registry.MarkReviewedByTxn(id)
+	h.invalidateReviewCache()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// getTags returns existing Firefly tag names (for autocomplete).
+func (h *Handler) getTags(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	tags, err := fc.GetTags(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch tags: %v", err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, tags)
 }
 
 // --- Categories ---
