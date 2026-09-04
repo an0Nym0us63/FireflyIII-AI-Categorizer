@@ -47,8 +47,9 @@ type Config struct {
 	ForceCategories   []string  // if a txn's current category is here, force re-categorize
 	TagRules          []TagRule // tags to strip (optionally replace) from transactions
 
-	GeminiThinking string
-	AIDBFile       string
+	GeminiThinking  string
+	GeminiGrounding bool
+	AIDBFile        string
 
 	SearchEngine string // "google", "duckduckgo", or "" (disabled)
 
@@ -199,6 +200,7 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	if sc.GeminiThinking != "" {
 		cfg.GeminiThinking = sc.GeminiThinking
 	}
+	cfg.GeminiGrounding = sc.GeminiGrounding
 	if sc.MailAccounts != nil {
 		cfg.MailAccounts = sc.MailAccounts
 	}

@@ -113,16 +113,17 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 	}
 
 	cl, err := classifier.Build(classifier.BuildParams{
-		Provider:       cfg.AIProvider,
-		OpenAIKey:      cfg.OpenAIKey,
-		OpenAIModel:    cfg.OpenAIModel,
-		OpenAIBaseURL:  cfg.OpenAIBaseURL,
-		GeminiKey:      cfg.GeminiKey,
-		GeminiModel:    cfg.GeminiModel,
-		GeminiThinking: cfg.GeminiThinking,
-		DeepseekKey:    cfg.DeepseekKey,
-		DeepseekModel:  cfg.DeepseekModel,
-		CustomContext:  cfg.CustomSystemContext,
+		Provider:        cfg.AIProvider,
+		OpenAIKey:       cfg.OpenAIKey,
+		OpenAIModel:     cfg.OpenAIModel,
+		OpenAIBaseURL:   cfg.OpenAIBaseURL,
+		GeminiKey:       cfg.GeminiKey,
+		GeminiModel:     cfg.GeminiModel,
+		GeminiThinking:  cfg.GeminiThinking,
+		GeminiGrounding: cfg.GeminiGrounding,
+		DeepseekKey:     cfg.DeepseekKey,
+		DeepseekModel:   cfg.DeepseekModel,
+		CustomContext:   cfg.CustomSystemContext,
 	})
 	if err != nil {
 		slog.Error("batch: classifier init failed", "error", err)

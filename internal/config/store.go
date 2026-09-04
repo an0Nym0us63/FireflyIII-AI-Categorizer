@@ -32,6 +32,7 @@ type StoredConfig struct {
 	TagSuggestMax           int            `json:"tag_suggest_max,omitempty"`
 	SearchEngine            string         `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)
 	GeminiThinking          string         `json:"gemini_thinking,omitempty"`
+	GeminiGrounding         bool           `json:"gemini_grounding,omitempty"`
 	MailAccounts            []MailAccount  `json:"mail_accounts,omitempty"`
 	MailDetectors           []MailDetector `json:"mail_detectors,omitempty"`
 	ForceDestinations       []string       `json:"force_destinations,omitempty"`

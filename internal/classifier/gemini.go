@@ -13,9 +13,10 @@ type GeminiClassifier struct {
 	model         string
 	customContext string
 	thinking      string // "minimal" | "low" | "medium" | "high"
+	grounding     bool   // enable Google Search grounding (looks up obscure merchants)
 }
 
-func NewGemini(apiKey, model, customContext, thinking string) (*GeminiClassifier, error) {
+func NewGemini(apiKey, model, customContext, thinking string, grounding bool) (*GeminiClassifier, error) {
 	client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
@@ -31,6 +32,7 @@ func NewGemini(apiKey, model, customContext, thinking string) (*GeminiClassifier
 		model:         model,
 		customContext: customContext,
 		thinking:      strings.ToLower(strings.TrimSpace(thinking)),
+		grounding:     grounding,
 	}, nil
 }
 
@@ -67,12 +69,19 @@ func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, e
 	}
 
 	config := &genai.GenerateContentConfig{
-		Temperature:      genai.Ptr[float32](0.1),
-		ResponseMIMEType: "application/json",
+		Temperature: genai.Ptr[float32](0.1),
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{{Text: sysPrompt}},
 		},
 		ThinkingConfig: c.thinkingConfig(),
+	}
+	if c.grounding {
+		// Google Search grounding lets the model look up obscure merchant names
+		// (e.g. "NEW COFAST" → Quick Aubière). It can't be combined with a forced
+		// JSON mime type, so we rely on the prompt + parseResponse to extract JSON.
+		config.Tools = []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}}
+	} else {
+		config.ResponseMIMEType = "application/json"
 	}
 
 	resp, err := c.client.Models.GenerateContent(ctx, c.model, genai.Text(prompt), config)

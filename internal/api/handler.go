@@ -534,8 +534,9 @@ type configResponse struct {
 
 	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
 
-	SearchEngine   string `json:"search_engine"`
-	GeminiThinking string `json:"gemini_thinking"`
+	SearchEngine    string `json:"search_engine"`
+	GeminiThinking  string `json:"gemini_thinking"`
+	GeminiGrounding bool   `json:"gemini_grounding"`
 
 	MailAccounts      []config.MailAccount  `json:"mail_accounts"`
 	MailDetectors     []config.MailDetector `json:"mail_detectors"`
@@ -570,8 +571,9 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 
 		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
-		SearchEngine:   cfg.SearchEngine,
-		GeminiThinking: cfg.GeminiThinking,
+		SearchEngine:    cfg.SearchEngine,
+		GeminiThinking:  cfg.GeminiThinking,
+		GeminiGrounding: cfg.GeminiGrounding,
 
 		MailAccounts:      maskMailAccounts(cfg.MailAccounts),
 		MailDetectors:     cfg.MailDetectors,
@@ -607,8 +609,9 @@ type configUpdateRequest struct {
 
 	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
-	SearchEngine   *string `json:"search_engine"`
-	GeminiThinking *string `json:"gemini_thinking"`
+	SearchEngine    *string `json:"search_engine"`
+	GeminiThinking  *string `json:"gemini_thinking"`
+	GeminiGrounding *bool   `json:"gemini_grounding"`
 
 	MailAccounts      *[]config.MailAccount  `json:"mail_accounts"`
 	MailDetectors     *[]config.MailDetector `json:"mail_detectors"`
@@ -1885,16 +1888,17 @@ func (h *Handler) reloadClients() error {
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
 
 	cl, err := classifier.Build(classifier.BuildParams{
-		Provider:       cfg.AIProvider,
-		OpenAIKey:      cfg.OpenAIKey,
-		OpenAIModel:    cfg.OpenAIModel,
-		OpenAIBaseURL:  cfg.OpenAIBaseURL,
-		GeminiKey:      cfg.GeminiKey,
-		GeminiModel:    cfg.GeminiModel,
-		GeminiThinking: cfg.GeminiThinking,
-		DeepseekKey:    cfg.DeepseekKey,
-		DeepseekModel:  cfg.DeepseekModel,
-		CustomContext:  cfg.CustomSystemContext,
+		Provider:        cfg.AIProvider,
+		OpenAIKey:       cfg.OpenAIKey,
+		OpenAIModel:     cfg.OpenAIModel,
+		OpenAIBaseURL:   cfg.OpenAIBaseURL,
+		GeminiKey:       cfg.GeminiKey,
+		GeminiModel:     cfg.GeminiModel,
+		GeminiThinking:  cfg.GeminiThinking,
+		GeminiGrounding: cfg.GeminiGrounding,
+		DeepseekKey:     cfg.DeepseekKey,
+		DeepseekModel:   cfg.DeepseekModel,
+		CustomContext:   cfg.CustomSystemContext,
 	})
 	if err != nil {
 		// Set firefly client even if AI fails — categories/transactions still work.
@@ -1989,6 +1993,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.GeminiThinking != nil {
 		existing.GeminiThinking = *req.GeminiThinking
+	}
+	if req.GeminiGrounding != nil {
+		existing.GeminiGrounding = *req.GeminiGrounding
 	}
 	if req.MailAccounts != nil {
 		existing.MailAccounts = mergeMailAccounts(existing.MailAccounts, *req.MailAccounts)

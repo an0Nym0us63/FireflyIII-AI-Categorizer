@@ -2268,6 +2268,7 @@ async function loadSettings() {
         $('#gemini-key-hint').toggle(!!d.gemini_key_set);
         $('#cfg-gemini-model').val(d.gemini_model || '');
         $('#cfg-gemini-thinking').val(d.gemini_thinking || 'low');
+        $('#cfg-gemini-grounding').prop('checked', !!d.gemini_grounding);
         mailAccounts = (d.mail_accounts || []).map(function (m) { return Object.assign({}, m); });
         mailDetectors = (d.mail_detectors || []).map(function (m) { return Object.assign({}, m, {keywords: (m.keywords || []).slice(), senders: (m.senders || []).slice()}); });
         renderMailConfig();
@@ -2372,6 +2373,7 @@ async function saveSettings() {
         if (k) payload.gemini_api_key = k;
         if (m) payload.gemini_model = m;
         payload.gemini_thinking = $('#cfg-gemini-thinking').val();
+    payload.gemini_grounding = $('#cfg-gemini-grounding').is(':checked');
     payload.mail_accounts = mailAccounts;
     payload.mail_detectors = mailDetectors;
     payload.force_destinations = forceDestinations;
