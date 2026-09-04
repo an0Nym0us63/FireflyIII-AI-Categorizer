@@ -1737,27 +1737,27 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		// the server does the heavy lifting (indexed, fast). AI status and the
 		// "Cash account" notion are applied client-side on the reduced result.
 		var all []firefly.TransactionRow
-		q := []string{"type:withdrawal"}
+		sq := []string{"type:withdrawal"}
 		if start != "" {
-			q = append(q, "date_after:"+start)
+			sq = append(sq, "date_after:"+start)
 		}
 		if end != "" {
-			q = append(q, "date_before:"+end)
+			sq = append(sq, "date_before:"+end)
 		}
 		if descFilter != "" {
-			q = append(q, fmt.Sprintf("description_contains:%q", descFilter))
+			sq = append(sq, fmt.Sprintf("description_contains:%q", descFilter))
 		}
 		if categoryFilter != "" {
-			q = append(q, fmt.Sprintf("category_is:%q", categoryFilter))
+			sq = append(sq, fmt.Sprintf("category_is:%q", categoryFilter))
 		}
 		if destFilter != "" && destFilter != "(no name)" {
-			q = append(q, fmt.Sprintf("destination_account_contains:%q", destFilter))
+			sq = append(sq, fmt.Sprintf("destination_account_contains:%q", destFilter))
 		}
 		if missingCategory {
-			q = append(q, "has_no_category:true")
+			sq = append(sq, "has_no_category:true")
 		}
 
-		txns, err := fc.SearchTransactionsRaw(r.Context(), strings.Join(q, " "))
+		txns, err := fc.SearchTransactionsRaw(r.Context(), strings.Join(sq, " "))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
 			return
