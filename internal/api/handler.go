@@ -55,6 +55,7 @@ type Handler struct {
 	reviewCache      []*reviewGroup
 	reviewCachedAt   time.Time
 	reviewRefreshing bool
+	reviewSplits     map[string][]firefly.Split // txn id -> splits, to skip a re-fetch on validate
 }
 
 func New(
@@ -1230,6 +1231,15 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 		txnByID[t.ID] = t
 	}
 
+	// Cache the splits so validating a row can skip re-fetching the transaction.
+	splitsByID := map[string][]firefly.Split{}
+	for _, t := range txns {
+		splitsByID[t.ID] = t.Splits
+	}
+	h.reviewMu.Lock()
+	h.reviewSplits = splitsByID
+	h.reviewMu.Unlock()
+
 	// Category / destination review (grouped by payee), in record order.
 	var needsReview, assumed, destAssumed []firefly.Transaction
 	for _, id := range ids {
@@ -1406,10 +1416,18 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
-	if err != nil || len(txns) == 0 {
-		http.Error(w, "transaction not found", http.StatusNotFound)
-		return
+	// Reuse the splits cached when the review was computed, to skip a Firefly
+	// round-trip per validation. Fall back to a fetch if not cached.
+	h.reviewMu.Lock()
+	splits, cached := h.reviewSplits[id]
+	h.reviewMu.Unlock()
+	if !cached {
+		txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+		if err != nil || len(txns) == 0 {
+			http.Error(w, "transaction not found", http.StatusNotFound)
+			return
+		}
+		splits = txns[0].Splits
 	}
 
 	destID := ""
@@ -1430,7 +1448,7 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
 	}
 
-	if err := fc.ApplyHumanCategory(r.Context(), id, txns[0].Splits, req.CategoryID, destID); err != nil {
+	if err := fc.ApplyHumanCategory(r.Context(), id, splits, req.CategoryID, destID); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
 	}
