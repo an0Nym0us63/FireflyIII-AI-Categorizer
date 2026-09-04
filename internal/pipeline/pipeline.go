@@ -263,9 +263,12 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		historyMatchCat = ""
 		histCatCount = 0
 	}
-	// For mail-detector merchants with order content, history reuse makes no
-	// sense — never let the (e.g. PayPal) history destination win.
-	if skipIfEmpty && extraContext != "" {
+	// Mail-detector merchants (PayPal/Amazon/AliExpress…) must NEVER auto-match on
+	// history — each of their transactions is different; they're driven by the
+	// order email/content only.
+	if skipIfEmpty {
+		historyMatchCat = ""
+		histCatCount = 0
 		historyMatchDestID = ""
 		histDestCount = 0
 	}
@@ -1085,6 +1088,7 @@ type AutoMatchExplanation struct {
 	MatchedCategoryCount int              `json:"matched_category_count"`
 	MatchedDestination   string           `json:"matched_destination"`
 	MatchedTags          []string         `json:"matched_tags"`
+	MailDetector         bool             `json:"mail_detector"`
 	Notes                []string         `json:"notes"`
 }
 
@@ -1111,6 +1115,10 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	ex := &AutoMatchExplanation{
 		GroupKey: gkey, Amount: amount, AmountRatio: historyMatchMaxRatio, MinCount: historyMatchMinCount,
 		CategoryVotes: map[string]int{}, DestVotes: map[string]int{}, TagVotes: map[string]int{},
+	}
+	if p.matchMailDetector(s.Description) != nil {
+		ex.MailDetector = true
+		ex.Notes = append(ex.Notes, "Ce marchand est géré par un détecteur mail → l'auto-match par historique est désactivé (catégorisation depuis l'email de commande).")
 	}
 
 	accounts, _ := p.getExpenseAccounts(ctx)

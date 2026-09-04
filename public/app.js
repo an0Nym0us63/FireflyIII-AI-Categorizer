@@ -315,6 +315,9 @@ function votesHtml(title, votes) {
 
 function renderAutoMatch(ex) {
     var h = '';
+    if (ex.mail_detector) {
+        h += '<div class="callout callout-warning" style="padding:8px 12px;margin:0 0 8px"><i class="fa fa-envelope-o"></i> Marchand géré par un <strong>détecteur mail</strong> — l\'auto-match par historique est désactivé (catégorisation via l\'email de commande).</div>';
+    }
     h += '<p><strong>Clé marchand :</strong> <code>' + esc(ex.group_key || '—') + '</code>'
         + ' &nbsp; <strong>Montant :</strong> ' + (ex.amount ? ex.amount.toFixed(2) : '—')
         + ' &nbsp; <span class="text-muted" style="font-size:12px">(règles : ≥ ' + ex.min_count + ' occurrences, montant à ±' + ex.amount_ratio + '×, pas d\'égalité)</span></p>';
