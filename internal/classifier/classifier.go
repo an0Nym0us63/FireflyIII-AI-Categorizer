@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type Outcome string
@@ -19,10 +20,11 @@ type HistoricalEntry struct {
 	DestinationName      string
 	Description          string
 	CategoryName         string
-	GroupKey             string   // effective lookup key — destination name, or description when destination is blank
-	Amount               float64  // 0 means unknown; used for history-match confidence check
-	DestinationAccountID string   // expense account ID from a previous classification (empty if unknown)
-	Tags                 []string // semantic (non-control) tags from the past transaction
+	GroupKey             string    // effective lookup key — destination name, or description when destination is blank
+	Amount               float64   // 0 means unknown; used for history-match confidence check
+	DestinationAccountID string    // expense account ID from a previous classification (empty if unknown)
+	Tags                 []string  // semantic (non-control) tags from the past transaction
+	Date                 time.Time // operation date (for recency weighting); zero if unknown
 }
 
 // GroupKey returns the key used to group and look up transaction history.

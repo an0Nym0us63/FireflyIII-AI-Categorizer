@@ -62,6 +62,9 @@ type Pipeline struct {
 	forceCategories   []string
 	tagRules          []config.TagRule
 
+	histMu   sync.Mutex
+	histMemo map[string]memoEntry
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
@@ -111,7 +114,13 @@ func New(
 		forceDestinations: forceDestinations,
 		forceCategories:   forceCategories,
 		tagRules:          tagRules,
+		histMemo:          map[string]memoEntry{},
 	}
+}
+
+type memoEntry struct {
+	entries []classifier.HistoricalEntry
+	at      time.Time
 }
 
 // DestinationMatchEnabled returns whether destination matching is enabled in config.
@@ -247,15 +256,14 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
 	}
 
-	// Fetch enough history for both the match check and the AI prompt.
-	lookupLimit := historyMatchLookup
-	if p.contextN > lookupLimit {
-		lookupLimit = p.contextN
-	}
-	history := excludeTransaction(p.cache.GetHistory(ctx, gkey, lookupLimit), transactionID)
+	// Same-merchant history via Firefly's indexed search, windowed around the
+	// transaction date and recency-weighted.
+	history := excludeTransaction(p.merchantHistory(ctx, gkey, fireflyDate), transactionID)
 
-	historyMatchCat, histCatCount := tryHistoryMatch(history, j.Amount)
-	historyMatchDestID, histDestCount := tryDestinationHistoryMatch(history, j.Amount)
+	historyMatchCat, _ := weightedCategory(history, fireflyDate, derefAmount(j.Amount))
+	historyMatchDestID, _ := weightedDestination(history, fireflyDate, derefAmount(j.Amount))
+	histCatCount := len(history)
+	histDestCount := len(history)
 
 	// With real order content, let the LLM decide the category from it rather
 	// than reusing a possibly-wrong past category.
@@ -317,7 +325,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			}
 		}
 		reason := fmt.Sprintf("Auto-matched from %d previous transactions with the same payee.", histCatCount)
-		histTags := tryHistoryTags(history, j.Amount)
+		histTags := weightedTags(history, fireflyDate, derefAmount(j.Amount))
 		outcome := firefly.UpdateOutcome{
 			Outcome:       string(classifier.Classified),
 			Category:      historyMatchCat,
@@ -460,7 +468,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// When the category is auto-matched from history (same payee), also reapply
 	// the recurring tags from that payee's past transactions.
 	if historyMatchCat != "" {
-		for _, t := range tryHistoryTags(history, j.Amount) {
+		for _, t := range weightedTags(history, fireflyDate, derefAmount(j.Amount)) {
 			if !containsFoldStr(outcome.Tags, t) {
 				outcome.Tags = append(outcome.Tags, t)
 			}
@@ -1108,6 +1116,10 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		amount = math.Abs(v)
 	}
 	gkey := classifier.GroupKey(s.DestinationName, s.Description)
+	var txnDate time.Time
+	if len(s.Date) >= 10 {
+		txnDate, _ = time.Parse("2006-01-02", s.Date[:10])
+	}
 
 	ex := &AutoMatchExplanation{
 		GroupKey: gkey, Amount: amount, AmountRatio: historyMatchMaxRatio, MinCount: historyMatchMinCount,
@@ -1126,7 +1138,6 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	if err != nil {
 		return nil, err
 	}
-	windowStart := time.Now().AddDate(0, 0, -365)
 
 	var voteHistory []classifier.HistoricalEntry
 	for _, t := range all {
@@ -1149,15 +1160,23 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		}
 
 		reason, counted := "", false
-		inWindow := true
+		var spDate time.Time
 		if len(sp.Date) >= 10 {
-			if d, derr := time.Parse("2006-01-02", sp.Date[:10]); derr == nil && d.Before(windowStart) {
+			spDate, _ = time.Parse("2006-01-02", sp.Date[:10])
+		}
+		inWindow := true
+		if !txnDate.IsZero() && !spDate.IsZero() {
+			dd := spDate.Sub(txnDate)
+			if dd < 0 {
+				dd = -dd
+			}
+			if dd.Hours()/24 > autoMatchWindowDays {
 				inWindow = false
 			}
 		}
 		switch {
 		case !inWindow:
-			reason = "hors fenêtre 365j"
+			reason = "hors fenêtre ±24 mois"
 		case sp.CategoryName == "":
 			reason = "non catégorisée"
 		case classifier.IsGenericAccountName(sp.DestinationName):
@@ -1191,14 +1210,15 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 			}
 			voteHistory = append(voteHistory, classifier.HistoricalEntry{
 				CategoryName: sp.CategoryName, DestinationName: sp.DestinationName,
-				DestinationAccountID: sp.DestinationID, Amount: amt, Tags: semTags,
+				DestinationAccountID: sp.DestinationID, Amount: amt, Tags: semTags, Date: spDate,
 			})
 		}
 	}
 
-	cat, catN := tryHistoryMatch(voteHistory, &amount)
+	cat, _ := weightedCategory(voteHistory, txnDate, amount)
+	catN := len(voteHistory)
 	ex.MatchedCategory, ex.MatchedCategoryCount = cat, catN
-	if destID, _ := tryDestinationHistoryMatch(voteHistory, &amount); destID != "" {
+	if destID, _ := weightedDestination(voteHistory, txnDate, amount); destID != "" {
 		for _, e := range voteHistory {
 			if e.DestinationAccountID == destID {
 				ex.MatchedDestination = e.DestinationName
@@ -1209,7 +1229,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 			ex.MatchedDestination = destID
 		}
 	}
-	ex.MatchedTags = tryHistoryTags(voteHistory, &amount)
+	ex.MatchedTags = weightedTags(voteHistory, txnDate, amount)
 
 	if len(ex.Entries) == 0 {
 		ex.Notes = append(ex.Notes, "Aucune transaction du même marchand trouvée.")
@@ -1221,13 +1241,10 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 				best, bestN = c, n
 			}
 		}
-		switch {
-		case bestN == 0:
+		if bestN == 0 {
 			ex.Notes = append(ex.Notes, "Catégorie : aucune occurrence comptée (voir colonne « compté »).")
-		case bestN < historyMatchMinCount:
-			ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie : « %s » n'a que %d occurrence(s) comptée(s), il en faut %d.", best, bestN, historyMatchMinCount))
-		default:
-			ex.Notes = append(ex.Notes, "Catégorie : égalité entre plusieurs catégories → pas de conclusion (l'IA décide).")
+		} else {
+			ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie : « %s » n'atteint pas le poids requis (récence) ou trop proche d'une autre → l'IA décide.", best))
 		}
 	} else {
 		ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie retenue : « %s » (%d votes).", cat, catN))
@@ -1241,12 +1258,186 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	return ex, nil
 }
 
+// ─── Weighted, search-based auto-match ──────────────────────────────────────
+
+const (
+	autoMatchWindowDays = 731 // ±~24 months around the transaction date
+	autoMatchMinWeight  = 1.5 // ≈ 2 recent occurrences, or ~3 older ones
+	autoMatchTieMargin  = 1.3 // winner must beat the runner-up by this factor
+)
+
+func recencyWeight(entryDate, txnDate time.Time) float64 {
+	if entryDate.IsZero() || txnDate.IsZero() {
+		return 0.6
+	}
+	d := entryDate.Sub(txnDate)
+	if d < 0 {
+		d = -d
+	}
+	days := d.Hours() / 24
+	switch {
+	case days <= 92:
+		return 1.0
+	case days <= 366:
+		return 0.6
+	case days <= 731:
+		return 0.3
+	default:
+		return 0.1
+	}
+}
+
+func amountCompatible(a, b float64) bool {
+	if a <= 0 || b <= 0 {
+		return true
+	}
+	return math.Max(a, b)/math.Min(a, b) <= historyMatchMaxRatio
+}
+
+func weightedVote(weights map[string]float64) (string, float64) {
+	best, bestW, second := "", 0.0, 0.0
+	for k, w := range weights {
+		if w > bestW {
+			second, best, bestW = bestW, k, w
+		} else if w > second {
+			second = w
+		}
+	}
+	if bestW < autoMatchMinWeight {
+		return "", bestW
+	}
+	if second > 0 && bestW < second*autoMatchTieMargin {
+		return "", bestW
+	}
+	return best, bestW
+}
+
+func weightedCategory(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
+	w := map[string]float64{}
+	for _, h := range history {
+		if h.CategoryName == "" || !amountCompatible(amount, h.Amount) {
+			continue
+		}
+		w[h.CategoryName] += recencyWeight(h.Date, txnDate)
+	}
+	return weightedVote(w)
+}
+
+func weightedDestination(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
+	w := map[string]float64{}
+	for _, h := range history {
+		if h.DestinationAccountID == "" || !amountCompatible(amount, h.Amount) {
+			continue
+		}
+		w[h.DestinationAccountID] += recencyWeight(h.Date, txnDate)
+	}
+	return weightedVote(w)
+}
+
+func weightedTags(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) []string {
+	w := map[string]float64{}
+	var order []string
+	orig := map[string]string{}
+	for _, h := range history {
+		if !amountCompatible(amount, h.Amount) {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, t := range h.Tags {
+			k := strings.ToLower(strings.TrimSpace(t))
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			if _, ok := orig[k]; !ok {
+				orig[k] = t
+				order = append(order, k)
+			}
+			w[k] += recencyWeight(h.Date, txnDate)
+		}
+	}
+	var out []string
+	for _, k := range order {
+		if w[k] >= autoMatchMinWeight {
+			out = append(out, orig[k])
+		}
+	}
+	return out
+}
+
+// merchantHistory fetches (and briefly memoizes) same-merchant history via
+// Firefly's indexed search, keeping categorized non-generic withdrawals within
+// ±autoMatchWindowDays of the transaction date.
+func (p *Pipeline) merchantHistory(ctx context.Context, gkey string, txnDate time.Time) []classifier.HistoricalEntry {
+	if gkey == "" {
+		return nil
+	}
+	p.histMu.Lock()
+	memo, ok := p.histMemo[gkey]
+	fresh := ok && time.Since(memo.at) < 2*time.Minute
+	p.histMu.Unlock()
+
+	var raw []classifier.HistoricalEntry
+	if fresh {
+		raw = memo.entries
+	} else {
+		txns, err := p.firefly.SearchWithdrawals(ctx, gkey)
+		if err != nil {
+			slog.Warn("merchant history search failed", "error", err)
+			return nil
+		}
+		for _, t := range txns {
+			if len(t.Splits) == 0 {
+				continue
+			}
+			s := t.Splits[0]
+			if classifier.GroupKey(s.DestinationName, s.Description) != gkey {
+				continue
+			}
+			if s.CategoryName == "" || classifier.IsGenericAccountName(s.DestinationName) {
+				continue
+			}
+			amt, _ := strconv.ParseFloat(strings.TrimSpace(s.Amount), 64)
+			var d time.Time
+			if len(s.Date) >= 10 {
+				d, _ = time.Parse("2006-01-02", s.Date[:10])
+			}
+			raw = append(raw, classifier.HistoricalEntry{
+				TransactionID: t.ID, DestinationName: s.DestinationName, Description: s.Description,
+				CategoryName: s.CategoryName, DestinationAccountID: s.DestinationID,
+				Amount: math.Abs(amt), Tags: classifier.SemanticTags(s.Tags), Date: d,
+			})
+		}
+		p.histMu.Lock()
+		p.histMemo[gkey] = memoEntry{entries: raw, at: time.Now()}
+		p.histMu.Unlock()
+	}
+
+	var out []classifier.HistoricalEntry
+	for _, h := range raw {
+		if !txnDate.IsZero() && !h.Date.IsZero() {
+			d := h.Date.Sub(txnDate)
+			if d < 0 {
+				d = -d
+			}
+			if d.Hours()/24 > autoMatchWindowDays {
+				continue
+			}
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
 // InvalidateHistory forces the history cache to refetch from Firefly on next use
 // (call after a manual category/destination/tag change so auto-match stays fresh).
 func (p *Pipeline) InvalidateHistory() {
 	if p.cache != nil {
 		p.cache.Invalidate()
 	}
+	p.histMu.Lock()
+	p.histMemo = map[string]memoEntry{}
+	p.histMu.Unlock()
 }
 
 // SimilarTxn is a transaction sharing a merchant with the reference one.

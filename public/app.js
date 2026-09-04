@@ -320,7 +320,7 @@ function renderAutoMatch(ex) {
     }
     h += '<p><strong>Clé marchand :</strong> <code>' + esc(ex.group_key || '—') + '</code>'
         + ' &nbsp; <strong>Montant :</strong> ' + (ex.amount ? ex.amount.toFixed(2) : '—')
-        + ' &nbsp; <span class="text-muted" style="font-size:12px">(règles : ≥ ' + ex.min_count + ' occurrences, montant à ±' + ex.amount_ratio + '×, pas d\'égalité)</span></p>';
+        + ' &nbsp; <span class="text-muted" style="font-size:12px">(règles : vote pondéré par récence, fenêtre ±24 mois autour de la date, montant à ±' + ex.amount_ratio + '×, gagnant net requis)</span></p>';
 
     if (ex.notes && ex.notes.length) {
         h += '<div class="callout callout-info" style="padding:8px 12px;margin:8px 0">'
