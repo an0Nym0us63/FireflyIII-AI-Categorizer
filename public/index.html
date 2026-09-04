@@ -209,6 +209,14 @@
                                     <h3 class="box-title">Classification Jobs</h3>
                                     <div class="box-tools pull-right">
                                         <div style="display:inline-block;margin-right:6px">
+                                            <select class="form-control input-sm" onchange="onJobSource(this.value)" style="width:auto;display:inline-block">
+                                                <option value="">Toutes sources</option>
+                                                <option value="webhook">Webhook</option>
+                                                <option value="batch">Batch</option>
+                                                <option value="manual">Manuel</option>
+                                            </select>
+                                        </div>
+                                        <div style="display:inline-block;margin-right:6px">
                                             <input type="text" class="form-control input-sm" id="job-search"
                                                 placeholder="Rechercher…" oninput="onJobSearch(this.value)"
                                                 style="width:180px;display:inline-block">

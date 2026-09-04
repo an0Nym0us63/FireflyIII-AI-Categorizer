@@ -160,6 +160,7 @@ applyTheme();
 
 // ─── Jobs ──────────────────────────────────────────────────────────────────
 var jobSearch = '';
+var jobSource = '';
 var jobPage = 1;
 var JOB_PAGE_SIZE = 25;
 var jobRenderTimer = null;
@@ -395,6 +396,7 @@ function jobMatchesSearch(j, q) {
 }
 
 function onJobSearch(v) { jobSearch = (v || '').toLowerCase().trim(); jobPage = 1; renderJobTable(); }
+function onJobSource(v) { jobSource = v || ''; jobPage = 1; renderJobTable(); }
 function jobGoPage(n) { jobPage = n; renderJobTable(); }
 function scheduleJobRender() {
     if (jobRenderTimer) return;
@@ -404,6 +406,7 @@ function scheduleJobRender() {
 function renderJobTable() {
     var tbody = document.getElementById('job-tbody');
     var all = Object.values(jobs).filter(function (j) { return jobMatchesSearch(j, jobSearch); })
+        .filter(function (j) { return !jobSource || (j.source || '') === jobSource; })
         .sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at); });
     var total = all.length;
     var pages = Math.max(1, Math.ceil(total / JOB_PAGE_SIZE));
@@ -502,12 +505,17 @@ function buildJobRow(j) {
         destHtml += ' <i class="fa fa-plus-circle text-success" title="Account created" style="font-size:11px"></i>';
     }
 
+    var srcBadge = '';
+    if (j.source === 'webhook') srcBadge = ' <span class="label label-info" style="font-size:9px" title="Depuis un webhook">hook</span>';
+    else if (j.source === 'batch') srcBadge = ' <span class="label label-default" style="font-size:9px" title="Depuis un batch">batch</span>';
+    else if (j.source === 'manual') srcBadge = ' <span class="label label-default" style="font-size:9px" title="Relance manuelle">manuel</span>';
+
     var tid = esc(j.transaction_id || '');
     var realDiv = function (f) { return '<div class="job-real" data-f="' + f + '" data-txn="' + tid + '" style="font-size:11px;color:#8a8a8a"></div>'; };
 
     tr.innerHTML =
         '<td style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
-        + '<td>' + destHtml + realDiv('dest') + '</td>'
+        + '<td>' + destHtml + srcBadge + realDiv('dest') + '</td>'
         + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + realDiv('date') + '</td>'
         + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
         + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'

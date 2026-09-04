@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,8 +167,8 @@ ORDER BY updated_at DESC`)
 // none exists (used for the manual "mark as treated" bulk action).
 func (d *DB) MarkTreated(id string) error {
 	_, err := d.db.Exec(`
-INSERT INTO ai_records (transaction_id, outcome, reviewed, suggested_tags, updated_at)
-VALUES (?, 'REVIEWED', 1, '[]', ?)
+INSERT INTO ai_records (transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at)
+VALUES (?, 'REVIEWED', '', '', '', '', '[]', 1, ?)
 ON CONFLICT(transaction_id) DO UPDATE SET reviewed = 1, updated_at = excluded.updated_at`,
 		id, time.Now().Unix())
 	return err
@@ -224,18 +225,26 @@ type scanner interface {
 
 func scanRecord(s scanner) (*Record, error) {
 	var r Record
-	var tagsJSON string
-	var reviewed int
-	var updated string
-	if err := s.Scan(&r.TransactionID, &r.Outcome, &r.Category, &r.DestConfidence, &r.Reason, &r.Assumption, &tagsJSON, &reviewed, &updated); err != nil {
+	var outcome, category, destConf, reason, assumption, tagsJSON, updated sql.NullString
+	var reviewed sql.NullInt64
+	if err := s.Scan(&r.TransactionID, &outcome, &category, &destConf, &reason, &assumption, &tagsJSON, &reviewed, &updated); err != nil {
 		return nil, err
 	}
-	if tagsJSON != "" {
-		_ = json.Unmarshal([]byte(tagsJSON), &r.SuggestedTags)
+	r.Outcome = outcome.String
+	r.Category = category.String
+	r.DestConfidence = destConf.String
+	r.Reason = reason.String
+	r.Assumption = assumption.String
+	if tagsJSON.String != "" {
+		_ = json.Unmarshal([]byte(tagsJSON.String), &r.SuggestedTags)
 	}
-	r.Reviewed = reviewed != 0
-	if t, err := time.Parse(time.RFC3339, updated); err == nil {
-		r.UpdatedAt = t
+	r.Reviewed = reviewed.Int64 != 0
+	if updated.String != "" {
+		if t, err := time.Parse(time.RFC3339, updated.String); err == nil {
+			r.UpdatedAt = t
+		} else if n, err := strconv.ParseInt(updated.String, 10, 64); err == nil {
+			r.UpdatedAt = time.Unix(n, 0)
+		}
 	}
 	return &r, nil
 }
