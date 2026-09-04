@@ -1375,6 +1375,22 @@
                         <datalist id="edit-tags-list"></datalist>
                     </div>
                     <span id="edit-txn-status" style="font-size:12px"></span>
+                    <hr>
+                    <div>
+                        <label style="font-weight:normal">
+                            <input type="checkbox" id="edit-apply-similar" onchange="toggleSimilarList(this.checked)">
+                            Appliquer aussi à d'autres transactions du même marchand
+                        </label>
+                        <div id="edit-similar-wrap" style="display:none;margin-top:6px">
+                            <div style="margin-bottom:4px">
+                                <a href="#" onclick="checkAllSimilar(true);return false">Tout cocher</a> ·
+                                <a href="#" onclick="checkAllSimilar(false);return false">Tout décocher</a>
+                            </div>
+                            <div id="edit-similar-list" style="max-height:220px;overflow:auto;border:1px solid #444;padding:6px;font-size:12px">
+                                <span class="text-muted">Chargement…</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">Annuler</button>

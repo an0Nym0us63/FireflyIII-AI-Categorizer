@@ -107,6 +107,8 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/tags", h.getTags)
 	r.Get("/api/transactions/{id}", h.getTransaction)
 	r.Get("/api/transactions/{id}/automatch", h.getAutoMatch)
+	r.Get("/api/transactions/{id}/similar", h.getSimilar)
+	r.Post("/api/transactions/edit-bulk", h.editBulk)
 	r.Put("/api/transactions/{id}/edit", h.editTransaction)
 	r.Post("/api/transactions/details", h.getTransactionDetails)
 	r.Get("/api/transactions", h.getTransactions)
@@ -807,6 +809,55 @@ func (h *Handler) getAutoMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ex)
+}
+
+// getSimilar returns other transactions of the same merchant (for bulk apply).
+func (h *Handler) getSimilar(w http.ResponseWriter, r *http.Request) {
+	pipe := h.getPipe()
+	if pipe == nil {
+		http.Error(w, "not configured", http.StatusServiceUnavailable)
+		return
+	}
+	sims, err := pipe.SimilarTransactions(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, sims)
+}
+
+// editBulk applies category/destination/tags to several transactions at once.
+func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		IDs             []string `json:"ids"`
+		CategoryName    string   `json:"category_name"`
+		DestinationName string   `json:"destination_name"`
+		Tags            []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	updated := 0
+	for _, id := range req.IDs {
+		txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+		if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+			continue
+		}
+		if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+			continue
+		}
+		_ = h.aidb.MarkTreated(id)
+		h.registry.MarkReviewedByTxn(id)
+		updated++
+	}
+	h.invalidateReviewCache()
+	writeJSON(w, http.StatusOK, map[string]int{"updated": updated})
 }
 
 // getTransaction returns a single transaction's editable fields.

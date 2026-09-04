@@ -1216,3 +1216,52 @@ func (p *Pipeline) InvalidateHistory() {
 		p.cache.Invalidate()
 	}
 }
+
+// SimilarTxn is a transaction sharing a merchant with the reference one.
+type SimilarTxn struct {
+	ID          string   `json:"id"`
+	Date        string   `json:"date"`
+	Description string   `json:"description"`
+	Amount      float64  `json:"amount"`
+	Category    string   `json:"category"`
+	Destination string   `json:"destination"`
+	Tags        []string `json:"tags"`
+}
+
+// SimilarTransactions returns other withdrawals that share the merchant key of
+// the given transaction (for bulk apply). Lookback ~730 days.
+func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string) ([]SimilarTxn, error) {
+	txns, err := p.firefly.GetTransactionsByIDs(ctx, []string{transactionID})
+	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+		return nil, fmt.Errorf("transaction not found")
+	}
+	s := txns[0].Splits[0]
+	key := classifier.GroupKey(s.DestinationName, s.Description)
+	if key == "" {
+		return nil, nil
+	}
+	all, err := p.firefly.GetAllWithdrawals(ctx, 730)
+	if err != nil {
+		return nil, err
+	}
+	var out []SimilarTxn
+	for _, t := range all {
+		if t.ID == transactionID || len(t.Splits) == 0 {
+			continue
+		}
+		sp := t.Splits[0]
+		if classifier.GroupKey(sp.DestinationName, sp.Description) != key {
+			continue
+		}
+		amt, _ := strconv.ParseFloat(strings.TrimSpace(sp.Amount), 64)
+		date := sp.Date
+		if len(date) >= 10 {
+			date = date[:10]
+		}
+		out = append(out, SimilarTxn{
+			ID: t.ID, Date: date, Description: sp.Description, Amount: math.Abs(amt),
+			Category: sp.CategoryName, Destination: sp.DestinationName, Tags: classifier.SemanticTags(sp.Tags),
+		})
+	}
+	return out, nil
+}

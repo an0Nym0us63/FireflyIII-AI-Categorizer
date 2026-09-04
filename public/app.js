@@ -391,6 +391,9 @@ function openEditModal(txnId) {
     $('#edit-txn-dest').val('');
     $('#edit-txn-cat').val('');
     renderEditTags();
+    $('#edit-apply-similar').prop('checked', false);
+    $('#edit-similar-wrap').hide();
+    editSimilar = [];
     $('#edit-txn-modal').modal('show');
     loadEditLists();
     fetch('/api/transactions/' + encodeURIComponent(txnId))
@@ -420,6 +423,26 @@ function addEditTag(v) {
 }
 function removeEditTag(i) { editTxnTags.splice(i, 1); renderEditTags(); }
 
+var editSimilar = [];
+function toggleSimilarList(on) {
+    $('#edit-similar-wrap').toggle(on);
+    if (!on || !editTxnId) return;
+    $('#edit-similar-list').html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Recherche des transactions du même marchand…</span>');
+    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/similar')
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (list) {
+            editSimilar = list || [];
+            if (!editSimilar.length) { $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction de ce marchand.</span>'); return; }
+            $('#edit-similar-list').html(editSimilar.map(function (s, i) {
+                return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
+                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '"> '
+                    + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
+                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span></label>';
+            }).join(''));
+        }).catch(function () { $('#edit-similar-list').html('<span class="text-danger">Erreur.</span>'); });
+}
+function checkAllSimilar(on) { document.querySelectorAll('#edit-similar-list .edit-sim-cb').forEach(function (c) { c.checked = on; }); }
+
 function saveEditTxn() {
     if (!editTxnId) return;
     var body = {
@@ -427,14 +450,24 @@ function saveEditTxn() {
         category_name: $('#edit-txn-cat').val().trim(),
         tags: editTxnTags
     };
+    var extra = [];
+    if ($('#edit-apply-similar').is(':checked')) {
+        document.querySelectorAll('#edit-similar-list .edit-sim-cb:checked').forEach(function (c) { extra.push(c.getAttribute('data-id')); });
+    }
     $('#edit-txn-status').html('<i class="fa fa-spinner fa-spin"></i> Enregistrement…');
-    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/edit', {
+    var editOne = fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/edit', {
         method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
-    }).then(function (r) {
-        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+    }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); }); });
+
+    var editRest = extra.length ? fetch('/api/transactions/edit-bulk', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids: extra, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
+    }) : Promise.resolve();
+
+    Promise.all([editOne, editRest]).then(function () {
         $('#edit-txn-modal').modal('hide');
         delete txnDetailsCache[editTxnId];
-        // Refresh whatever view is active.
+        extra.forEach(function (id) { delete txnDetailsCache[id]; });
         if (typeof loadTransactions === 'function' && document.getElementById('txn-tbody')) loadTransactions(txnPage);
         if (typeof renderJobTable === 'function' && Object.keys(jobs).length) renderJobTable();
     }).catch(function (e) {
