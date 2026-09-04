@@ -313,13 +313,14 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			}
 		}
 		reason := fmt.Sprintf("Auto-matched from %d previous transactions with the same payee.", histCatCount)
+		histTags := tryHistoryTags(history, j.Amount)
 		outcome := firefly.UpdateOutcome{
 			Outcome:       string(classifier.Classified),
 			Category:      historyMatchCat,
 			CategoryID:    categoryID,
 			DestinationID: historyMatchDestID,
 			Reason:        reason,
-			Tags:          tryHistoryTags(history, j.Amount),
+			Tags:          histTags,
 		}
 		if historyMatchDestID != "" {
 			outcome.DestConfidence = "CLASSIFIED"
@@ -353,7 +354,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				}
 			}
 		}
-		p.registry.SetFinished(j.ID, string(classifier.Classified), historyMatchCat, reason, "", "", "", destName, destAction, nil, nil)
+		p.registry.SetFinished(j.ID, string(classifier.Classified), historyMatchCat, reason, "", "", "", destName, destAction, histTags, nil)
 		p.cache.Append(classifier.HistoricalEntry{
 			TransactionID:        transactionID,
 			DestinationName:      j.DestinationName,
@@ -452,6 +453,16 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			outcome.TagsAssumed = append(outcome.TagsAssumed, t.Name)
 		}
 	}
+	// When the category is auto-matched from history (same payee), also reapply
+	// the recurring tags from that payee's past transactions.
+	if historyMatchCat != "" {
+		for _, t := range tryHistoryTags(history, j.Amount) {
+			if !containsFoldStr(outcome.Tags, t) {
+				outcome.Tags = append(outcome.Tags, t)
+			}
+		}
+	}
+
 	// Payment-method tag from the mail detector (e.g. "paypal").
 	if paymentTag != "" {
 		has := false
