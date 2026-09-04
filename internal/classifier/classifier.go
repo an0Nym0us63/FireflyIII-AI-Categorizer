@@ -99,6 +99,12 @@ var txnTypePrefixes = []string{
 var merchantStopwords = map[string]bool{
 	"LE": true, "LA": true, "LES": true, "L": true, "AU": true, "AUX": true,
 	"DU": true, "DE": true, "DES": true, "CHEZ": true, "THE": true, "A": true,
+	"ET": true, "D": true,
+	// Legal forms — never identify the merchant on their own.
+	"SCP": true, "SARL": true, "SAS": true, "SASU": true, "SA": true, "EURL": true,
+	"SCI": true, "SNC": true, "SCM": true, "SELARL": true, "SELAS": true, "GIE": true,
+	"GAEC": true, "EARL": true, "STE": true, "STES": true, "STE.": true, "SOCIETE": true,
+	"ETS": true, "ETABLISSEMENTS": true, "SASU.": true,
 }
 
 // merchantFingerprint extracts a stable merchant key from a noisy French/CA
@@ -152,10 +158,19 @@ func merchantFingerprint(description string) string {
 		return strings.Trim(tok, ".-_/")
 	}
 
-	first := clean(fields[0])
-	key := first
-	if merchantStopwords[first] && len(fields) > 1 {
-		key = first + " " + clean(fields[1])
+	// Skip leading legal-forms/fillers (SCP, SARL, DE, DES…) and take the first
+	// meaningful token as the merchant key.
+	key := ""
+	for _, f := range fields {
+		tok := clean(f)
+		if tok == "" || merchantStopwords[tok] {
+			continue
+		}
+		key = tok
+		break
+	}
+	if key == "" {
+		key = clean(fields[0])
 	}
 
 	key = strings.ToLower(strings.TrimSpace(key))
