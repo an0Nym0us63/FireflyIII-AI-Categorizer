@@ -40,6 +40,8 @@ func New(baseURL, token, tagPrefix string) *Client {
 			Transport: &http.Transport{
 				Proxy:                 nil,
 				DisableKeepAlives:     true,
+				DisableCompression:    true,
+				ForceAttemptHTTP2:     false,
 				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 				TLSHandshakeTimeout:   10 * time.Second,
 				ResponseHeaderTimeout: 45 * time.Second,
