@@ -552,7 +552,6 @@ type configResponse struct {
 	Configured          bool   `json:"configured"`
 
 	DestinationMatchEnabled bool `json:"destination_match_enabled"`
-	ApplyFireflyRules       bool `json:"apply_firefly_rules"`
 
 	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
 
@@ -590,7 +589,6 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		Configured:          cfg.IsConfigured(),
 
 		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
-		ApplyFireflyRules:       cfg.ApplyFireflyRules,
 
 		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
@@ -629,7 +627,6 @@ type configUpdateRequest struct {
 	CustomSystemContext *string `json:"custom_system_context"`
 
 	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
-	ApplyFireflyRules       *bool `json:"apply_firefly_rules"`
 
 	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
@@ -2060,7 +2057,6 @@ func (h *Handler) reloadClients() error {
 	}
 
 	fc := firefly.New(cfg.FireflyURL, cfg.FireflyToken, cfg.TagPrefix)
-	fc.SetApplyRules(cfg.ApplyFireflyRules)
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
 
 	cl, err := classifier.Build(classifier.BuildParams{
@@ -2160,9 +2156,6 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.DestinationMatchEnabled != nil {
 		existing.DestinationMatchEnabled = req.DestinationMatchEnabled
-	}
-	if req.ApplyFireflyRules != nil {
-		existing.ApplyFireflyRules = req.ApplyFireflyRules
 	}
 	if req.TagSuggestEnabled != nil {
 		existing.TagSuggestEnabled = req.TagSuggestEnabled
