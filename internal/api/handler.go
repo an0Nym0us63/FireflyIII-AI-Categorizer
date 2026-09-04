@@ -1706,6 +1706,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	missingDestination := q.Get("missing_destination") == "true"
 	destFilter := q.Get("destination")
 	categoryFilter := q.Get("category")
+	descFilter := q.Get("description")
 	statusFilter := q.Get("status")
 	idsOnly := q.Get("ids_only") == "true"
 
@@ -1729,7 +1730,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filtersActive := missingCategory || missingDestination || destFilter != "" ||
-		categoryFilter != "" || (statusFilter != "" && statusFilter != "all")
+		categoryFilter != "" || descFilter != "" || (statusFilter != "" && statusFilter != "all")
 
 	if filtersActive {
 		// Fetch all pages in range, then filter (base fields + AI status).
@@ -1753,7 +1754,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 
 		var filtered []firefly.TransactionRow
 		for _, row := range all {
-			if !matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter) {
+			if !matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, descFilter) {
 				continue
 			}
 			rec, ok := recs[row.ID]
@@ -1870,7 +1871,10 @@ func isCashAccountName(name string) bool {
 }
 
 // matchesTxnFilter checks whether a transaction row matches the active UI filters.
-func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter string) bool {
+func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter, descFilter string) bool {
+	if descFilter != "" && !strings.Contains(strings.ToLower(row.Description), strings.ToLower(descFilter)) {
+		return false
+	}
 	if missingCategory && row.CategoryName != "" {
 		return false
 	}

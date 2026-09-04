@@ -805,6 +805,7 @@ function onMissingCatChange() {
 function clearTxnFilters() {
     $('#txn-filter-category').val('').prop('disabled', false);
     $('#txn-filter-dest').val('').prop('disabled', false);
+    $('#txn-filter-desc').val('');
     $('#txn-filter-missing-cat').prop('checked', false);
     $('#txn-filter-missing-dest').prop('checked', false);
     loadTransactions();
@@ -823,6 +824,8 @@ async function loadTransactions(page) {
     if (destFilter) params.set('destination', destFilter);
     var catFilter = $('#txn-filter-category').val();
     if (catFilter) params.set('category', catFilter);
+    var descFilter = $('#txn-filter-desc').val().trim();
+    if (descFilter) params.set('description', descFilter);
     var stFilter = $("#txn-filter-status").val();
     if (stFilter) params.set("status", stFilter);
     txnFlash('', '');
@@ -1048,6 +1051,8 @@ async function selectAllPages() {
     if (destFilter) params.set('destination', destFilter);
     var catFilter = $('#txn-filter-category').val();
     if (catFilter) params.set('category', catFilter);
+    var descFilterA = $('#txn-filter-desc').val().trim();
+    if (descFilterA) params.set('description', descFilterA);
     var stFilter = $("#txn-filter-status").val();
     if (stFilter) params.set("status", stFilter);
     $('#txn-select-all-bar').html('<i class="fa fa-spinner fa-spin"></i> Fetching all transaction IDs&hellip;');
