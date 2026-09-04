@@ -30,6 +30,8 @@ var TAB_META = {
 };
 
 function switchTab(name) {
+    // Collapse the mobile sidebar after navigating (AdminLTE overlay).
+    document.body.classList.remove('sidebar-open');
     Object.keys(TAB_META).forEach(function (t) {
         document.getElementById('tab-' + t).style.display = (t === name) ? '' : 'none';
         document.getElementById('nav-' + t).classList.toggle('active', t === name);
@@ -871,10 +873,10 @@ function renderTxnTable(rows) {
             + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td style="white-space:nowrap">' + esc(date) + '</td>'
             + '<td><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
-            + '<td class="text-muted hidden-xs">' + esc(trunc(r.description, 42)) + '</td>'
+            + '<td class="text-muted">' + esc(trunc(r.description, 42)) + '</td>'
             + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-            + '<td class="hidden-xs">' + stateBadge + (semTags ? ' ' + semTags : '')
+            + '<td>' + stateBadge + (semTags ? ' ' + semTags : '')
             + ' <a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer" style="margin-left:4px"><i class="fa fa-pencil"></i></a>'
             + ' <a href="#" onclick="openAutoMatch(\'' + r.id + '\');return false" title="Pourquoi ce match ?"><i class="fa fa-search text-muted"></i></a></td>'
             + '</tr>';
