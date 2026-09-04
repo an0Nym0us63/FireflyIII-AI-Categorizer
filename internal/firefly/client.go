@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -1041,6 +1042,17 @@ func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*h
 			req.Header.Set("Content-Type", "application/json")
 		}
 		attemptStart := time.Now()
+		if method != http.MethodGet {
+			since := func() string { return time.Since(attemptStart).Round(time.Millisecond).String() }
+			trace := &httptrace.ClientTrace{
+				GetConn:              func(string) { slog.Info("trace getconn", "t", since()) },
+				GotConn:              func(httptrace.GotConnInfo) { slog.Info("trace gotconn", "t", since()) },
+				WroteHeaders:         func() { slog.Info("trace wrote-headers", "t", since()) },
+				WroteRequest:         func(httptrace.WroteRequestInfo) { slog.Info("trace wrote-request", "t", since()) },
+				GotFirstResponseByte: func() { slog.Info("trace first-byte", "t", since()) },
+			}
+			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+		}
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
