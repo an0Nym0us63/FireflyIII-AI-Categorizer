@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -21,7 +19,6 @@ type Client struct {
 	tagPrefix  string
 	httpClient *http.Client
 	applyRules bool
-	writeSem   chan struct{} // serializes writes to avoid Firefly/MariaDB lock contention
 }
 
 func New(baseURL, token, tagPrefix string) *Client {
@@ -30,24 +27,7 @@ func New(baseURL, token, tagPrefix string) *Client {
 		token:      token,
 		tagPrefix:  tagPrefix,
 		applyRules: true,
-		writeSem:   make(chan struct{}, 1),
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-			// Fresh connection per request: reusing keep-alive connections that
-			// were silently dropped (e.g. by Docker/conntrack when reaching the
-			// host's LAN IP) causes ~30s stalls on the next write. curl avoids this
-			// by always dialing anew — do the same.
-			Transport: &http.Transport{
-				Proxy:                 nil,
-				DisableKeepAlives:     true,
-				DisableCompression:    true,
-				ForceAttemptHTTP2:     false,
-				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 45 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		},
+		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -1009,71 +989,20 @@ func toTransaction(item transactionData) Transaction {
 // errors (timeouts), 429 and 5xx with a short backoff. 4xx and success return
 // immediately. The body (if any) is resent on each attempt.
 func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*http.Response, error) {
-	// Serialize writes: concurrent PUT/POST with apply_rules cause MariaDB lock
-	// contention in Firefly (each write then waits tens of seconds). Reads (GET)
-	// stay concurrent.
-	if method != http.MethodGet && c.writeSem != nil {
-		select {
-		case c.writeSem <- struct{}{}:
-			defer func() { <-c.writeSem }()
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	var rdr io.Reader
+	if body != nil {
+		rdr = bytes.NewReader(body)
 	}
-	var lastErr error
-	overallStart := time.Now()
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(time.Duration(attempt) * 2 * time.Second):
-			}
-		}
-		var rdr io.Reader
-		if body != nil {
-			rdr = bytes.NewReader(body)
-		}
-		req, err := http.NewRequestWithContext(ctx, method, u, rdr)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+c.token)
-		req.Header.Set("Accept", "application/json")
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-		attemptStart := time.Now()
-		if method != http.MethodGet {
-			since := func() string { return time.Since(attemptStart).Round(time.Millisecond).String() }
-			trace := &httptrace.ClientTrace{
-				GetConn:              func(string) { slog.Info("trace getconn", "t", since()) },
-				GotConn:              func(httptrace.GotConnInfo) { slog.Info("trace gotconn", "t", since()) },
-				WroteHeaders:         func() { slog.Info("trace wrote-headers", "t", since()) },
-				WroteRequest:         func(httptrace.WroteRequestInfo) { slog.Info("trace wrote-request", "t", since()) },
-				GotFirstResponseByte: func() { slog.Info("trace first-byte", "t", since()) },
-			}
-			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-		}
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			lastErr = err
-			slog.Warn("firefly http attempt failed", "method", method, "attempt", attempt+1, "dur", time.Since(attemptStart).Round(time.Millisecond).String(), "err", err.Error())
-			continue // network/timeout → retry
-		}
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			b, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
-			slog.Warn("firefly http transient status", "method", method, "attempt", attempt+1, "status", resp.StatusCode, "dur", time.Since(attemptStart).Round(time.Millisecond).String())
-			continue // transient → retry
-		}
-		if d := time.Since(overallStart); d > 1*time.Second {
-			slog.Warn("firefly http slow", "method", method, "attempts", attempt+1, "total", d.Round(time.Millisecond).String())
-		}
-		return resp, nil
+	req, err := http.NewRequestWithContext(ctx, method, u, rdr)
+	if err != nil {
+		return nil, err
 	}
-	return nil, lastErr
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return c.httpClient.Do(req)
 }
 
 func (c *Client) get(ctx context.Context, u string, out interface{}) error {
