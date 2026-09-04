@@ -193,26 +193,38 @@ pre.detail-pre {
         padding: 8px !important;
     }
 
-    /* Data tables become stacked "cards" on phones so EVERY cell — tags, AI
-       status and the action buttons — is visible without horizontal scrolling. */
+    /* Data tables become compact "cards" on phones: cells flow horizontally and
+       wrap only when the line is full, so cards stay short and use the width. */
     #txn-tbody > tr,
     #job-table > tbody > tr,
     #review-body table > tbody > tr {
         display: block;
         border: 1px solid rgba(128, 128, 128, .25);
         border-radius: 6px;
-        margin: 0 0 8px;
-        padding: 6px 8px;
+        margin: 0 0 6px;
+        padding: 6px 10px;
     }
     #txn-tbody > tr > td,
     #job-table > tbody > tr > td,
     #review-body table > tbody > tr > td {
-        display: block;
+        display: inline-block;
+        vertical-align: middle;
         border: none !important;
-        padding: 3px 2px;
+        padding: 1px 8px 1px 0;
         white-space: normal !important;
         text-align: left !important;
         width: auto !important;
+    }
+    /* The merchant/payee name gets its own line and stands out. */
+    #txn-tbody > tr > td:nth-child(3),
+    #job-table > tbody > tr > td:nth-child(2) {
+        display: block;
+        font-size: 15px;
+        padding-top: 2px;
+    }
+    /* "Real current value" sub-lines stay small and on their own line. */
+    #job-table .job-real {
+        display: block;
     }
     /* Column headers are meaningless once rows are stacked. */
     #tab-transactions .table > thead,
