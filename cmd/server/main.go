@@ -132,6 +132,7 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 	}
 
 	fc := firefly.New(cfg.FireflyURL, cfg.FireflyToken, cfg.TagPrefix)
+	fc.SetApplyRules(cfg.ApplyFireflyRules)
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
 	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), adb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 

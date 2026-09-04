@@ -18,6 +18,7 @@ type Client struct {
 	token      string
 	tagPrefix  string
 	httpClient *http.Client
+	applyRules bool
 }
 
 func New(baseURL, token, tagPrefix string) *Client {
@@ -25,9 +26,14 @@ func New(baseURL, token, tagPrefix string) *Client {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		token:      token,
 		tagPrefix:  tagPrefix,
+		applyRules: true,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
+
+// SetApplyRules controls whether Firefly re-runs its rule engine after our
+// category/destination updates (needed for budget rules, but can be very slow).
+func (c *Client) SetApplyRules(v bool) { c.applyRules = v }
 
 // GetPreference fetches a single user preference value by name.
 // Returns the raw JSON value (bool, string, number) and nil on success.
@@ -590,7 +596,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		Transactions []splitUpdate `json:"transactions"`
 	}
 
-	b := body{ApplyRules: true, FireWebhooks: false}
+	b := body{ApplyRules: c.applyRules, FireWebhooks: false}
 	for _, s := range splits {
 		// Drop any old AI control tags; review status now lives in the local DB.
 		tags := make([]string, 0, len(s.Tags))
@@ -804,7 +810,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		Transactions []splitUpdate `json:"transactions"`
 	}
 
-	b := body{ApplyRules: true, FireWebhooks: false}
+	b := body{ApplyRules: c.applyRules, FireWebhooks: false}
 	for _, s := range splits {
 		// Keep the user's existing tags, but drop any of OUR old control tags
 		// (self-cleaning on reprocess) — AI status now lives in the local DB.
