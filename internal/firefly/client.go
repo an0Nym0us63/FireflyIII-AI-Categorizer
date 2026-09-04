@@ -290,14 +290,13 @@ func (c *Client) GetUncategorizedWithdrawals(ctx context.Context) ([]Transaction
 	})
 }
 
-// SearchWithdrawals asks Firefly to return withdrawals whose description contains
-// the given term (targeted merchant lookup, avoids fetching all history).
-func (c *Client) SearchWithdrawals(ctx context.Context, descContains string) ([]Transaction, error) {
-	descContains = strings.TrimSpace(descContains)
-	if descContains == "" {
+// SearchTransactionsRaw runs a raw Firefly search query and returns the matching
+// withdrawals (Firefly's indexed search — fast, no full fetch).
+func (c *Client) SearchTransactionsRaw(ctx context.Context, query string) ([]Transaction, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
 		return nil, nil
 	}
-	query := fmt.Sprintf(`description_contains:"%s"`, descContains)
 	var txns []Transaction
 	for page := 1; ; page++ {
 		u := fmt.Sprintf("%s/api/v1/search/transactions?query=%s&page=%d", c.baseURL, url.QueryEscape(query), page)
@@ -316,6 +315,16 @@ func (c *Client) SearchWithdrawals(ctx context.Context, descContains string) ([]
 		}
 	}
 	return txns, nil
+}
+
+// SearchWithdrawals asks Firefly to return withdrawals whose description contains
+// the given term (targeted merchant lookup, avoids fetching all history).
+func (c *Client) SearchWithdrawals(ctx context.Context, descContains string) ([]Transaction, error) {
+	descContains = strings.TrimSpace(descContains)
+	if descContains == "" {
+		return nil, nil
+	}
+	return c.SearchTransactionsRaw(ctx, fmt.Sprintf(`description_contains:"%s"`, descContains))
 }
 
 // GetAllWithdrawals fetches all withdrawals regardless of categorisation status.

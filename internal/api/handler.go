@@ -1733,44 +1733,50 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		categoryFilter != "" || descFilter != "" || (statusFilter != "" && statusFilter != "all")
 
 	if filtersActive {
-		// Base set: when filtering by description, let Firefly's indexed search do
-		// the heavy lifting (instant) instead of fetching every page. Otherwise
-		// fetch all pages in range and filter in Go.
+		// Build a native Firefly search query from every Firefly-able criterion so
+		// the server does the heavy lifting (indexed, fast). AI status and the
+		// "Cash account" notion are applied client-side on the reduced result.
 		var all []firefly.TransactionRow
+		q := []string{"type:withdrawal"}
+		if start != "" {
+			q = append(q, "date_after:"+start)
+		}
+		if end != "" {
+			q = append(q, "date_before:"+end)
+		}
 		if descFilter != "" {
-			txns, err := fc.SearchWithdrawals(r.Context(), descFilter)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
-				return
+			q = append(q, fmt.Sprintf("description_contains:%q", descFilter))
+		}
+		if categoryFilter != "" {
+			q = append(q, fmt.Sprintf("category_is:%q", categoryFilter))
+		}
+		if destFilter != "" && destFilter != "(no name)" {
+			q = append(q, fmt.Sprintf("destination_account_contains:%q", destFilter))
+		}
+		if missingCategory {
+			q = append(q, "has_no_category:true")
+		}
+
+		txns, err := fc.SearchTransactionsRaw(r.Context(), strings.Join(q, " "))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
+			return
+		}
+		for _, t := range txns {
+			if len(t.Splits) == 0 {
+				continue
 			}
-			for _, t := range txns {
-				if len(t.Splits) == 0 {
-					continue
-				}
-				s := t.Splits[0]
-				if start != "" && len(s.Date) >= 10 && s.Date[:10] < start {
-					continue
-				}
-				if end != "" && len(s.Date) >= 10 && s.Date[:10] > end {
-					continue
-				}
-				all = append(all, firefly.TransactionRow{
-					ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
-					Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
-				})
+			s := t.Splits[0]
+			if start != "" && len(s.Date) >= 10 && s.Date[:10] < start {
+				continue
 			}
-		} else {
-			for page := 1; ; page++ {
-				result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
-				if err != nil {
-					http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
-					return
-				}
-				all = append(all, result.Data...)
-				if page >= result.TotalPages {
-					break
-				}
+			if end != "" && len(s.Date) >= 10 && s.Date[:10] > end {
+				continue
 			}
+			all = append(all, firefly.TransactionRow{
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
+				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
+			})
 		}
 		ids := make([]string, len(all))
 		for i := range all {
