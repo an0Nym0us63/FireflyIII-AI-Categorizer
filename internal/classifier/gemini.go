@@ -60,12 +60,17 @@ func (c *GeminiClassifier) thinkingConfig() *genai.ThinkingConfig {
 	return &genai.ThinkingConfig{ThinkingLevel: level}
 }
 
+const groundingInstruction = `WEB SEARCH: You have Google Search available. Use it ONLY when the transaction description / merchant label is too cryptic or abbreviated for you to confidently identify the real merchant (e.g. an obscure company or franchise name like "NEW COFAST", or a bank-terminal string). In that case, search the web for the merchant label taken from the description to find the actual business, then classify from that. Do NOT search when the merchant is already recognizable, and never search for anything other than identifying this merchant — unnecessary searches waste quota. Whatever you do, still return ONLY the required JSON object.`
+
 func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, error) {
 	prompt := buildUserPrompt(req)
 
 	sysPrompt := BuildSystemPrompt(c.customContext, req.DestinationMatching)
 	if req.SystemPromptOverride != "" {
 		sysPrompt = req.SystemPromptOverride
+	}
+	if c.grounding {
+		sysPrompt += "\n\n" + groundingInstruction
 	}
 
 	config := &genai.GenerateContentConfig{
