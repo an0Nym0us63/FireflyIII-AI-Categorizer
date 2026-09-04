@@ -193,18 +193,21 @@ pre.detail-pre {
         padding: 8px !important;
     }
 
-    /* ── Transactions: purpose-built compact card ─────────────────── */
+    /* ── Transactions: precise card via CSS grid (no horizontal scroll) ── */
     #txn-tbody > tr {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        position: relative;
-        column-gap: 8px;
-        row-gap: 3px;
-        padding: 8px 58px 8px 12px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas:
+            "check  date    actions"
+            "dest   cat     actions"
+            "amount status  status"
+            "desc   desc    desc";
+        gap: 3px 8px;
+        align-items: center;
         border: 1px solid rgba(128, 128, 128, .25);
         border-radius: 6px;
         margin: 0 0 6px;
+        padding: 8px 10px;
     }
     #txn-tbody > tr > td {
         padding: 0;
@@ -212,47 +215,45 @@ pre.detail-pre {
         white-space: normal !important;
         width: auto !important;
         text-align: left !important;
-    }
-    #txn-tbody .c-date {
-        order: 2;
-        font-size: 12px;
-        color: #8a8a8a;
-    }
-    #txn-tbody .c-amount {
-        order: 3;
-        flex: 1 1 auto;
-        text-align: right !important;
-        font-weight: 600;
-    }
-    #txn-tbody .c-dest {
-        order: 4;
-        font-size: 15px;
-    }
-    #txn-tbody .c-cat {
-        order: 5;
-    }
-    #txn-tbody .c-desc {
-        order: 6;
-        flex-basis: 100%;
-        font-size: 12px;
-        color: #8a8a8a;
-    }
-    #txn-tbody .c-state {
-        order: 7;
-        flex-basis: 100%;
+        min-width: 0;
     }
     #txn-tbody .c-check {
-        order: 1;
+        grid-area: check;
+    }
+    #txn-tbody .c-date {
+        grid-area: date;
+        color: #8a8a8a;
+        font-size: 12px;
+    }
+    #txn-tbody .c-dest {
+        grid-area: dest;
+        font-size: 15px;
+        font-weight: 600;
+    }
+    #txn-tbody .c-cat {
+        grid-area: cat;
+    }
+    #txn-tbody .c-amount {
+        grid-area: amount;
+        font-weight: 600;
+    }
+    #txn-tbody .c-state {
+        grid-area: status;
+    }
+    #txn-tbody .c-desc {
+        grid-area: desc;
+        color: #8a8a8a;
+        font-size: 12px;
     }
     #txn-tbody .c-actions {
-        position: absolute;
-        top: 8px;
-        right: 10px;
+        grid-area: actions;
+        text-align: right;
+        align-self: start;
+        white-space: nowrap;
     }
     #txn-tbody .c-actions a {
         font-size: 18px;
         margin-left: 14px;
-        display: inline-block;
     }
 
     /* ── Jobs & Review: flow cells to use the full tile width ──────── */
