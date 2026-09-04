@@ -1208,3 +1208,11 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	}
 	return ex, nil
 }
+
+// InvalidateHistory forces the history cache to refetch from Firefly on next use
+// (call after a manual category/destination/tag change so auto-match stays fresh).
+func (p *Pipeline) InvalidateHistory() {
+	if p.cache != nil {
+		p.cache.Invalidate()
+	}
+}

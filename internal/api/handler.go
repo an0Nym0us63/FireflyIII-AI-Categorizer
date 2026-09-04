@@ -1249,6 +1249,10 @@ func (h *Handler) invalidateReviewCache() {
 	h.reviewMu.Lock()
 	h.reviewCache = nil
 	h.reviewMu.Unlock()
+	// A category/destination/tag change also makes the auto-match history stale.
+	if pipe := h.getPipe(); pipe != nil {
+		pipe.InvalidateHistory()
+	}
 }
 
 func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGroup {

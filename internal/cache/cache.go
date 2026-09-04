@@ -58,9 +58,19 @@ func (c *Cache) GetHistory(ctx context.Context, groupKey string, limit int) []cl
 
 // Append adds a freshly classified entry without waiting for TTL expiry.
 // This ensures later jobs in the same batch benefit from earlier results.
+// Append adds or replaces the history entry for a transaction (dedup by ID), so
+// reprocessing the same transaction never double-counts its vote.
 func (c *Cache) Append(entry classifier.HistoricalEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if entry.TransactionID != "" {
+		for i := range c.entries {
+			if c.entries[i].TransactionID == entry.TransactionID {
+				c.entries[i] = entry
+				return
+			}
+		}
+	}
 	c.entries = append(c.entries, entry)
 }
 
