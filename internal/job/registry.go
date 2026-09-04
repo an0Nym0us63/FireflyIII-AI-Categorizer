@@ -179,31 +179,30 @@ func (r *Registry) UpdateTagsByTxn(txnID string, applied, rejected []string) {
 	}
 	var updated []*Job
 	r.mu.Lock()
-	for _, j := range r.jobs {
-		if j.TransactionID != txnID {
-			continue
-		}
-		var newAssumed []string
-		for _, t := range j.TagsAssumed {
-			if !resolved[strings.ToLower(strings.TrimSpace(t))] {
-				newAssumed = append(newAssumed, t)
-			}
-		}
-		j.TagsAssumed = newAssumed
-		for _, a := range applied {
-			has := false
-			for _, t := range j.Tags {
-				if strings.EqualFold(t, a) {
-					has = true
-					break
+	if id, ok := r.byTxn[txnID]; ok {
+		if j := r.jobs[id]; j != nil {
+			var newAssumed []string
+			for _, t := range j.TagsAssumed {
+				if !resolved[strings.ToLower(strings.TrimSpace(t))] {
+					newAssumed = append(newAssumed, t)
 				}
 			}
-			if !has {
-				j.Tags = append(j.Tags, a)
+			j.TagsAssumed = newAssumed
+			for _, a := range applied {
+				has := false
+				for _, t := range j.Tags {
+					if strings.EqualFold(t, a) {
+						has = true
+						break
+					}
+				}
+				if !has {
+					j.Tags = append(j.Tags, a)
+				}
 			}
+			j.UpdatedAt = time.Now()
+			updated = append(updated, j)
 		}
-		j.UpdatedAt = time.Now()
-		updated = append(updated, j)
 	}
 	r.mu.Unlock()
 	for _, j := range updated {
@@ -215,17 +214,17 @@ func (r *Registry) UpdateTagsByTxn(txnID string, applied, rejected []string) {
 // MarkReviewedByTxn marks any jobs for a transaction as reviewed, so the Jobs
 // list reflects a later human review.
 func (r *Registry) MarkReviewedByTxn(txnID string) {
-	var updated []*Job
 	r.mu.Lock()
-	for _, j := range r.jobs {
-		if j.TransactionID == txnID {
-			j.Outcome = "REVIEWED"
-			j.UpdatedAt = time.Now()
-			updated = append(updated, j)
+	var j *Job
+	if id, ok := r.byTxn[txnID]; ok {
+		if jj := r.jobs[id]; jj != nil {
+			jj.Outcome = "REVIEWED"
+			jj.UpdatedAt = time.Now()
+			j = jj
 		}
 	}
 	r.mu.Unlock()
-	for _, j := range updated {
+	if j != nil {
 		r.persist(j)
 		r.publish(Event{Type: "updated", Job: j})
 	}

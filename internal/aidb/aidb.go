@@ -34,12 +34,16 @@ type DB struct {
 
 // Open opens (creating if needed) the SQLite database at path and migrates it.
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	// WAL lets readers (transactions/review/jobs pages) run concurrently with the
+	// writer, and busy_timeout avoids "database is locked" under contention.
+	dsn := path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open ai db: %w", err)
 	}
-	// SQLite handles one writer at a time; serialise to avoid "database is locked".
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
+	db.SetConnMaxLifetime(time.Hour)
 
 	const schema = `
 CREATE TABLE IF NOT EXISTS ai_records (
