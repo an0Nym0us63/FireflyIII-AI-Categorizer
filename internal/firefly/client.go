@@ -612,7 +612,12 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 	}
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	return c.put(ctx, u, b)
+	start := time.Now()
+	err := c.put(ctx, u, b)
+	if d := time.Since(start); d > 2*time.Second {
+		slog.Warn("slow Firefly transaction update (apply_rules enabled)", "id", id, "duration", d.Round(time.Millisecond).String())
+	}
+	return err
 }
 
 // ResolveSuggestedTags applies or rejects previously suggested tags on a
