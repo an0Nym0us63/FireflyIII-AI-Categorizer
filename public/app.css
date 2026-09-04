@@ -181,6 +181,73 @@ pre.detail-pre {
     .review-groups-grid {
         column-count: 1;
     }
+
+    /* Give content the full width; AdminLTE margins waste space on phones. */
+    .content-wrapper {
+        margin-left: 0 !important;
+    }
+    .content {
+        padding: 8px !important;
+    }
+    .box-body {
+        padding: 8px !important;
+    }
+
+    /* All tables scroll horizontally with momentum instead of clipping. */
+    .table-responsive {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        width: 100%;
+    }
+    .table-responsive > table {
+        margin-bottom: 0;
+    }
+    /* Don't let cells wrap into unreadable stacks; keep the row scrollable. */
+    .table-responsive td,
+    .table-responsive th {
+        white-space: nowrap;
+    }
+    /* Description can wrap (it's the long one) so the row isn't absurdly wide. */
+    .table-responsive td.wrap,
+    .table-responsive .desc-cell {
+        white-space: normal;
+        min-width: 160px;
+    }
+
+    /* Filters / toolbars stack full-width and stay tappable. */
+    .form-inline .form-group,
+    .form-inline .form-control {
+        display: block;
+        width: 100% !important;
+        margin-bottom: 6px;
+    }
+    .form-control.input-sm {
+        width: 100% !important;
+    }
+
+    /* Modals: full-width, scrollable, no off-screen content. */
+    .modal-dialog {
+        margin: 6px;
+        width: auto;
+    }
+    .modal-body {
+        max-height: 70vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Denser headings/labels so more fits. */
+    .review-section-heading small,
+    .box-title {
+        display: block;
+    }
+
+    /* Buttons in action bars wrap instead of overflowing. */
+    .btn-toolbar,
+    #review-action-bar,
+    .box-tools {
+        white-space: normal;
+    }
 }
 
 body.dark-mode #review-action-bar {
