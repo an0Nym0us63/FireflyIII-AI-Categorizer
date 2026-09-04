@@ -582,7 +582,7 @@ function renderJobTableLegacy() {
         return new Date(b.created_at) - new Date(a.created_at);
     });
     if (!sorted.length) {
-        tbody.innerHTML = '<tr id="job-empty-row"><td colspan="7" class="text-center text-muted" style="padding:40px 0">'
+        tbody.innerHTML = '<tr id="job-empty-row"><td colspan="9" class="text-center text-muted" style="padding:40px 0">'
             + '<i class="fa fa-inbox fa-3x" style="display:block;margin-bottom:10px;opacity:.3"></i>'
             + 'No jobs yet &mdash; waiting for webhooks or run a batch.</td></tr>';
     } else {
@@ -673,7 +673,7 @@ function toggleDetail(id) {
     tr.id = 'detail-' + id;
     tr.className = 'job-detail-row';
     tr.onclick = function (e) {e.stopPropagation();};
-    tr.innerHTML = '<td colspan="7"><div class="detail-inner">' + buildDetailInner(j) + '</div></td>';
+    tr.innerHTML = '<td colspan="9"><div class="detail-inner">' + buildDetailInner(j) + '</div></td>';
     mainRow.after(tr);
 }
 
@@ -836,7 +836,7 @@ async function loadTransactions(page) {
     txnFlash('', '');
     $('#txn-select-all-bar').hide();
     $('#txn-select-all').prop('checked', false);
-    $('#txn-tbody').html('<tr><td colspan="7" class="text-center" style="padding:30px">'
+    $('#txn-tbody').html('<tr><td colspan="8" class="text-center" style="padding:30px">'
         + '<i class="fa fa-spinner fa-spin"></i> Loading&hellip;</td></tr>');
     try {
         var res = await fetch('/api/transactions?' + params);
@@ -858,7 +858,7 @@ async function loadTransactions(page) {
 
 function renderTxnTable(rows) {
     if (!rows.length) {
-        $('#txn-tbody').html('<tr><td colspan="7" class="text-center text-muted" style="padding:40px 0">No transactions found for the selected period.</td></tr>');
+        $('#txn-tbody').html('<tr><td colspan="8" class="text-center text-muted" style="padding:40px 0">No transactions found for the selected period.</td></tr>');
         $('#txn-footer').hide(); return;
     }
     $('#txn-footer').show();
@@ -870,14 +870,15 @@ function renderTxnTable(rows) {
         var stateBadge = statusBadge(r.ai_status);
         var semTags = tagLabels(r, r.id);
         return '<tr' + cls + '>'
-            + '<td><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
-            + '<td style="white-space:nowrap">' + esc(date) + '</td>'
-            + '<td><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
-            + '<td class="text-muted">' + esc(trunc(r.description, 42)) + '</td>'
-            + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
-            + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-            + '<td>' + stateBadge + (semTags ? ' ' + semTags : '')
-            + ' <a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer" style="margin-left:4px"><i class="fa fa-pencil"></i></a>'
+            + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
+            + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
+            + '<td class="c-dest"><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
+            + '<td class="c-desc text-muted">' + esc(trunc(r.description, 42)) + '</td>'
+            + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
+            + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
+            + '<td class="c-state">' + stateBadge + (semTags ? ' ' + semTags : '') + '</td>'
+            + '<td class="c-actions">'
+            + '<a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer"><i class="fa fa-pencil"></i></a>'
             + ' <a href="#" onclick="openAutoMatch(\'' + r.id + '\');return false" title="Pourquoi ce match ?"><i class="fa fa-search text-muted"></i></a></td>'
             + '</tr>';
     }).join('');

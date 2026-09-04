@@ -193,9 +193,69 @@ pre.detail-pre {
         padding: 8px !important;
     }
 
-    /* Data tables become compact "cards" on phones: cells flow horizontally and
-       wrap only when the line is full, so cards stay short and use the width. */
-    #txn-tbody > tr,
+    /* ── Transactions: purpose-built compact card ─────────────────── */
+    #txn-tbody > tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        position: relative;
+        column-gap: 8px;
+        row-gap: 3px;
+        padding: 8px 58px 8px 12px;
+        border: 1px solid rgba(128, 128, 128, .25);
+        border-radius: 6px;
+        margin: 0 0 6px;
+    }
+    #txn-tbody > tr > td {
+        padding: 0;
+        border: none !important;
+        white-space: normal !important;
+        width: auto !important;
+        text-align: left !important;
+    }
+    #txn-tbody .c-date {
+        order: 2;
+        font-size: 12px;
+        color: #8a8a8a;
+    }
+    #txn-tbody .c-amount {
+        order: 3;
+        flex: 1 1 auto;
+        text-align: right !important;
+        font-weight: 600;
+    }
+    #txn-tbody .c-dest {
+        order: 4;
+        font-size: 15px;
+    }
+    #txn-tbody .c-cat {
+        order: 5;
+    }
+    #txn-tbody .c-desc {
+        order: 6;
+        flex-basis: 100%;
+        font-size: 12px;
+        color: #8a8a8a;
+    }
+    #txn-tbody .c-state {
+        order: 7;
+        flex-basis: 100%;
+    }
+    #txn-tbody .c-check {
+        order: 1;
+    }
+    #txn-tbody .c-actions {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+    }
+    #txn-tbody .c-actions a {
+        font-size: 18px;
+        margin-left: 14px;
+        display: inline-block;
+    }
+
+    /* ── Jobs & Review: flow cells to use the full tile width ──────── */
     #job-table > tbody > tr,
     #review-body table > tbody > tr {
         display: block;
@@ -204,7 +264,6 @@ pre.detail-pre {
         margin: 0 0 6px;
         padding: 6px 10px;
     }
-    #txn-tbody > tr > td,
     #job-table > tbody > tr > td,
     #review-body table > tbody > tr > td {
         display: inline-block;
@@ -215,14 +274,10 @@ pre.detail-pre {
         text-align: left !important;
         width: auto !important;
     }
-    /* The merchant/payee name gets its own line and stands out. */
-    #txn-tbody > tr > td:nth-child(3),
     #job-table > tbody > tr > td:nth-child(2) {
         display: block;
         font-size: 15px;
-        padding-top: 2px;
     }
-    /* "Real current value" sub-lines stay small and on their own line. */
     #job-table .job-real {
         display: block;
     }
@@ -232,16 +287,14 @@ pre.detail-pre {
     #review-body table > thead {
         display: none;
     }
-    /* Right-aligned amount cells look odd when stacked. */
-    #txn-tbody .text-right,
+    /* Right-aligned amount cells look odd when stacked (jobs only). */
     #job-table .text-right {
         text-align: left !important;
     }
-    /* Bigger, spaced action controls so they're tappable in the stacked card. */
-    #txn-tbody > tr > td:last-child a,
+    /* Bigger, spaced action controls so they're tappable in job cards. */
     #job-table > tbody > tr > td:last-child .btn {
         font-size: 17px;
-        margin-right: 16px;
+        margin-right: 12px;
         display: inline-block;
         padding: 4px 2px;
     }
