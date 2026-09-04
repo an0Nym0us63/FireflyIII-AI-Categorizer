@@ -25,7 +25,7 @@ func New(baseURL, token, tagPrefix string) *Client {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		token:      token,
 		tagPrefix:  tagPrefix,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -973,15 +973,50 @@ func toTransaction(item transactionData) Transaction {
 
 // --- HTTP helpers ---
 
-func (c *Client) get(ctx context.Context, u string, out interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return err
+// doRetry performs an HTTP request with up to 3 attempts, retrying on network
+// errors (timeouts), 429 and 5xx with a short backoff. 4xx and success return
+// immediately. The body (if any) is resent on each attempt.
+func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		var rdr io.Reader
+		if body != nil {
+			rdr = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, u, rdr)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("Accept", "application/json")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue // network/timeout → retry
+		}
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+			continue // transient → retry
+		}
+		return resp, nil
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/json")
+	return nil, lastErr
+}
 
-	resp, err := c.httpClient.Do(req)
+func (c *Client) get(ctx context.Context, u string, out interface{}) error {
+	resp, err := c.doRetry(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
 	}
@@ -999,15 +1034,7 @@ func (c *Client) put(ctx context.Context, u string, body interface{}) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRetry(ctx, http.MethodPut, u, data)
 	if err != nil {
 		return err
 	}
