@@ -367,9 +367,10 @@ function saveEditTxn() {
     }).then(function (r) {
         if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
         $('#edit-txn-modal').modal('hide');
+        delete txnDetailsCache[editTxnId];
         // Refresh whatever view is active.
         if (typeof loadTransactions === 'function' && document.getElementById('txn-tbody')) loadTransactions(txnPage);
-        if (typeof loadReview === 'function' && reviewMode) { /* review refreshes on next open */ }
+        if (typeof renderJobTable === 'function' && Object.keys(jobs).length) renderJobTable();
     }).catch(function (e) {
         $('#edit-txn-status').html('<span class="text-danger">Échec: ' + esc(e.message) + '</span>');
     });
@@ -419,6 +420,36 @@ function renderJobTable() {
     }
     renderJobPager(total, pages);
     updateStats();
+    fillJobRealValues();
+}
+
+var txnDetailsCache = {};
+function fillJobRealValues() {
+    var spans = document.querySelectorAll('#job-tbody .job-real[data-txn]');
+    var need = {};
+    spans.forEach(function (s) {
+        var id = s.getAttribute('data-txn');
+        if (id && !txnDetailsCache[id]) need[id] = true;
+    });
+    var ids = Object.keys(need);
+    var apply = function () {
+        document.querySelectorAll('#job-tbody .job-real[data-txn]').forEach(function (s) {
+            var id = s.getAttribute('data-txn');
+            var d = txnDetailsCache[id];
+            if (!d) return;
+            var f = s.getAttribute('data-f');
+            if (f === 'dest') s.innerHTML = d.destination_name ? '<span title="destination réelle">→ ' + esc(d.destination_name) + '</span>' : '';
+            else if (f === 'cat') s.innerHTML = d.category_name ? '<span title="catégorie réelle">→ ' + esc(d.category_name) + '</span>' : '';
+            else if (f === 'date') s.innerHTML = d.date ? '<span title="date transaction"><i class="fa fa-calendar-o"></i> ' + esc(d.date) + '</span>' : '';
+            else if (f === 'tags') s.innerHTML = (d.tags && d.tags.length) ? '<span title="tags réels">→ ' + d.tags.map(esc).join(', ') + '</span>' : '';
+        });
+    };
+    if (!ids.length) { apply(); return; }
+    fetch('/api/transactions/details', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: ids})
+    }).then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (m) { Object.keys(m).forEach(function (id) { txnDetailsCache[id] = m[id]; }); apply(); })
+      .catch(function () {});
 }
 
 function renderJobPager(total, pages) {
@@ -471,13 +502,16 @@ function buildJobRow(j) {
         destHtml += ' <i class="fa fa-plus-circle text-success" title="Account created" style="font-size:11px"></i>';
     }
 
+    var tid = esc(j.transaction_id || '');
+    var realDiv = function (f) { return '<div class="job-real" data-f="' + f + '" data-txn="' + tid + '" style="font-size:11px;color:#8a8a8a"></div>'; };
+
     tr.innerHTML =
         '<td style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
-        + '<td>' + destHtml + '</td>'
-        + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + '</td>'
+        + '<td>' + destHtml + realDiv('dest') + '</td>'
+        + '<td class="text-muted hidden-xs">' + esc(trunc(j.description, 55)) + realDiv('date') + '</td>'
         + '<td class="text-right hidden-sm hidden-xs">' + amount + '</td>'
-        + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
-        + '<td class="hidden-xs">' + jobTagsHtml(j) + '</td>'
+        + '<td>' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'
+        + '<td class="hidden-xs">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
         + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
         + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
         + '<td class="text-right"><button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '

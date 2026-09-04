@@ -107,6 +107,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/tags", h.getTags)
 	r.Get("/api/transactions/{id}", h.getTransaction)
 	r.Put("/api/transactions/{id}/edit", h.editTransaction)
+	r.Post("/api/transactions/details", h.getTransactionDetails)
 	r.Get("/api/transactions", h.getTransactions)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
@@ -726,6 +727,50 @@ func (h *Handler) testFirefly(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"categories": len(cats),
 	})
+}
+
+// getTransactionDetails returns current (real) category/destination/tags/date for
+// a batch of transaction IDs, for comparing against what the AI proposed.
+func (h *Handler) getTransactionDetails(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	out := map[string]map[string]any{}
+	if len(req.IDs) == 0 {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	txns, err := fc.GetTransactionsByIDs(r.Context(), req.IDs)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch: %v", err), http.StatusBadGateway)
+		return
+	}
+	for _, t := range txns {
+		if len(t.Splits) == 0 {
+			continue
+		}
+		s := t.Splits[0]
+		date := s.Date
+		if len(date) >= 10 {
+			date = date[:10]
+		}
+		out[t.ID] = map[string]any{
+			"destination_name": s.DestinationName,
+			"category_name":    s.CategoryName,
+			"tags":             classifier.SemanticTags(s.Tags),
+			"date":             date,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // getTransaction returns a single transaction's editable fields.
