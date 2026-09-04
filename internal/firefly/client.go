@@ -1003,6 +1003,7 @@ func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*h
 		}
 	}
 	var lastErr error
+	overallStart := time.Now()
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			select {
@@ -1024,16 +1025,22 @@ func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*h
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
+		attemptStart := time.Now()
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
+			slog.Warn("firefly http attempt failed", "method", method, "attempt", attempt+1, "dur", time.Since(attemptStart).Round(time.Millisecond).String(), "err", err.Error())
 			continue // network/timeout → retry
 		}
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+			slog.Warn("firefly http transient status", "method", method, "attempt", attempt+1, "status", resp.StatusCode, "dur", time.Since(attemptStart).Round(time.Millisecond).String())
 			continue // transient → retry
+		}
+		if d := time.Since(overallStart); d > 1*time.Second {
+			slog.Warn("firefly http slow", "method", method, "attempts", attempt+1, "total", d.Round(time.Millisecond).String())
 		}
 		return resp, nil
 	}
