@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,7 +30,21 @@ func New(baseURL, token, tagPrefix string) *Client {
 		tagPrefix:  tagPrefix,
 		applyRules: true,
 		writeSem:   make(chan struct{}, 1),
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{
+			Timeout: 60 * time.Second,
+			// Fresh connection per request: reusing keep-alive connections that
+			// were silently dropped (e.g. by Docker/conntrack when reaching the
+			// host's LAN IP) causes ~30s stalls on the next write. curl avoids this
+			// by always dialing anew — do the same.
+			Transport: &http.Transport{
+				Proxy:                 nil,
+				DisableKeepAlives:     true,
+				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 45 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
 	}
 }
 
