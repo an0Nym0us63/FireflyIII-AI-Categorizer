@@ -590,7 +590,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		Transactions []splitUpdate `json:"transactions"`
 	}
 
-	b := body{ApplyRules: false, FireWebhooks: false}
+	b := body{ApplyRules: true, FireWebhooks: false}
 	for _, s := range splits {
 		// Drop any old AI control tags; review status now lives in the local DB.
 		tags := make([]string, 0, len(s.Tags))
