@@ -290,6 +290,34 @@ func (c *Client) GetUncategorizedWithdrawals(ctx context.Context) ([]Transaction
 	})
 }
 
+// SearchWithdrawals asks Firefly to return withdrawals whose description contains
+// the given term (targeted merchant lookup, avoids fetching all history).
+func (c *Client) SearchWithdrawals(ctx context.Context, descContains string) ([]Transaction, error) {
+	descContains = strings.TrimSpace(descContains)
+	if descContains == "" {
+		return nil, nil
+	}
+	query := fmt.Sprintf(`description_contains:"%s"`, descContains)
+	var txns []Transaction
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/api/v1/search/transactions?query=%s&page=%d", c.baseURL, url.QueryEscape(query), page)
+		var resp transactionsResponse
+		if err := c.get(ctx, u, &resp); err != nil {
+			return nil, fmt.Errorf("search transactions page %d: %w", page, err)
+		}
+		for _, item := range resp.Data {
+			txn := toTransaction(item)
+			if len(txn.Splits) > 0 && txn.Splits[0].Type == "withdrawal" {
+				txns = append(txns, txn)
+			}
+		}
+		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
+			break
+		}
+	}
+	return txns, nil
+}
+
 // GetAllWithdrawals fetches all withdrawals regardless of categorisation status.
 func (c *Client) GetAllWithdrawals(ctx context.Context) ([]Transaction, error) {
 	params := url.Values{"type": {"withdrawal"}}

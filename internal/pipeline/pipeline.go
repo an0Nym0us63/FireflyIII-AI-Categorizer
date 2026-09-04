@@ -1122,7 +1122,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		return ex, nil
 	}
 
-	all, err := p.firefly.GetAllWithdrawals(ctx)
+	all, err := p.firefly.SearchWithdrawals(ctx, gkey)
 	if err != nil {
 		return nil, err
 	}
@@ -1272,7 +1272,7 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string
 	if key == "" {
 		return nil, nil
 	}
-	all, err := p.firefly.GetAllWithdrawals(ctx)
+	all, err := p.firefly.SearchWithdrawals(ctx, key)
 	if err != nil {
 		return nil, err
 	}
