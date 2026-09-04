@@ -34,6 +34,9 @@ type StoredConfig struct {
 	GeminiThinking          string         `json:"gemini_thinking,omitempty"`
 	MailAccounts            []MailAccount  `json:"mail_accounts,omitempty"`
 	MailDetectors           []MailDetector `json:"mail_detectors,omitempty"`
+	ForceDestinations       []string       `json:"force_destinations,omitempty"`
+	ForceCategories         []string       `json:"force_categories,omitempty"`
+	TagRules                []TagRule      `json:"tag_rules,omitempty"`
 	WorkerConcurrency       int            `json:"worker_concurrency,omitempty"`
 	BatchConcurrency        int            `json:"batch_concurrency,omitempty"`
 }

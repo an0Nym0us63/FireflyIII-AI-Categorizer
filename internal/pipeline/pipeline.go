@@ -57,6 +57,10 @@ type Pipeline struct {
 	mailAccounts  []config.MailAccount
 	mailDetectors []config.MailDetector
 
+	forceDestinations []string
+	forceCategories   []string
+	tagRules          []config.TagRule
+
 	// Short-lived category cache to avoid re-fetching on every job in a batch.
 	catMu      sync.RWMutex
 	catCache   []firefly.Category
@@ -86,20 +90,26 @@ func New(
 	adb *aidb.DB,
 	mailAccounts []config.MailAccount,
 	mailDetectors []config.MailDetector,
+	forceDestinations []string,
+	forceCategories []string,
+	tagRules []config.TagRule,
 ) *Pipeline {
 	return &Pipeline{
-		firefly:          fc,
-		classifier:       cl,
-		cache:            ca,
-		registry:         reg,
-		contextN:         contextN,
-		destinationMatch: destinationMatch,
-		tagSuggest:       tagSuggest,
-		tagMax:           tagMax,
-		amazon:           amz,
-		aidb:             adb,
-		mailAccounts:     mailAccounts,
-		mailDetectors:    mailDetectors,
+		firefly:           fc,
+		classifier:        cl,
+		cache:             ca,
+		registry:          reg,
+		contextN:          contextN,
+		destinationMatch:  destinationMatch,
+		tagSuggest:        tagSuggest,
+		tagMax:            tagMax,
+		amazon:            amz,
+		aidb:              adb,
+		mailAccounts:      mailAccounts,
+		mailDetectors:     mailDetectors,
+		forceDestinations: forceDestinations,
+		forceCategories:   forceCategories,
+		tagRules:          tagRules,
 	}
 }
 
@@ -257,6 +267,24 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	if skipIfEmpty && extraContext != "" {
 		historyMatchDestID = ""
 		histDestCount = 0
+	}
+
+	// Forced re-pick: if the transaction's current destination/category is in the
+	// configured force lists, ignore auto-matching so the AI chooses a new one.
+	curDest, curCat := "", ""
+	if len(splits) > 0 {
+		curDest = splits[0].DestinationName
+		curCat = splits[0].CategoryName
+	}
+	if containsFoldStr(p.forceDestinations, curDest) {
+		opts.MatchDestination = true
+		forceDestination = true
+		historyMatchDestID = ""
+		histDestCount = 0
+	}
+	if containsFoldStr(p.forceCategories, curCat) {
+		historyMatchCat = ""
+		histCatCount = 0
 	}
 
 	// Validate the destination history match against the current account list.
@@ -448,6 +476,25 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 		if !has {
 			outcome.Tags = append(outcome.Tags, "4x")
+		}
+	}
+
+	// Tag rules: strip configured tags from the transaction (optionally replace).
+	if len(p.tagRules) > 0 {
+		var existing []string
+		if len(splits) > 0 {
+			existing = splits[0].Tags
+		}
+		for _, rule := range p.tagRules {
+			if strings.TrimSpace(rule.From) == "" {
+				continue
+			}
+			present := containsFoldStr(existing, rule.From) || containsFoldStr(outcome.Tags, rule.From)
+			outcome.RemoveTags = append(outcome.RemoveTags, rule.From)
+			outcome.Tags = removeFold(outcome.Tags, rule.From)
+			if present && strings.TrimSpace(rule.To) != "" && !containsFoldStr(outcome.Tags, rule.To) {
+				outcome.Tags = append(outcome.Tags, rule.To)
+			}
 		}
 	}
 
@@ -748,6 +795,29 @@ const (
 	mailBackDays = 14 // order emails can precede the bank charge by many days
 	mailFwdDays  = 2
 )
+
+func containsFoldStr(list []string, v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	for _, x := range list {
+		if strings.EqualFold(strings.TrimSpace(x), v) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeFold(list []string, v string) []string {
+	out := list[:0:0]
+	for _, x := range list {
+		if !strings.EqualFold(strings.TrimSpace(x), strings.TrimSpace(v)) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
 
 // cleanNotes strips bank-import boilerplate ("MORE DETAILS" block) and our own
 // generated "AI:" lines so only genuine human hints reach the LLM.

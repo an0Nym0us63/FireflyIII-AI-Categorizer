@@ -877,6 +877,43 @@
                         </div>
                     </div>
 
+                    <div class="row" style="margin-top:10px">
+                        <div class="col-md-12">
+                            <div class="box box-default">
+                                <div class="box-header with-border">
+                                    <h3 class="box-title"><i class="fa fa-bolt"></i> Forçage & nettoyage</h3>
+                                </div>
+                                <div class="box-body">
+                                    <p class="help-block">
+                                        Destinations/catégories listées ici : l'auto-matching (historique) est ignoré et
+                                        l'IA est forcée d'en choisir une autre. Tags listés : toujours supprimés (avec
+                                        remplacement optionnel).
+                                    </p>
+                                    <div class="row">
+                                        <div class="col-sm-6">
+                                            <label style="font-size:12px">Destinations à forcer</label>
+                                            <div id="force-destinations"></div>
+                                            <input type="text" class="form-control input-sm" placeholder="ajouter + Entrée"
+                                                onkeydown="if(event.key==='Enter'){addForceItem('dest',this.value);this.value='';event.preventDefault();}">
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label style="font-size:12px">Catégories à forcer</label>
+                                            <div id="force-categories"></div>
+                                            <input type="text" class="form-control input-sm" placeholder="ajouter + Entrée"
+                                                onkeydown="if(event.key==='Enter'){addForceItem('cat',this.value);this.value='';event.preventDefault();}">
+                                        </div>
+                                    </div>
+                                    <hr>
+                                    <label style="font-size:12px">Tags à supprimer / remplacer</label>
+                                    <div id="tag-rules"></div>
+                                    <button type="button" class="btn btn-default btn-sm" onclick="addTagRule()">
+                                        <i class="fa fa-plus"></i> Ajouter une règle de tag
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-12">
                             <button type="button" class="btn btn-primary" onclick="saveSettings()">

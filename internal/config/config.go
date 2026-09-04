@@ -40,8 +40,13 @@ type Config struct {
 
 	AmazonOrdersFile string
 
-	MailAccounts   []MailAccount
-	MailDetectors  []MailDetector
+	MailAccounts  []MailAccount
+	MailDetectors []MailDetector
+
+	ForceDestinations []string  // if a txn's current destination is here, force re-pick
+	ForceCategories   []string  // if a txn's current category is here, force re-categorize
+	TagRules          []TagRule // tags to strip (optionally replace) from transactions
+
 	GeminiThinking string
 	AIDBFile       string
 
@@ -49,6 +54,12 @@ type Config struct {
 
 	WorkerConcurrency int
 	BatchConcurrency  int
+}
+
+// TagRule strips a tag from a transaction; To optionally replaces it.
+type TagRule struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // MailAccount describes an IMAP mailbox to search for order emails.
@@ -193,6 +204,15 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.MailDetectors != nil {
 		cfg.MailDetectors = sc.MailDetectors
+	}
+	if sc.ForceDestinations != nil {
+		cfg.ForceDestinations = sc.ForceDestinations
+	}
+	if sc.ForceCategories != nil {
+		cfg.ForceCategories = sc.ForceCategories
+	}
+	if sc.TagRules != nil {
+		cfg.TagRules = sc.TagRules
 	}
 }
 

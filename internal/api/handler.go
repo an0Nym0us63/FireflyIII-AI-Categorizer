@@ -533,8 +533,11 @@ type configResponse struct {
 	SearchEngine   string `json:"search_engine"`
 	GeminiThinking string `json:"gemini_thinking"`
 
-	MailAccounts  []config.MailAccount  `json:"mail_accounts"`
-	MailDetectors []config.MailDetector `json:"mail_detectors"`
+	MailAccounts      []config.MailAccount  `json:"mail_accounts"`
+	MailDetectors     []config.MailDetector `json:"mail_detectors"`
+	ForceDestinations []string              `json:"force_destinations"`
+	ForceCategories   []string              `json:"force_categories"`
+	TagRules          []config.TagRule      `json:"tag_rules"`
 
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
@@ -566,8 +569,11 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		SearchEngine:   cfg.SearchEngine,
 		GeminiThinking: cfg.GeminiThinking,
 
-		MailAccounts:  maskMailAccounts(cfg.MailAccounts),
-		MailDetectors: cfg.MailDetectors,
+		MailAccounts:      maskMailAccounts(cfg.MailAccounts),
+		MailDetectors:     cfg.MailDetectors,
+		ForceDestinations: cfg.ForceDestinations,
+		ForceCategories:   cfg.ForceCategories,
+		TagRules:          cfg.TagRules,
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -600,8 +606,11 @@ type configUpdateRequest struct {
 	SearchEngine   *string `json:"search_engine"`
 	GeminiThinking *string `json:"gemini_thinking"`
 
-	MailAccounts  *[]config.MailAccount  `json:"mail_accounts"`
-	MailDetectors *[]config.MailDetector `json:"mail_detectors"`
+	MailAccounts      *[]config.MailAccount  `json:"mail_accounts"`
+	MailDetectors     *[]config.MailDetector `json:"mail_detectors"`
+	ForceDestinations *[]string              `json:"force_destinations"`
+	ForceCategories   *[]string              `json:"force_categories"`
+	TagRules          *[]config.TagRule      `json:"tag_rules"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -1777,7 +1786,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -1866,6 +1875,15 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.MailDetectors != nil {
 		existing.MailDetectors = mergeMailDetectors(*req.MailDetectors)
+	}
+	if req.ForceDestinations != nil {
+		existing.ForceDestinations = *req.ForceDestinations
+	}
+	if req.ForceCategories != nil {
+		existing.ForceCategories = *req.ForceCategories
+	}
+	if req.TagRules != nil {
+		existing.TagRules = *req.TagRules
 	}
 	if req.HistoryContextLimit != nil && *req.HistoryContextLimit > 0 {
 		existing.HistoryContextLimit = *req.HistoryContextLimit

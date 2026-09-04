@@ -250,6 +250,50 @@ function removeDetKeyword(i, ki) { mailDetectors[i].keywords.splice(ki, 1); rend
 function addDetSender(i, v) { v = (v || '').trim(); if (!v) return; mailDetectors[i].senders = mailDetectors[i].senders || []; if (mailDetectors[i].senders.indexOf(v) < 0) mailDetectors[i].senders.push(v); renderMailDetectors(); }
 function removeDetSender(i, si) { mailDetectors[i].senders.splice(si, 1); renderMailDetectors(); }
 
+// ─── Force / tag rules ─────────────────────────────────────────────────────
+var forceDestinations = [];
+var forceCategories = [];
+var tagRules = [];
+
+function renderForceLists() {
+    var chips = function (arr, kind) {
+        return arr.map(function (v, i) {
+            return '<span class="label label-warning" style="margin-right:4px">' + esc(v)
+                + ' <a href="#" style="color:#fff;text-decoration:none" onclick="removeForceItem(\'' + kind + '\',' + i + ');return false">\u00d7</a></span>';
+        }).join('');
+    };
+    var d = document.getElementById('force-destinations');
+    var c = document.getElementById('force-categories');
+    if (d) d.innerHTML = chips(forceDestinations, 'dest') || '<span class="text-muted" style="font-size:12px">aucune</span>';
+    if (c) c.innerHTML = chips(forceCategories, 'cat') || '<span class="text-muted" style="font-size:12px">aucune</span>';
+}
+function addForceItem(kind, v) {
+    v = (v || '').trim();
+    if (!v) return;
+    var arr = kind === 'dest' ? forceDestinations : forceCategories;
+    if (arr.indexOf(v) < 0) arr.push(v);
+    renderForceLists();
+}
+function removeForceItem(kind, i) {
+    (kind === 'dest' ? forceDestinations : forceCategories).splice(i, 1);
+    renderForceLists();
+}
+
+function renderTagRules() {
+    var el = document.getElementById('tag-rules');
+    if (!el) return;
+    if (!tagRules.length) { el.innerHTML = '<p class="text-muted" style="font-size:12px;margin-bottom:6px">Aucune règle.</p>'; return; }
+    el.innerHTML = tagRules.map(function (r, i) {
+        return '<div class="row" style="margin-bottom:4px"><div class="col-sm-5">'
+            + '<input type="text" class="form-control input-sm" placeholder="tag à supprimer" value="' + esc(r.from || '') + '" oninput="tagRules[' + i + '].from=this.value"></div>'
+            + '<div class="col-sm-1" style="text-align:center;padding-top:6px">→</div>'
+            + '<div class="col-sm-5"><input type="text" class="form-control input-sm" placeholder="remplacer par (optionnel)" value="' + esc(r.to || '') + '" oninput="tagRules[' + i + '].to=this.value"></div>'
+            + '<div class="col-sm-1"><button type="button" class="btn btn-danger btn-sm" onclick="removeTagRule(' + i + ')"><i class="fa fa-trash"></i></button></div></div>';
+    }).join('');
+}
+function addTagRule() { tagRules.push({from: '', to: ''}); renderTagRules(); }
+function removeTagRule(i) { tagRules.splice(i, 1); renderTagRules(); }
+
 function jobTagsHtml(j) {
     var out = (j.tags || []).map(function (t) {
         return '<span class="label label-primary" style="margin-right:2px">' + esc(t) + '</span>';
@@ -2109,6 +2153,11 @@ async function loadSettings() {
         mailAccounts = (d.mail_accounts || []).map(function (m) { return Object.assign({}, m); });
         mailDetectors = (d.mail_detectors || []).map(function (m) { return Object.assign({}, m, {keywords: (m.keywords || []).slice(), senders: (m.senders || []).slice()}); });
         renderMailConfig();
+        forceDestinations = (d.force_destinations || []).slice();
+        forceCategories = (d.force_categories || []).slice();
+        tagRules = (d.tag_rules || []).map(function (r) { return {from: r.from, to: r.to}; });
+        renderForceLists();
+        renderTagRules();
         if (d.gemini_key_set) loadGeminiModels();
         $('#cfg-deepseek-key').val('');
         $('#deepseek-key-hint').toggle(!!d.deepseek_key_set);
@@ -2207,6 +2256,9 @@ async function saveSettings() {
         payload.gemini_thinking = $('#cfg-gemini-thinking').val();
     payload.mail_accounts = mailAccounts;
     payload.mail_detectors = mailDetectors;
+    payload.force_destinations = forceDestinations;
+    payload.force_categories = forceCategories;
+    payload.tag_rules = tagRules.filter(function (r) { return (r.from || '').trim() !== ''; });
     } else if (p === 'deepseek') {
         var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
         if (k) payload.deepseek_api_key = k;

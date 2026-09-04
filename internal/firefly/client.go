@@ -739,7 +739,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		// (self-cleaning on reprocess) — AI status now lives in the local DB.
 		tags := make([]string, 0, len(s.Tags))
 		for _, t := range s.Tags {
-			if c.isControlTag(t) {
+			if c.isControlTag(t) || containsFold(outcome.RemoveTags, t) {
 				continue
 			}
 			tags = append(tags, t)
@@ -928,6 +928,16 @@ func (c *Client) put(ctx context.Context, u string, body interface{}) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
 	}
 	return nil
+}
+
+func containsFold(s []string, v string) bool {
+	v = strings.TrimSpace(v)
+	for _, x := range s {
+		if strings.EqualFold(strings.TrimSpace(x), v) {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(s []string, v string) bool {
