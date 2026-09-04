@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1058,4 +1059,144 @@ func (p *Pipeline) SuggestTransfer(ctx context.Context, description string, acco
 		AccountName: parsed.Account,
 		RawResponse: result.RawResponse,
 	}, nil
+}
+
+// ─── Auto-match explanation (transparency for the UI) ───────────────────────
+
+type AutoMatchEntry struct {
+	Description string   `json:"description"`
+	Amount      float64  `json:"amount"`
+	Category    string   `json:"category"`
+	Destination string   `json:"destination"`
+	Tags        []string `json:"tags"`
+	AmountOK    bool     `json:"amount_ok"`
+}
+
+type AutoMatchExplanation struct {
+	GroupKey             string           `json:"group_key"`
+	Amount               float64          `json:"amount"`
+	AmountRatio          float64          `json:"amount_ratio"`
+	MinCount             int              `json:"min_count"`
+	Entries              []AutoMatchEntry `json:"entries"`
+	CategoryVotes        map[string]int   `json:"category_votes"`
+	DestVotes            map[string]int   `json:"dest_votes"`
+	TagVotes             map[string]int   `json:"tag_votes"`
+	MatchedCategory      string           `json:"matched_category"`
+	MatchedCategoryCount int              `json:"matched_category_count"`
+	MatchedDestination   string           `json:"matched_destination"`
+	MatchedTags          []string         `json:"matched_tags"`
+	Notes                []string         `json:"notes"`
+}
+
+// ExplainAutoMatch reproduces the history auto-match for a transaction and
+// returns the occurrences, votes and conclusion, for a "why?" popup.
+func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (*AutoMatchExplanation, error) {
+	txns, err := p.firefly.GetTransactionsByIDs(ctx, []string{transactionID})
+	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+		return nil, fmt.Errorf("transaction not found")
+	}
+	s := txns[0].Splits[0]
+	var amount float64
+	if v, perr := strconv.ParseFloat(strings.TrimSpace(s.Amount), 64); perr == nil {
+		amount = math.Abs(v)
+	}
+	gkey := classifier.GroupKey(s.DestinationName, s.Description)
+
+	lookupLimit := historyMatchLookup
+	if p.contextN > lookupLimit {
+		lookupLimit = p.contextN
+	}
+	history := excludeTransaction(p.cache.GetHistory(ctx, gkey, lookupLimit), transactionID)
+
+	ex := &AutoMatchExplanation{
+		GroupKey: gkey, Amount: amount, AmountRatio: historyMatchMaxRatio, MinCount: historyMatchMinCount,
+		CategoryVotes: map[string]int{}, DestVotes: map[string]int{}, TagVotes: map[string]int{},
+	}
+
+	accounts, _ := p.getExpenseAccounts(ctx)
+	nameByID := map[string]string{}
+	for _, a := range accounts {
+		nameByID[a.ID] = a.Name
+	}
+
+	for _, h := range history {
+		amtOK := true
+		if amount > 0 && h.Amount > 0 {
+			hi := math.Max(amount, h.Amount)
+			lo := math.Min(amount, h.Amount)
+			amtOK = hi/lo <= historyMatchMaxRatio
+		}
+		destName := h.DestinationName
+		if n := nameByID[h.DestinationAccountID]; n != "" {
+			destName = n
+		}
+		semTags := classifier.SemanticTags(h.Tags)
+		ex.Entries = append(ex.Entries, AutoMatchEntry{
+			Description: h.Description, Amount: h.Amount, Category: h.CategoryName,
+			Destination: destName, Tags: semTags, AmountOK: amtOK,
+		})
+		if !amtOK {
+			continue
+		}
+		if h.CategoryName != "" {
+			ex.CategoryVotes[h.CategoryName]++
+		}
+		if h.DestinationAccountID != "" {
+			dn := nameByID[h.DestinationAccountID]
+			if dn == "" {
+				dn = h.DestinationAccountID
+			}
+			ex.DestVotes[dn]++
+		}
+		seen := map[string]bool{}
+		for _, t := range semTags {
+			k := strings.ToLower(strings.TrimSpace(t))
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			ex.TagVotes[t]++
+		}
+	}
+
+	cat, catN := tryHistoryMatch(history, &amount)
+	destID, _ := tryDestinationHistoryMatch(history, &amount)
+	ex.MatchedCategory, ex.MatchedCategoryCount = cat, catN
+	if destID != "" {
+		if n := nameByID[destID]; n != "" {
+			ex.MatchedDestination = n
+		} else {
+			ex.MatchedDestination = destID
+		}
+	}
+	ex.MatchedTags = tryHistoryTags(history, &amount)
+
+	if len(history) == 0 {
+		ex.Notes = append(ex.Notes, fmt.Sprintf("Aucune transaction passée pour ce marchand (clé « %s »).", gkey))
+	}
+	if cat == "" {
+		best, bestN := "", 0
+		for c, n := range ex.CategoryVotes {
+			if n > bestN {
+				best, bestN = c, n
+			}
+		}
+		switch {
+		case bestN == 0:
+			ex.Notes = append(ex.Notes, "Catégorie : aucune occurrence exploitable (montant hors plage ou sans catégorie).")
+		case bestN < historyMatchMinCount:
+			ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie : « %s » n'a que %d occurrence(s), il en faut %d.", best, bestN, historyMatchMinCount))
+		default:
+			ex.Notes = append(ex.Notes, "Catégorie : égalité entre plusieurs catégories → pas de conclusion (l'IA décide).")
+		}
+	} else {
+		ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie retenue : « %s » (%d votes).", cat, catN))
+	}
+	if ex.MatchedDestination != "" {
+		ex.Notes = append(ex.Notes, fmt.Sprintf("Destination retenue : « %s ».", ex.MatchedDestination))
+	}
+	if len(ex.MatchedTags) > 0 {
+		ex.Notes = append(ex.Notes, "Tags repris : "+strings.Join(ex.MatchedTags, ", ")+".")
+	}
+	return ex, nil
 }

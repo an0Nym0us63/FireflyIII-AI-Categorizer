@@ -295,6 +295,68 @@ function renderTagRules() {
 function addTagRule() { tagRules.push({from: '', to: ''}); renderTagRules(); }
 function removeTagRule(i) { tagRules.splice(i, 1); renderTagRules(); }
 
+// ─── Auto-match explanation popup ──────────────────────────────────────────
+function openAutoMatch(txnId) {
+    $('#automatch-body').html('<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Analyse…</p>');
+    $('#automatch-modal').modal('show');
+    fetch('/api/transactions/' + encodeURIComponent(txnId) + '/automatch')
+        .then(function (r) { if (!r.ok) throw new Error('erreur'); return r.json(); })
+        .then(renderAutoMatch)
+        .catch(function () { $('#automatch-body').html('<p class="text-danger">Impossible de charger l\'analyse.</p>'); });
+}
+
+function votesHtml(title, votes) {
+    var keys = Object.keys(votes || {});
+    if (!keys.length) return '';
+    keys.sort(function (a, b) { return votes[b] - votes[a]; });
+    return '<div style="margin-bottom:6px"><strong>' + title + ' :</strong> '
+        + keys.map(function (k) { return esc(k) + ' <span class="badge">' + votes[k] + '</span>'; }).join(' &nbsp; ') + '</div>';
+}
+
+function renderAutoMatch(ex) {
+    var h = '';
+    h += '<p><strong>Clé marchand :</strong> <code>' + esc(ex.group_key || '—') + '</code>'
+        + ' &nbsp; <strong>Montant :</strong> ' + (ex.amount ? ex.amount.toFixed(2) : '—')
+        + ' &nbsp; <span class="text-muted" style="font-size:12px">(règles : ≥ ' + ex.min_count + ' occurrences, montant à ±' + ex.amount_ratio + '×, pas d\'égalité)</span></p>';
+
+    if (ex.notes && ex.notes.length) {
+        h += '<div class="callout callout-info" style="padding:8px 12px;margin:8px 0">'
+            + ex.notes.map(function (n) { return esc(n); }).join('<br>') + '</div>';
+    }
+
+    h += '<div class="row"><div class="col-sm-4">'
+        + '<strong>Conclusion</strong><ul style="padding-left:18px;margin-top:4px">'
+        + '<li>Catégorie : ' + (ex.matched_category ? '<span class="label label-success">' + esc(ex.matched_category) + '</span> (' + ex.matched_category_count + ')' : '<span class="text-muted">aucune</span>') + '</li>'
+        + '<li>Destination : ' + (ex.matched_destination ? '<span class="label label-success">' + esc(ex.matched_destination) + '</span>' : '<span class="text-muted">aucune</span>') + '</li>'
+        + '<li>Tags : ' + ((ex.matched_tags && ex.matched_tags.length) ? ex.matched_tags.map(esc).join(', ') : '<span class="text-muted">aucun</span>') + '</li>'
+        + '</ul></div><div class="col-sm-8">'
+        + votesHtml('Votes catégorie', ex.category_votes)
+        + votesHtml('Votes destination', ex.dest_votes)
+        + votesHtml('Votes tags', ex.tag_votes)
+        + '</div></div>';
+
+    var entries = ex.entries || [];
+    h += '<hr><strong>Occurrences passées (' + entries.length + ')</strong>';
+    if (!entries.length) {
+        h += '<p class="text-muted">Aucune transaction passée pour ce marchand.</p>';
+    } else {
+        h += '<div class="table-responsive"><table class="table table-condensed" style="font-size:12px;margin-top:6px">'
+            + '<thead><tr><th>Libellé</th><th class="text-right">Montant</th><th>Catégorie</th><th>Destination</th><th>Tags</th><th>Pris en compte</th></tr></thead><tbody>';
+        entries.forEach(function (e) {
+            h += '<tr' + (e.amount_ok ? '' : ' class="text-muted"') + '>'
+                + '<td>' + esc((e.description || '').substring(0, 40)) + '</td>'
+                + '<td class="text-right">' + (e.amount ? e.amount.toFixed(2) : '—') + '</td>'
+                + '<td>' + (e.category ? esc(e.category) : '—') + '</td>'
+                + '<td>' + (e.destination ? esc(e.destination) : '—') + '</td>'
+                + '<td>' + ((e.tags && e.tags.length) ? e.tags.map(esc).join(', ') : '—') + '</td>'
+                + '<td>' + (e.amount_ok ? '<span class="text-success">oui</span>' : '<span class="text-danger" title="montant hors plage ±' + ex.amount_ratio + '×">non (montant)</span>') + '</td>'
+                + '</tr>';
+        });
+        h += '</tbody></table></div>';
+    }
+    $('#automatch-body').html(h);
+}
+
 // ─── Edit-transaction modal (shared across pages) ──────────────────────────
 var editTxnId = null;
 var editTxnTags = [];
@@ -522,7 +584,8 @@ function buildJobRow(j) {
         + '<td class="hidden-xs">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
         + '<td><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
         + '<td class="text-right hidden-xs text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
-        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
+        + '<td class="text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
+        + '<button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
     return tr;
 }
@@ -759,7 +822,8 @@ function renderTxnTable(rows) {
             + '<td class="text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td>' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
             + '<td class="hidden-xs">' + stateBadge + (semTags ? ' ' + semTags : '')
-            + ' <a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer" style="margin-left:4px"><i class="fa fa-pencil"></i></a></td>'
+            + ' <a href="#" onclick="openEditModal(\'' + r.id + '\');return false" title="Éditer" style="margin-left:4px"><i class="fa fa-pencil"></i></a>'
+            + ' <a href="#" onclick="openAutoMatch(\'' + r.id + '\');return false" title="Pourquoi ce match ?"><i class="fa fa-search text-muted"></i></a></td>'
             + '</tr>';
     }).join('');
     $('#txn-tbody').html(html);

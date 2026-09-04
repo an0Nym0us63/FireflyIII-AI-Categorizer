@@ -106,6 +106,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/accounts", h.getAccounts)
 	r.Get("/api/tags", h.getTags)
 	r.Get("/api/transactions/{id}", h.getTransaction)
+	r.Get("/api/transactions/{id}/automatch", h.getAutoMatch)
 	r.Put("/api/transactions/{id}/edit", h.editTransaction)
 	r.Post("/api/transactions/details", h.getTransactionDetails)
 	r.Get("/api/transactions", h.getTransactions)
@@ -791,6 +792,21 @@ func (h *Handler) getTransactionDetails(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// getAutoMatch returns the history auto-match explanation for a transaction.
+func (h *Handler) getAutoMatch(w http.ResponseWriter, r *http.Request) {
+	pipe := h.getPipe()
+	if pipe == nil {
+		http.Error(w, "not configured", http.StatusServiceUnavailable)
+		return
+	}
+	ex, err := pipe.ExplainAutoMatch(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, ex)
 }
 
 // getTransaction returns a single transaction's editable fields.
