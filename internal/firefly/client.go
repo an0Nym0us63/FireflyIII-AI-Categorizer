@@ -890,33 +890,24 @@ func buildNotes(existing string, outcome UpdateOutcome) string {
 }
 
 // stripGeneratedNotes removes our own previously-added lines (AI/Reason/
-// Assumption/Articles/suggested tags) and the bank "MORE DETAILS" boilerplate,
-// so reprocessing replaces them instead of piling up duplicates.
+// Assumption/Articles/suggested tags) so reprocessing replaces them instead of
+// piling up duplicates. It preserves everything else — including the bank's
+// "MORE DETAILS" block and any human notes.
 func stripGeneratedNotes(s string) string {
 	if s == "" {
 		return ""
 	}
-	if i := strings.Index(strings.ToUpper(s), "MORE DETAILS"); i >= 0 {
-		start := strings.LastIndex(s[:i], "\n")
-		if start < 0 {
-			start = 0
-		}
-		s = s[:start]
-	}
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
 		t := strings.TrimSpace(line)
-		if t == "" {
-			continue
-		}
 		if strings.HasPrefix(t, "AI:") || strings.HasPrefix(t, "Reason:") ||
 			strings.HasPrefix(t, "Assumption:") || strings.HasPrefix(t, "Articles:") ||
 			strings.HasPrefix(t, "Étiquettes suggérées") {
 			continue
 		}
-		out = append(out, t)
+		out = append(out, line)
 	}
-	return strings.TrimSpace(strings.Join(out, "\n"))
+	return strings.TrimRight(strings.Join(out, "\n"), "\n ")
 }
 
 func (c *Client) fetchTransactions(ctx context.Context, params url.Values, keep func(Split) bool) ([]Transaction, error) {
