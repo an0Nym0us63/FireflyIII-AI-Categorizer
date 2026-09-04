@@ -19,6 +19,7 @@ type Client struct {
 	tagPrefix  string
 	httpClient *http.Client
 	applyRules bool
+	writeSem   chan struct{} // serializes writes to avoid Firefly/MariaDB lock contention
 }
 
 func New(baseURL, token, tagPrefix string) *Client {
@@ -27,6 +28,7 @@ func New(baseURL, token, tagPrefix string) *Client {
 		token:      token,
 		tagPrefix:  tagPrefix,
 		applyRules: true,
+		writeSem:   make(chan struct{}, 1),
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -989,6 +991,17 @@ func toTransaction(item transactionData) Transaction {
 // errors (timeouts), 429 and 5xx with a short backoff. 4xx and success return
 // immediately. The body (if any) is resent on each attempt.
 func (c *Client) doRetry(ctx context.Context, method, u string, body []byte) (*http.Response, error) {
+	// Serialize writes: concurrent PUT/POST with apply_rules cause MariaDB lock
+	// contention in Firefly (each write then waits tens of seconds). Reads (GET)
+	// stay concurrent.
+	if method != http.MethodGet && c.writeSem != nil {
+		select {
+		case c.writeSem <- struct{}{}:
+			defer func() { <-c.writeSem }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
