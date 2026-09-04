@@ -620,14 +620,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 // dropped. Either way their ai:suggest:<name> marker is removed. Suggestions
 // not listed are left untouched.
 func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []Split, apply, reject []string) error {
-	applySet := make(map[string]bool)
-	for _, n := range apply {
-		applySet[strings.ToLower(strings.TrimSpace(n))] = true
-	}
-	rejectSet := make(map[string]bool)
-	for _, n := range reject {
-		rejectSet[strings.ToLower(strings.TrimSpace(n))] = true
-	}
+	_ = reject // rejections are handled locally (no Firefly change needed)
 	prefix := c.tagPrefix + ":suggest:"
 
 	type splitUpdate struct {
@@ -642,24 +635,18 @@ func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []S
 
 	b := body{ApplyRules: false, FireWebhooks: false}
 	for _, s := range splits {
-		tags := make([]string, 0, len(s.Tags))
-		var toAdd []string
+		tags := make([]string, 0, len(s.Tags)+len(apply))
 		for _, t := range s.Tags {
+			// Drop any legacy ai:suggest:* marker tags (suggestions now live in
+			// the local DB, not in Firefly).
 			if strings.HasPrefix(t, prefix) {
-				name := t[len(prefix):]
-				key := strings.ToLower(strings.TrimSpace(name))
-				if applySet[key] {
-					toAdd = append(toAdd, name)
-					continue // drop the marker; the real tag is added below
-				}
-				if rejectSet[key] {
-					continue // drop the marker without adding
-				}
+				continue
 			}
 			tags = append(tags, t)
 		}
-		for _, n := range toAdd {
-			if !contains(tags, n) {
+		// Add the applied suggestions as real tags.
+		for _, n := range apply {
+			if n = strings.TrimSpace(n); n != "" && !contains(tags, n) {
 				tags = append(tags, n)
 			}
 		}

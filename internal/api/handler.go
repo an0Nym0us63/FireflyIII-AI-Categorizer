@@ -1500,15 +1500,19 @@ func (h *Handler) resolveTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
-	if err != nil || len(txns) == 0 {
-		http.Error(w, "transaction not found", http.StatusNotFound)
-		return
-	}
-
-	if err := fc.ResolveSuggestedTags(r.Context(), id, txns[0].Splits, req.Apply, req.Reject); err != nil {
-		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
-		return
+	// Suggestions live in the local DB, not as Firefly tags. Rejecting one is
+	// therefore purely local — no Firefly round-trip needed. Only applying a
+	// suggestion actually adds a real tag in Firefly.
+	if len(req.Apply) > 0 {
+		txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+		if err != nil || len(txns) == 0 {
+			http.Error(w, "transaction not found", http.StatusNotFound)
+			return
+		}
+		if err := fc.ResolveSuggestedTags(r.Context(), id, txns[0].Splits, req.Apply, req.Reject); err != nil {
+			http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
+			return
+		}
 	}
 
 	// Drop the resolved suggestions from the local store.
