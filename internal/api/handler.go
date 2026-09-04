@@ -1733,17 +1733,43 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		categoryFilter != "" || descFilter != "" || (statusFilter != "" && statusFilter != "all")
 
 	if filtersActive {
-		// Fetch all pages in range, then filter (base fields + AI status).
+		// Base set: when filtering by description, let Firefly's indexed search do
+		// the heavy lifting (instant) instead of fetching every page. Otherwise
+		// fetch all pages in range and filter in Go.
 		var all []firefly.TransactionRow
-		for page := 1; ; page++ {
-			result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
+		if descFilter != "" {
+			txns, err := fc.SearchWithdrawals(r.Context(), descFilter)
 			if err != nil {
-				http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
+				http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
 				return
 			}
-			all = append(all, result.Data...)
-			if page >= result.TotalPages {
-				break
+			for _, t := range txns {
+				if len(t.Splits) == 0 {
+					continue
+				}
+				s := t.Splits[0]
+				if start != "" && len(s.Date) >= 10 && s.Date[:10] < start {
+					continue
+				}
+				if end != "" && len(s.Date) >= 10 && s.Date[:10] > end {
+					continue
+				}
+				all = append(all, firefly.TransactionRow{
+					ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
+					Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
+				})
+			}
+		} else {
+			for page := 1; ; page++ {
+				result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
+					return
+				}
+				all = append(all, result.Data...)
+				if page >= result.TotalPages {
+					break
+				}
 			}
 		}
 		ids := make([]string, len(all))
