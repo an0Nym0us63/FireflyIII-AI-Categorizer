@@ -1240,7 +1240,7 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string
 	if key == "" {
 		return nil, nil
 	}
-	all, err := p.firefly.GetAllWithdrawals(ctx, 730)
+	all, err := p.firefly.GetAllWithdrawals(ctx)
 	if err != nil {
 		return nil, err
 	}

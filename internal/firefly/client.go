@@ -273,13 +273,6 @@ func (c *Client) GetTags(ctx context.Context) ([]string, error) {
 	return tags, nil
 }
 
-// GetAllWithdrawals fetches all withdrawals (categorized or not) since lookbackDays.
-func (c *Client) GetAllWithdrawals(ctx context.Context, lookbackDays int) ([]Transaction, error) {
-	start := time.Now().AddDate(0, 0, -lookbackDays).Format("2006-01-02")
-	params := url.Values{"type": {"withdrawal"}, "start": {start}}
-	return c.fetchTransactions(ctx, params, func(s Split) bool { return true })
-}
-
 // GetCategorizedWithdrawals fetches all categorized withdrawals within the lookback window.
 func (c *Client) GetCategorizedWithdrawals(ctx context.Context, lookbackDays int) ([]Transaction, error) {
 	start := time.Now().AddDate(0, 0, -lookbackDays).Format("2006-01-02")
