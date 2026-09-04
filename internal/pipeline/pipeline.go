@@ -223,6 +223,16 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
+	// If a mail-detector merchant fell back to CSV (or nothing) because no email
+	// matched, keep a short diagnostic on the job so it can be analysed.
+	var enrichDiag string
+	if skipIfEmpty && enrichSource != "email" {
+		enrichDiag = fmt.Sprintf("email non trouvé: %d candidat(s), %d hit(s)", mailCandidates, mailSearchHits)
+		if mailNote != "" {
+			enrichDiag += " — " + mailNote
+		}
+	}
+
 	// Opaque merchant with no order content found → leave the transaction
 	// untouched (don't waste an LLM call on a useless label).
 	if skipIfEmpty && extraContext == "" {
@@ -392,6 +402,12 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// Examples for the LLM: broad label match, real categories, up to 10 (A).
 	// Independent of the deterministic auto-match history (B) above.
 	promptHistory := p.promptExamples(ctx, gkey, transactionID)
+	// Merchants configured with a mail detector (Amazon, PayPal, AliExpress…) are
+	// multi-purpose: their past classifications are irrelevant/misleading, so the
+	// LLM must rely on the order email/CSV content only — no examples.
+	if skipIfEmpty {
+		promptHistory = nil
+	}
 
 	// Fetch existing tags to offer the LLM for reuse (only when tagging is on
 	// and we're actually classifying a category).
@@ -452,7 +468,11 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	case "email":
 		outcome.Reason = "[via email] " + outcome.Reason
 	case "csv":
-		outcome.Reason = "[via CSV Amazon] " + outcome.Reason
+		if enrichDiag != "" {
+			outcome.Reason = "[via CSV Amazon — " + enrichDiag + "] " + outcome.Reason
+		} else {
+			outcome.Reason = "[via CSV Amazon] " + outcome.Reason
+		}
 	}
 
 	// An Amazon match disambiguated by amount (several orders that day) is not
@@ -656,7 +676,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// Use history override values for the finished job when they were applied.
 	finishedOutcome := string(result.Outcome)
 	finishedCategory := result.Category
-	finishedReason := result.Reason
+	finishedReason := outcome.Reason
 	if !opts.ClassifyCategory {
 		finishedOutcome = string(classifier.Classified)
 		finishedCategory = ""

@@ -618,6 +618,9 @@ function buildJobRow(j) {
     if (j.source === 'webhook') srcBadge = ' <span class="label label-info" style="font-size:9px" title="Depuis un webhook">hook</span>';
     else if (j.source === 'batch') srcBadge = ' <span class="label label-default" style="font-size:9px" title="Depuis un batch">batch</span>';
     else if (j.source === 'manual') srcBadge = ' <span class="label label-default" style="font-size:9px" title="Relance manuelle">manuel</span>';
+    var r = j.reason || '';
+    if (r.indexOf('[via email]') === 0) srcBadge += ' <span class="label label-success" style="font-size:9px" title="Enrichi par email">email</span>';
+    else if (r.indexOf('[via CSV Amazon') === 0) srcBadge += ' <span class="label label-warning" style="font-size:9px" title="Enrichi par CSV Amazon (email non trouvé)">CSV</span>';
 
     var tid = esc(j.transaction_id || '');
     var realDiv = function (f) { return '<div class="job-real" data-f="' + f + '" data-txn="' + tid + '" style="font-size:11px;color:#8a8a8a"></div>'; };
