@@ -843,19 +843,38 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	updated := 0
-	for _, id := range req.IDs {
-		txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
-		if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
-			continue
-		}
-		if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
-			continue
-		}
-		_ = h.aidb.MarkTreated(id)
-		h.registry.MarkReviewedByTxn(id)
-		updated++
+	if len(req.IDs) == 0 {
+		writeJSON(w, http.StatusOK, map[string]int{"updated": 0})
+		return
 	}
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		updated int
+		sem     = make(chan struct{}, 6)
+	)
+	for _, id := range req.IDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(id string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+			if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+				return
+			}
+			if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+				return
+			}
+			_ = h.aidb.MarkTreated(id)
+			h.registry.MarkReviewedByTxn(id)
+			mu.Lock()
+			updated++
+			mu.Unlock()
+		}(id)
+	}
+	wg.Wait()
+
 	h.invalidateReviewCache()
 	writeJSON(w, http.StatusOK, map[string]int{"updated": updated})
 }

@@ -464,7 +464,8 @@ function saveEditTxn() {
     if ($('#edit-apply-similar').is(':checked')) {
         document.querySelectorAll('#edit-similar-list .edit-sim-cb:checked').forEach(function (c) { extra.push(c.getAttribute('data-id')); });
     }
-    $('#edit-txn-status').html('<i class="fa fa-spinner fa-spin"></i> Enregistrement…');
+    var msg = extra.length ? ('Enregistrement (' + (extra.length + 1) + ' transactions)…') : 'Enregistrement…';
+    $('#edit-txn-status').html('<i class="fa fa-spinner fa-spin"></i> ' + msg);
     var editOne = fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/edit', {
         method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); }); });
