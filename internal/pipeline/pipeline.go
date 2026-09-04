@@ -1122,7 +1122,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	}
 
 	ex := &AutoMatchExplanation{
-		GroupKey: gkey, Amount: amount, AmountRatio: historyMatchMaxRatio, MinCount: historyMatchMinCount,
+		GroupKey: gkey, Amount: amount, AmountRatio: 1.75, MinCount: historyMatchMinCount,
 		CategoryVotes: map[string]int{}, DestVotes: map[string]int{}, TagVotes: map[string]int{},
 	}
 	if p.matchMailDetector(s.Description) != nil {
@@ -1152,12 +1152,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		amt = math.Abs(amt)
 		semTags := classifier.SemanticTags(sp.Tags)
 
-		amtOK := true
-		if amount > 0 && amt > 0 {
-			hi := math.Max(amount, amt)
-			lo := math.Min(amount, amt)
-			amtOK = hi/lo <= historyMatchMaxRatio
-		}
+		amtOK := amountWeight(amount, amt) > 0
 
 		reason, counted := "", false
 		var spDate time.Time
@@ -1182,7 +1177,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		case classifier.IsGenericAccountName(sp.DestinationName):
 			reason = "compte générique (Cash)"
 		case !amtOK:
-			reason = "montant hors ±" + strconv.FormatFloat(historyMatchMaxRatio, 'g', -1, 64) + "×"
+			reason = "montant trop différent (>1.75×)"
 		default:
 			counted = true
 		}
@@ -1287,11 +1282,25 @@ func recencyWeight(entryDate, txnDate time.Time) float64 {
 	}
 }
 
-func amountCompatible(a, b float64) bool {
+// amountWeight scores how close two amounts are: ~exact counts full, further
+// counts progressively less, beyond ~1.75× it's excluded (0). Unknown → neutral.
+func amountWeight(a, b float64) float64 {
 	if a <= 0 || b <= 0 {
-		return true
+		return 1.0
 	}
-	return math.Max(a, b)/math.Min(a, b) <= historyMatchMaxRatio
+	r := math.Max(a, b) / math.Min(a, b)
+	switch {
+	case r <= 1.02:
+		return 1.0
+	case r <= 1.10:
+		return 0.8
+	case r <= 1.25:
+		return 0.5
+	case r <= 1.75:
+		return 0.2
+	default:
+		return 0.0
+	}
 }
 
 func weightedVote(weights map[string]float64) (string, float64) {
@@ -1315,10 +1324,11 @@ func weightedVote(weights map[string]float64) (string, float64) {
 func weightedCategory(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
 	w := map[string]float64{}
 	for _, h := range history {
-		if h.CategoryName == "" || !amountCompatible(amount, h.Amount) {
+		aw := amountWeight(amount, h.Amount)
+		if h.CategoryName == "" || aw == 0 {
 			continue
 		}
-		w[h.CategoryName] += recencyWeight(h.Date, txnDate)
+		w[h.CategoryName] += recencyWeight(h.Date, txnDate) * aw
 	}
 	return weightedVote(w)
 }
@@ -1326,10 +1336,11 @@ func weightedCategory(history []classifier.HistoricalEntry, txnDate time.Time, a
 func weightedDestination(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
 	w := map[string]float64{}
 	for _, h := range history {
-		if h.DestinationAccountID == "" || !amountCompatible(amount, h.Amount) {
+		aw := amountWeight(amount, h.Amount)
+		if h.DestinationAccountID == "" || aw == 0 {
 			continue
 		}
-		w[h.DestinationAccountID] += recencyWeight(h.Date, txnDate)
+		w[h.DestinationAccountID] += recencyWeight(h.Date, txnDate) * aw
 	}
 	return weightedVote(w)
 }
@@ -1339,7 +1350,8 @@ func weightedTags(history []classifier.HistoricalEntry, txnDate time.Time, amoun
 	var order []string
 	orig := map[string]string{}
 	for _, h := range history {
-		if !amountCompatible(amount, h.Amount) {
+		aw := amountWeight(amount, h.Amount)
+		if aw == 0 {
 			continue
 		}
 		seen := map[string]bool{}
@@ -1353,7 +1365,7 @@ func weightedTags(history []classifier.HistoricalEntry, txnDate time.Time, amoun
 				orig[k] = t
 				order = append(order, k)
 			}
-			w[k] += recencyWeight(h.Date, txnDate)
+			w[k] += recencyWeight(h.Date, txnDate) * aw
 		}
 	}
 	var out []string
