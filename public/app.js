@@ -346,13 +346,13 @@ function renderAutoMatch(ex) {
         h += '<div class="table-responsive"><table class="table table-condensed" style="font-size:12px;margin-top:6px">'
             + '<thead><tr><th>Libellé</th><th class="text-right">Montant</th><th>Catégorie</th><th>Destination</th><th>Tags</th><th>Pris en compte</th></tr></thead><tbody>';
         entries.forEach(function (e) {
-            h += '<tr' + (e.amount_ok ? '' : ' class="text-muted"') + '>'
+            h += '<tr' + (e.counted ? '' : ' class="text-muted"') + '>'
                 + '<td>' + esc((e.description || '').substring(0, 40)) + '</td>'
                 + '<td class="text-right">' + (e.amount ? e.amount.toFixed(2) : '—') + '</td>'
                 + '<td>' + (e.category ? esc(e.category) : '—') + '</td>'
                 + '<td>' + (e.destination ? esc(e.destination) : '—') + '</td>'
                 + '<td>' + ((e.tags && e.tags.length) ? e.tags.map(esc).join(', ') : '—') + '</td>'
-                + '<td>' + (e.amount_ok ? '<span class="text-success">oui</span>' : '<span class="text-danger" title="montant hors plage ±' + ex.amount_ratio + '×">non (montant)</span>') + '</td>'
+                + '<td>' + (e.counted ? '<span class="text-success">compté</span>' : '<span class="text-danger" title="' + esc(e.reason || '') + '">écarté (' + esc(e.reason || '') + ')</span>') + '</td>'
                 + '</tr>';
         });
         h += '</tbody></table></div>';
@@ -424,6 +424,15 @@ function addEditTag(v) {
 function removeEditTag(i) { editTxnTags.splice(i, 1); renderEditTags(); }
 
 var editSimilar = [];
+var lastSimIndex = -1;
+function simCbClick(ev, cb, idx) {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('#edit-similar-list .edit-sim-cb'));
+    if (ev.shiftKey && lastSimIndex >= 0 && lastSimIndex !== idx) {
+        var lo = Math.min(lastSimIndex, idx), hi = Math.max(lastSimIndex, idx);
+        for (var i = lo; i <= hi; i++) { if (boxes[i]) boxes[i].checked = cb.checked; }
+    }
+    lastSimIndex = idx;
+}
 function toggleSimilarList(on) {
     $('#edit-similar-wrap').toggle(on);
     if (!on || !editTxnId) return;
@@ -435,10 +444,11 @@ function toggleSimilarList(on) {
             if (!editSimilar.length) { $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction de ce marchand.</span>'); return; }
             $('#edit-similar-list').html(editSimilar.map(function (s, i) {
                 return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
-                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '"> '
+                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ')"> '
                     + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
                     + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span></label>';
             }).join(''));
+            lastSimIndex = -1;
         }).catch(function () { $('#edit-similar-list').html('<span class="text-danger">Erreur.</span>'); });
 }
 function checkAllSimilar(on) { document.querySelectorAll('#edit-similar-list .edit-sim-cb').forEach(function (c) { c.checked = on; }); }

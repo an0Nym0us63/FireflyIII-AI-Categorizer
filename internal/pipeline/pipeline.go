@@ -1073,6 +1073,8 @@ type AutoMatchEntry struct {
 	Destination string   `json:"destination"`
 	Tags        []string `json:"tags"`
 	AmountOK    bool     `json:"amount_ok"`
+	Counted     bool     `json:"counted"`
+	Reason      string   `json:"reason"`
 }
 
 type AutoMatchExplanation struct {
@@ -1092,8 +1094,9 @@ type AutoMatchExplanation struct {
 	Notes                []string         `json:"notes"`
 }
 
-// ExplainAutoMatch reproduces the history auto-match for a transaction and
-// returns the occurrences, votes and conclusion, for a "why?" popup.
+// ExplainAutoMatch reproduces the history auto-match for a transaction using the
+// live data (all same-merchant withdrawals), flagging each occurrence as counted
+// or excluded (with the reason), so the "why?" popup shows the full picture.
 func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (*AutoMatchExplanation, error) {
 	txns, err := p.firefly.GetTransactionsByIDs(ctx, []string{transactionID})
 	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
@@ -1106,12 +1109,6 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	}
 	gkey := classifier.GroupKey(s.DestinationName, s.Description)
 
-	lookupLimit := historyMatchLookup
-	if p.contextN > lookupLimit {
-		lookupLimit = p.contextN
-	}
-	history := excludeTransaction(p.cache.GetHistory(ctx, gkey, lookupLimit), transactionID)
-
 	ex := &AutoMatchExplanation{
 		GroupKey: gkey, Amount: amount, AmountRatio: historyMatchMaxRatio, MinCount: historyMatchMinCount,
 		CategoryVotes: map[string]int{}, DestVotes: map[string]int{}, TagVotes: map[string]int{},
@@ -1120,67 +1117,102 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		ex.MailDetector = true
 		ex.Notes = append(ex.Notes, "Ce marchand est géré par un détecteur mail → l'auto-match par historique est désactivé (catégorisation depuis l'email de commande).")
 	}
-
-	accounts, _ := p.getExpenseAccounts(ctx)
-	nameByID := map[string]string{}
-	for _, a := range accounts {
-		nameByID[a.ID] = a.Name
+	if gkey == "" {
+		ex.Notes = append(ex.Notes, "Clé marchand vide → pas de regroupement possible.")
+		return ex, nil
 	}
 
-	for _, h := range history {
-		amtOK := true
-		if amount > 0 && h.Amount > 0 {
-			hi := math.Max(amount, h.Amount)
-			lo := math.Min(amount, h.Amount)
-			amtOK = hi/lo <= historyMatchMaxRatio
-		}
-		destName := h.DestinationName
-		if n := nameByID[h.DestinationAccountID]; n != "" {
-			destName = n
-		}
-		semTags := classifier.SemanticTags(h.Tags)
-		ex.Entries = append(ex.Entries, AutoMatchEntry{
-			Description: h.Description, Amount: h.Amount, Category: h.CategoryName,
-			Destination: destName, Tags: semTags, AmountOK: amtOK,
-		})
-		if !amtOK {
+	all, err := p.firefly.GetAllWithdrawals(ctx)
+	if err != nil {
+		return nil, err
+	}
+	windowStart := time.Now().AddDate(0, 0, -365)
+
+	var voteHistory []classifier.HistoricalEntry
+	for _, t := range all {
+		if t.ID == transactionID || len(t.Splits) == 0 {
 			continue
 		}
-		if h.CategoryName != "" {
-			ex.CategoryVotes[h.CategoryName]++
+		sp := t.Splits[0]
+		if classifier.GroupKey(sp.DestinationName, sp.Description) != gkey {
+			continue
 		}
-		if h.DestinationAccountID != "" {
-			dn := nameByID[h.DestinationAccountID]
-			if dn == "" {
-				dn = h.DestinationAccountID
-			}
-			ex.DestVotes[dn]++
+		amt, _ := strconv.ParseFloat(strings.TrimSpace(sp.Amount), 64)
+		amt = math.Abs(amt)
+		semTags := classifier.SemanticTags(sp.Tags)
+
+		amtOK := true
+		if amount > 0 && amt > 0 {
+			hi := math.Max(amount, amt)
+			lo := math.Min(amount, amt)
+			amtOK = hi/lo <= historyMatchMaxRatio
 		}
-		seen := map[string]bool{}
-		for _, t := range semTags {
-			k := strings.ToLower(strings.TrimSpace(t))
-			if k == "" || seen[k] {
-				continue
+
+		reason, counted := "", false
+		inWindow := true
+		if len(sp.Date) >= 10 {
+			if d, derr := time.Parse("2006-01-02", sp.Date[:10]); derr == nil && d.Before(windowStart) {
+				inWindow = false
 			}
-			seen[k] = true
-			ex.TagVotes[t]++
+		}
+		switch {
+		case !inWindow:
+			reason = "hors fenêtre 365j"
+		case sp.CategoryName == "":
+			reason = "non catégorisée"
+		case classifier.IsGenericAccountName(sp.DestinationName):
+			reason = "compte générique (Cash)"
+		case !amtOK:
+			reason = "montant hors ±" + strconv.FormatFloat(historyMatchMaxRatio, 'g', -1, 64) + "×"
+		default:
+			counted = true
+		}
+
+		ex.Entries = append(ex.Entries, AutoMatchEntry{
+			Description: sp.Description, Amount: amt, Category: sp.CategoryName,
+			Destination: sp.DestinationName, Tags: semTags, AmountOK: amtOK,
+			Counted: counted, Reason: reason,
+		})
+		if counted {
+			if sp.CategoryName != "" {
+				ex.CategoryVotes[sp.CategoryName]++
+			}
+			if sp.DestinationName != "" {
+				ex.DestVotes[sp.DestinationName]++
+			}
+			seen := map[string]bool{}
+			for _, tg := range semTags {
+				k := strings.ToLower(strings.TrimSpace(tg))
+				if k == "" || seen[k] {
+					continue
+				}
+				seen[k] = true
+				ex.TagVotes[tg]++
+			}
+			voteHistory = append(voteHistory, classifier.HistoricalEntry{
+				CategoryName: sp.CategoryName, DestinationName: sp.DestinationName,
+				DestinationAccountID: sp.DestinationID, Amount: amt, Tags: semTags,
+			})
 		}
 	}
 
-	cat, catN := tryHistoryMatch(history, &amount)
-	destID, _ := tryDestinationHistoryMatch(history, &amount)
+	cat, catN := tryHistoryMatch(voteHistory, &amount)
 	ex.MatchedCategory, ex.MatchedCategoryCount = cat, catN
-	if destID != "" {
-		if n := nameByID[destID]; n != "" {
-			ex.MatchedDestination = n
-		} else {
+	if destID, _ := tryDestinationHistoryMatch(voteHistory, &amount); destID != "" {
+		for _, e := range voteHistory {
+			if e.DestinationAccountID == destID {
+				ex.MatchedDestination = e.DestinationName
+				break
+			}
+		}
+		if ex.MatchedDestination == "" {
 			ex.MatchedDestination = destID
 		}
 	}
-	ex.MatchedTags = tryHistoryTags(history, &amount)
+	ex.MatchedTags = tryHistoryTags(voteHistory, &amount)
 
-	if len(history) == 0 {
-		ex.Notes = append(ex.Notes, fmt.Sprintf("Aucune transaction passée pour ce marchand (clé « %s »).", gkey))
+	if len(ex.Entries) == 0 {
+		ex.Notes = append(ex.Notes, "Aucune transaction du même marchand trouvée.")
 	}
 	if cat == "" {
 		best, bestN := "", 0
@@ -1191,9 +1223,9 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		}
 		switch {
 		case bestN == 0:
-			ex.Notes = append(ex.Notes, "Catégorie : aucune occurrence exploitable (montant hors plage ou sans catégorie).")
+			ex.Notes = append(ex.Notes, "Catégorie : aucune occurrence comptée (voir colonne « compté »).")
 		case bestN < historyMatchMinCount:
-			ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie : « %s » n'a que %d occurrence(s), il en faut %d.", best, bestN, historyMatchMinCount))
+			ex.Notes = append(ex.Notes, fmt.Sprintf("Catégorie : « %s » n'a que %d occurrence(s) comptée(s), il en faut %d.", best, bestN, historyMatchMinCount))
 		default:
 			ex.Notes = append(ex.Notes, "Catégorie : égalité entre plusieurs catégories → pas de conclusion (l'IA décide).")
 		}
