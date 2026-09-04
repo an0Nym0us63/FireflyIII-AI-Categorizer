@@ -586,7 +586,7 @@ func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split,
 func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
 	type splitUpdate struct {
 		TransactionJournalID string   `json:"transaction_journal_id"`
-		Tags                 []string `json:"tags"`
+		Tags                 []string `json:"tags,omitempty"`
 		CategoryID           string   `json:"category_id,omitempty"`
 		DestinationID        string   `json:"destination_id,omitempty"`
 	}
@@ -608,11 +608,16 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		}
 		su := splitUpdate{
 			TransactionJournalID: s.JournalID,
-			Tags:                 tags,
 			CategoryID:           categoryID,
 		}
 		if destinationID != "" {
 			su.DestinationID = destinationID
+		}
+		// Only send tags when we actually removed a control tag. Re-sending the
+		// full tag set makes Firefly reprocess every tag (find/create/link),
+		// which is extremely slow on large tag tables.
+		if len(tags) != len(s.Tags) {
+			su.Tags = tags
 		}
 		b.Transactions = append(b.Transactions, su)
 	}
