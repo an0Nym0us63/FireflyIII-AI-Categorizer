@@ -614,9 +614,7 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
 	start := time.Now()
 	err := c.put(ctx, u, b)
-	if d := time.Since(start); d > 2*time.Second {
-		slog.Warn("slow Firefly transaction update (apply_rules enabled)", "id", id, "duration", d.Round(time.Millisecond).String())
-	}
+	slog.Info("firefly apply category", "id", id, "duration", time.Since(start).Round(time.Millisecond).String(), "err", err != nil)
 	return err
 }
 
@@ -845,7 +843,10 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 	}
 
 	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	return c.put(ctx, u, b)
+	start := time.Now()
+	err := c.put(ctx, u, b)
+	slog.Info("firefly update transaction (AI)", "id", id, "duration", time.Since(start).Round(time.Millisecond).String(), "err", err != nil)
+	return err
 }
 
 // isControlTag reports whether a tag is one of the app's old AI control tags
