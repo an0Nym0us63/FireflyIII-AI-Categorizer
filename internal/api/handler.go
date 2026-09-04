@@ -1622,6 +1622,14 @@ func aiFilterMatch(rec aidb.Record, ok bool, status string) bool {
 	}
 }
 
+// isCashAccountName reports whether a destination is Firefly's generic cash
+// account (treated as "no real destination").
+func isCashAccountName(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return n == "cash account" || n == "(cash account)" || n == "cash" ||
+		n == "compte d'espèces" || n == "espèces" || strings.Contains(n, "cash account")
+}
+
 // matchesTxnFilter checks whether a transaction row matches the active UI filters.
 func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter string) bool {
 	if missingCategory && row.CategoryName != "" {
@@ -1632,7 +1640,7 @@ func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestin
 	}
 	if missingDestination {
 		dn := strings.TrimSpace(row.DestinationName)
-		if dn != "" && !strings.EqualFold(dn, "(no name)") {
+		if dn != "" && !strings.EqualFold(dn, "(no name)") && !isCashAccountName(dn) {
 			return false
 		}
 	}
