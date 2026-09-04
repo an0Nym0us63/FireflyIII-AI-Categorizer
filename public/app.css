@@ -193,25 +193,45 @@ pre.detail-pre {
         padding: 8px !important;
     }
 
-    /* All tables scroll horizontally with momentum instead of clipping. */
-    .table-responsive {
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch;
-        width: 100%;
+    /* Data tables become stacked "cards" on phones so EVERY cell — tags, AI
+       status and the action buttons — is visible without horizontal scrolling. */
+    #txn-tbody > tr,
+    #job-table > tbody > tr,
+    #review-body table > tbody > tr {
+        display: block;
+        border: 1px solid rgba(128, 128, 128, .25);
+        border-radius: 6px;
+        margin: 0 0 8px;
+        padding: 6px 8px;
     }
-    .table-responsive > table {
-        margin-bottom: 0;
+    #txn-tbody > tr > td,
+    #job-table > tbody > tr > td,
+    #review-body table > tbody > tr > td {
+        display: block;
+        border: none !important;
+        padding: 3px 2px;
+        white-space: normal !important;
+        text-align: left !important;
+        width: auto !important;
     }
-    /* Don't let cells wrap into unreadable stacks; keep the row scrollable. */
-    .table-responsive td,
-    .table-responsive th {
-        white-space: nowrap;
+    /* Column headers are meaningless once rows are stacked. */
+    #tab-transactions .table > thead,
+    #job-table > thead,
+    #review-body table > thead {
+        display: none;
     }
-    /* Description can wrap (it's the long one) so the row isn't absurdly wide. */
-    .table-responsive td.wrap,
-    .table-responsive .desc-cell {
-        white-space: normal;
-        min-width: 160px;
+    /* Right-aligned amount cells look odd when stacked. */
+    #txn-tbody .text-right,
+    #job-table .text-right {
+        text-align: left !important;
+    }
+    /* Bigger, spaced action controls so they're tappable in the stacked card. */
+    #txn-tbody > tr > td:last-child a,
+    #job-table > tbody > tr > td:last-child .btn {
+        font-size: 17px;
+        margin-right: 16px;
+        display: inline-block;
+        padding: 4px 2px;
     }
 
     /* Filters / toolbars stack full-width and stay tappable. */
