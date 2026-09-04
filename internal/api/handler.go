@@ -322,6 +322,7 @@ type webhookSplitData struct {
 	DestinationName      string     `json:"destination_name"`
 	Amount               string     `json:"amount"`
 	CategoryID           string     `json:"category_id"`
+	CategoryName         string     `json:"category_name"`
 	Tags                 []string   `json:"tags"`
 	Notes                string     `json:"notes"`
 }
@@ -333,6 +334,21 @@ type webhookPayload struct {
 		ID           flexString         `json:"id"`
 		Transactions []webhookSplitData `json:"transactions"`
 	} `json:"content"`
+}
+
+// isForcedCategory reports whether a category name is in the force-recategorize
+// list (placeholders like "A catégoriser" that shouldn't count as "already set").
+func (h *Handler) isForcedCategory(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, c := range h.effectiveConfig().ForceCategories {
+		if strings.EqualFold(strings.TrimSpace(c), name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -375,7 +391,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not a withdrawal", first.Type)})
 		return
 	}
-	if first.CategoryID != "" && first.CategoryID != "0" {
+	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
 		slog.Debug("webhook skipped: category already set", "category_id", first.CategoryID, "txn_id", payload.Content.ID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
@@ -395,6 +411,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 			DestinationName: t.DestinationName,
 			Amount:          t.Amount,
 			CategoryID:      t.CategoryID,
+			CategoryName:    t.CategoryName,
 			Tags:            t.Tags,
 			Notes:           t.Notes,
 		}
