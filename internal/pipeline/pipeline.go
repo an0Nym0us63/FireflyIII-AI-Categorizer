@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -174,6 +175,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var paymentTag string
 	var forceDestination bool
 	var installmentTag bool
+	var enrichSource string // "email" | "csv"
 	var mailMerchant string
 	var mailCandidates int
 	var mailSearchHits int
@@ -185,6 +187,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		skipIfEmpty = true
 		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
+			enrichSource = "email"
 			slog.Info("order email matched", "id", transactionID, "installment", inst)
 			if det.ReplaceDestination {
 				opts.MatchDestination = true // determine the real merchant from the email
@@ -214,6 +217,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 		if products, certain, ok := p.amazon.Lookup(derefAmount(j.Amount), labelDate, fireflyDate, card); ok && len(products) > 0 {
 			extraContext = "Amazon order contents (matched by date): " + strings.Join(products, "; ")
+			enrichSource = "csv"
 			amazonUncertain = !certain
 			slog.Info("amazon order matched", "id", transactionID, "items", len(products), "certain", certain)
 		}
@@ -385,11 +389,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		return nil
 	}
 
-	// Trim history to the configured context limit for the AI prompt.
-	promptHistory := history
-	if len(promptHistory) > p.contextN {
-		promptHistory = promptHistory[:p.contextN]
-	}
+	// Examples for the LLM: broad label match, real categories, up to 10 (A).
+	// Independent of the deterministic auto-match history (B) above.
+	promptHistory := p.promptExamples(ctx, gkey, transactionID)
 
 	// Fetch existing tags to offer the LLM for reuse (only when tagging is on
 	// and we're actually classifying a category).
@@ -445,6 +447,12 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		Reason:     result.Reason,
 		Assumption: result.Assumption,
 		Items:      result.Items,
+	}
+	switch enrichSource {
+	case "email":
+		outcome.Reason = "[via email] " + outcome.Reason
+	case "csv":
+		outcome.Reason = "[via CSV Amazon] " + outcome.Reason
 	}
 
 	// An Amazon match disambiguated by amount (several orders that day) is not
@@ -1134,7 +1142,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		return ex, nil
 	}
 
-	all, err := p.firefly.SearchWithdrawals(ctx, gkey)
+	all, err := p.firefly.SearchWithdrawals(ctx, firstWord(gkey))
 	if err != nil {
 		return nil, err
 	}
@@ -1380,53 +1388,61 @@ func weightedTags(history []classifier.HistoricalEntry, txnDate time.Time, amoun
 // merchantHistory fetches (and briefly memoizes) same-merchant history via
 // Firefly's indexed search, keeping categorized non-generic withdrawals within
 // ±autoMatchWindowDays of the transaction date.
+// rawMerchant fetches (and memoizes for 2 min) every withdrawal whose label
+// contains the search term, with minimal parsing. Shared by the auto-match (B)
+// and the prompt examples (A).
+func (p *Pipeline) rawMerchant(ctx context.Context, searchTerm string) []classifier.HistoricalEntry {
+	if searchTerm == "" {
+		return nil
+	}
+	p.histMu.Lock()
+	memo, ok := p.histMemo[searchTerm]
+	fresh := ok && time.Since(memo.at) < 2*time.Minute
+	p.histMu.Unlock()
+	if fresh {
+		return memo.entries
+	}
+
+	txns, err := p.firefly.SearchWithdrawals(ctx, searchTerm)
+	if err != nil {
+		slog.Warn("merchant search failed", "error", err)
+		return nil
+	}
+	var raw []classifier.HistoricalEntry
+	for _, t := range txns {
+		if len(t.Splits) == 0 {
+			continue
+		}
+		s := t.Splits[0]
+		amt, _ := strconv.ParseFloat(strings.TrimSpace(s.Amount), 64)
+		var d time.Time
+		if len(s.Date) >= 10 {
+			d, _ = time.Parse("2006-01-02", s.Date[:10])
+		}
+		raw = append(raw, classifier.HistoricalEntry{
+			TransactionID: t.ID, DestinationName: s.DestinationName, Description: s.Description,
+			CategoryName: s.CategoryName, GroupKey: classifier.GroupKey(s.DestinationName, s.Description),
+			DestinationAccountID: s.DestinationID, Amount: math.Abs(amt),
+			Tags: classifier.SemanticTags(s.Tags), Date: d,
+		})
+	}
+	p.histMu.Lock()
+	p.histMemo[searchTerm] = memoEntry{entries: raw, at: time.Now()}
+	p.histMu.Unlock()
+	return raw
+}
+
+// merchantHistory (B — deterministic auto-match): same exact merchant key,
+// categorized, non-generic, within ±autoMatchWindowDays of the transaction date.
 func (p *Pipeline) merchantHistory(ctx context.Context, gkey string, txnDate time.Time) []classifier.HistoricalEntry {
 	if gkey == "" {
 		return nil
 	}
-	p.histMu.Lock()
-	memo, ok := p.histMemo[gkey]
-	fresh := ok && time.Since(memo.at) < 2*time.Minute
-	p.histMu.Unlock()
-
-	var raw []classifier.HistoricalEntry
-	if fresh {
-		raw = memo.entries
-	} else {
-		txns, err := p.firefly.SearchWithdrawals(ctx, gkey)
-		if err != nil {
-			slog.Warn("merchant history search failed", "error", err)
-			return nil
-		}
-		for _, t := range txns {
-			if len(t.Splits) == 0 {
-				continue
-			}
-			s := t.Splits[0]
-			if classifier.GroupKey(s.DestinationName, s.Description) != gkey {
-				continue
-			}
-			if s.CategoryName == "" || classifier.IsGenericAccountName(s.DestinationName) {
-				continue
-			}
-			amt, _ := strconv.ParseFloat(strings.TrimSpace(s.Amount), 64)
-			var d time.Time
-			if len(s.Date) >= 10 {
-				d, _ = time.Parse("2006-01-02", s.Date[:10])
-			}
-			raw = append(raw, classifier.HistoricalEntry{
-				TransactionID: t.ID, DestinationName: s.DestinationName, Description: s.Description,
-				CategoryName: s.CategoryName, DestinationAccountID: s.DestinationID,
-				Amount: math.Abs(amt), Tags: classifier.SemanticTags(s.Tags), Date: d,
-			})
-		}
-		p.histMu.Lock()
-		p.histMemo[gkey] = memoEntry{entries: raw, at: time.Now()}
-		p.histMu.Unlock()
-	}
-
 	var out []classifier.HistoricalEntry
-	for _, h := range raw {
+	for _, h := range p.rawMerchant(ctx, firstWord(gkey)) {
+		if h.GroupKey != gkey || h.CategoryName == "" || classifier.IsGenericAccountName(h.DestinationName) {
+			continue
+		}
 		if !txnDate.IsZero() && !h.Date.IsZero() {
 			d := h.Date.Sub(txnDate)
 			if d < 0 {
@@ -1437,6 +1453,29 @@ func (p *Pipeline) merchantHistory(ctx context.Context, gkey string, txnDate tim
 			}
 		}
 		out = append(out, h)
+	}
+	return out
+}
+
+// promptExamples (A — examples for the LLM): broad label match, any real
+// category (excludes empty and placeholder), all history, most-recent up to 10.
+func (p *Pipeline) promptExamples(ctx context.Context, gkey, transactionID string) []classifier.HistoricalEntry {
+	if gkey == "" {
+		return nil
+	}
+	var out []classifier.HistoricalEntry
+	for _, h := range p.rawMerchant(ctx, firstWord(gkey)) {
+		if h.TransactionID == transactionID || h.CategoryName == "" {
+			continue
+		}
+		if containsFoldStr(p.forceCategories, h.CategoryName) {
+			continue // placeholder like "A catégoriser" — a bogus example
+		}
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date.After(out[j].Date) })
+	if len(out) > 10 {
+		out = out[:10]
 	}
 	return out
 }
@@ -1475,7 +1514,7 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string
 	if key == "" {
 		return nil, nil
 	}
-	all, err := p.firefly.SearchWithdrawals(ctx, key)
+	all, err := p.firefly.SearchWithdrawals(ctx, firstWord(key))
 	if err != nil {
 		return nil, err
 	}
@@ -1499,4 +1538,13 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string
 		})
 	}
 	return out, nil
+}
+
+// firstWord returns the first space-separated word (the reliably-searchable part
+// of a possibly multi-word merchant key).
+func firstWord(s string) string {
+	if i := strings.IndexByte(s, ' '); i > 0 {
+		return s[:i]
+	}
+	return s
 }

@@ -1016,6 +1016,7 @@ type reviewGroup struct {
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
 	SuggestedTags        []string    `json:"suggested_tags,omitempty"`
 	AppliedTags          []string    `json:"applied_tags,omitempty"`
+	Reason               string      `json:"reason,omitempty"`
 	Transactions         []reviewTxn `json:"transactions"`
 }
 
@@ -1187,6 +1188,7 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 
 	catBucket := map[string]string{}   // txn id -> NEEDS_REVIEW / ASSUMED / DEST_ASSUMED
 	suggested := map[string][]string{} // txn id -> pending tag suggestions
+	reasonByID := map[string]string{}  // txn id -> AI reason (context for review)
 	var ids []string
 	seen := map[string]bool{}
 	addID := func(id string) {
@@ -1196,6 +1198,9 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 		}
 	}
 	for _, r := range records {
+		if r.Reason != "" {
+			reasonByID[r.TransactionID] = r.Reason
+		}
 		switch {
 		case r.Outcome == "NEEDS_REVIEW":
 			catBucket[r.TransactionID] = "NEEDS_REVIEW"
@@ -1246,6 +1251,11 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	result = append(result, buildReviewGroups("NEEDS_REVIEW", needsReview)...)
 	result = append(result, buildReviewGroups("ASSUMED", assumed)...)
 	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
+	for _, g := range result {
+		if len(g.Transactions) > 0 {
+			g.Reason = reasonByID[g.Transactions[0].ID]
+		}
+	}
 
 	// Tag suggestions — one row per transaction (not merged), in record order.
 	for _, id := range ids {

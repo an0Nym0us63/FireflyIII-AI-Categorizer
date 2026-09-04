@@ -155,14 +155,20 @@ func buildUserPrompt(req Request) string {
 	var sb strings.Builder
 
 	if len(req.History) > 0 {
-		gk := GroupKey(req.DestinationName, req.Description)
-		fmt.Fprintf(&sb, "Past classifications for %q:\n", gk)
+		sb.WriteString("Past classifications of similar transactions (label → category / destination / amount):\n")
 		for _, h := range req.History {
-			if len(h.Tags) > 0 {
-				fmt.Fprintf(&sb, "  - %q → %s [tags: %s]\n", h.Description, h.CategoryName, strings.Join(h.Tags, ", "))
-			} else {
-				fmt.Fprintf(&sb, "  - %q → %s\n", h.Description, h.CategoryName)
+			dest := h.DestinationName
+			if dest == "" {
+				dest = "?"
 			}
+			line := fmt.Sprintf("  - %q → %s / %s", h.Description, h.CategoryName, dest)
+			if h.Amount > 0 {
+				line += fmt.Sprintf(" / %.2f", h.Amount)
+			}
+			if len(h.Tags) > 0 {
+				line += fmt.Sprintf(" [tags: %s]", strings.Join(h.Tags, ", "))
+			}
+			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
 	}

@@ -105,6 +105,11 @@ var merchantStopwords = map[string]bool{
 	"SCI": true, "SNC": true, "SCM": true, "SELARL": true, "SELAS": true, "GIE": true,
 	"GAEC": true, "EARL": true, "STE": true, "STES": true, "STE.": true, "SOCIETE": true,
 	"ETS": true, "ETABLISSEMENTS": true, "SASU.": true,
+	// Bank/reference boilerplate — never part of the merchant name.
+	"MANDAT": true, "REF": true, "REFERENCE": true, "FACTURE": true, "FACT": true,
+	"ECH": true, "ECHEANCE": true, "CONTRAT": true, "CLIENT": true, "ABONNEMENT": true,
+	"ABO": true, "COTISATION": true, "CARTE": true, "NUMERO": true, "NUM": true,
+	"NO": true, "RUM": true, "ICS": true, "SEPA": true, "PRLV": true, "VIR": true,
 }
 
 // merchantFingerprint extracts a stable merchant key from a noisy French/CA
@@ -158,22 +163,24 @@ func merchantFingerprint(description string) string {
 		return strings.Trim(tok, ".-_/")
 	}
 
-	// Skip leading legal-forms/fillers (SCP, SARL, DE, DES…) and take the first
-	// meaningful token as the merchant key.
-	key := ""
+	// Skip leading legal-forms/fillers (SCP, SARL, DE, DES…) and take up to two
+	// meaningful, digit-free tokens as the merchant key (specific but tolerant).
+	var parts []string
 	for _, f := range fields {
 		tok := clean(f)
-		if tok == "" || merchantStopwords[tok] {
+		if tok == "" || merchantStopwords[tok] || len(tok) < 2 || reHasDigit.MatchString(tok) {
 			continue
 		}
-		key = tok
-		break
+		parts = append(parts, tok)
+		if len(parts) == 2 {
+			break
+		}
 	}
-	if key == "" {
-		key = clean(fields[0])
+	if len(parts) == 0 {
+		parts = append(parts, clean(fields[0]))
 	}
 
-	key = strings.ToLower(strings.TrimSpace(key))
+	key := strings.ToLower(strings.TrimSpace(strings.Join(parts, " ")))
 	// Reject useless keys: too short or reference-like (contains a digit).
 	if len(key) < 3 || reHasDigit.MatchString(key) {
 		return ""

@@ -1383,7 +1383,8 @@ function renderReviewTable(groups) {
             ? (isNaN(parseFloat(g.transactions[0].amount)) ? '—' : parseFloat(g.transactions[0].amount).toFixed(2))
             : (count + ' txns');
         var sub = lbl.sub ? '<br><small class="text-muted">' + esc(lbl.sub) + '</small>' : '';
-        var labelCell = '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + '</td>';
+        var reasonLine = g.reason ? '<br><small class="text-info" style="font-style:italic">' + esc(g.reason) + '</small>' : '';
+        var labelCell = '<td>' + esc(lbl.label) + buildSearchIcon(g) + sub + reasonLine + '</td>';
         var amtCell = '<td class="text-right" style="white-space:nowrap">' + amountCell + '</td>';
 
         if (g.outcome === 'REVIEWED') {
