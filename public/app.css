@@ -241,15 +241,17 @@ pre.detail-pre {
     }
     #txn-tbody .c-dest {
         grid-area: dest;
-        font-size: 15px;
-        font-weight: 600;
+        font-size: 17px;
+        font-weight: 700;
     }
     #txn-tbody .c-cat {
         grid-area: cat;
     }
     #txn-tbody .c-amount {
         grid-area: amount;
-        font-weight: 600;
+        font-weight: 400;
+        font-size: 13px;
+        color: #9aa0a6;
     }
     #txn-tbody .c-state {
         grid-area: status;
@@ -272,6 +274,13 @@ pre.detail-pre {
     #txn-tbody .c-actions a {
         font-size: 18px;
         margin-left: 14px;
+    }
+    /* Chips/labels smaller so the payee name dominates the card. */
+    #txn-tbody .label,
+    #job-table > tbody > tr .label {
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 2px 6px;
     }
 
     /* ── Jobs: same card philosophy via grid ──────────────────────── */
@@ -299,7 +308,7 @@ pre.detail-pre {
         min-width: 0;
     }
     #job-table .j-chevron { grid-area: chevron; }
-    #job-table .j-dest    { grid-area: dest; font-size: 15px; font-weight: 600; }
+    #job-table .j-dest    { grid-area: dest; font-size: 17px; font-weight: 700; }
     #job-table .j-cat     { grid-area: cat; }
     #job-table .j-tags    { grid-area: tags; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
     #job-table .j-status  { grid-area: status; }
