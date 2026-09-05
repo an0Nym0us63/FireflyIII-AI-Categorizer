@@ -227,6 +227,14 @@ function renderMailDetectors() {
             + '<span style="margin-left:6px">Tag à ajouter : <input type="text" class="input-sm" style="width:110px" value="' + esc(d.tag || '') + '"'
             + ' placeholder="ex: paypal" oninput="mailDetectors[' + i + '].tag=this.value"></span>'
             + '</div></div>'
+            + '<div class="row"><div class="col-sm-12" style="margin-top:6px;font-size:13px">'
+            + 'Fenêtre de recherche autour de la date de la transaction : '
+            + '<input type="number" min="0" class="input-sm" style="width:64px" value="' + (d.back_days || '') + '" placeholder="14"'
+            + ' oninput="mailDetectors[' + i + '].back_days=parseInt(this.value)||0"> jours avant · '
+            + '<input type="number" min="0" class="input-sm" style="width:64px" value="' + (d.fwd_days || '') + '" placeholder="2"'
+            + ' oninput="mailDetectors[' + i + '].fwd_days=parseInt(this.value)||0"> jours après'
+            + ' <span class="text-muted">(défaut 14 / 2)</span>'
+            + '</div></div>'
             + '<div class="row"><div class="col-sm-12" style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" onclick="removeMailDetector(' + i + ')"><i class="fa fa-trash"></i> Supprimer</button></div></div>'
             + '</div>';
     }).join('');

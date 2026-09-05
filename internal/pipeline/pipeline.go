@@ -180,11 +180,13 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var mailCandidates int
 	var mailSearchHits int
 	var mailNote string
+	mailBack, mailFwd := mailBackDays, mailFwdDays
 
 	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description); det != nil {
 		skipIfEmpty = true
+		mailBack, mailFwd = det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays)
 		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			enrichSource = "email"
@@ -239,8 +241,8 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		win := ""
 		if !fireflyDate.IsZero() {
 			win = fmt.Sprintf(" [fenêtre %s → %s]",
-				fireflyDate.AddDate(0, 0, -mailBackDays).Format("2006-01-02"),
-				fireflyDate.AddDate(0, 0, mailFwdDays).Format("2006-01-02"))
+				fireflyDate.AddDate(0, 0, -mailBack).Format("2006-01-02"),
+				fireflyDate.AddDate(0, 0, mailFwd).Format("2006-01-02"))
 		}
 		reason := "Aucun email de commande trouvé — non catégorisé."
 		if mailCandidates > 0 {
@@ -934,7 +936,7 @@ func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amou
 	}
 	res, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
-	}, det.Senders, date, amount, mailBackDays, mailFwdDays)
+	}, det.Senders, date, amount, det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays))
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
 		return "", false, false, 0, 0, err.Error()

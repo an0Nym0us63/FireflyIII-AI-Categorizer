@@ -81,6 +81,24 @@ type MailDetector struct {
 	Senders            []string `json:"senders"`             // From addresses of the order emails
 	ReplaceDestination bool     `json:"replace_destination"` // let the AI set the real merchant as destination
 	Tag                string   `json:"tag"`                 // extra tag to always apply (e.g. "paypal")
+	BackDays           int      `json:"back_days"`           // days before the bank date to search (0 = default 14)
+	FwdDays            int      `json:"fwd_days"`            // days after the bank date to search (0 = default 2)
+}
+
+// BackDaysOr returns the configured look-back window or the default.
+func (d MailDetector) BackDaysOr(def int) int {
+	if d.BackDays > 0 {
+		return d.BackDays
+	}
+	return def
+}
+
+// FwdDaysOr returns the configured look-forward window or the default.
+func (d MailDetector) FwdDaysOr(def int) int {
+	if d.FwdDays > 0 {
+		return d.FwdDays
+	}
+	return def
 }
 
 // Load reads config from environment variables and overlays the config file.
