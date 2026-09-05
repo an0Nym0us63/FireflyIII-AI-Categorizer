@@ -202,15 +202,11 @@ pre.detail-pre {
         display: block;
         width: 100%;
     }
-    #tab-transactions .table-responsive,
-    #tab-jobs .table-responsive {
-        overflow-x: hidden !important;
-    }
 
     /* ── Transactions: precise card via CSS grid (no horizontal scroll) ── */
     #txn-tbody > tr {
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         grid-template-areas:
             "check  date    actions"
             "dest   cat     actions"
@@ -273,7 +269,7 @@ pre.detail-pre {
     /* ── Jobs: same card philosophy via grid ──────────────────────── */
     #job-table > tbody > tr {
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         grid-template-areas:
             "chevron dest    actions"
             "chevron cat     actions"
