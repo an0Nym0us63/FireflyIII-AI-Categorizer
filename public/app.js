@@ -378,6 +378,10 @@ function renderAutoMatch(ex) {
 var editTxnId = null;
 var editTxnTags = [];
 var editListsLoaded = false;
+var editAccountsList = [], editCategoriesList = [], editTagsList = [];
+function namesOf(arr) {
+    return (arr || []).map(function (x) { return typeof x === 'string' ? x : (x.name || x.Name); }).filter(Boolean);
+}
 
 function loadEditLists(force) {
     if (editListsLoaded && !force) return Promise.resolve();
@@ -393,11 +397,67 @@ function loadEditLists(force) {
         document.getElementById('edit-accounts-list').innerHTML = opts(res[0]);
         document.getElementById('edit-categories-list').innerHTML = opts(res[1]);
         document.getElementById('edit-tags-list').innerHTML = opts(res[2]);
+        editAccountsList = namesOf(res[0]);
+        editCategoriesList = namesOf(res[1]);
+        editTagsList = namesOf(res[2]);
         // Only remember success if we actually got data, so a transient Firefly
         // hiccup (503 during a restart) doesn't permanently disable autocomplete.
         var any = (res[0] && res[0].length) || (res[1] && res[1].length) || (res[2] && res[2].length);
         editListsLoaded = !!any;
     });
+}
+
+// Custom autocomplete (native <datalist> is unreliable on mobile browsers).
+// mode 'set' replaces the input value; mode 'add' calls onPick and clears.
+function attachAutocomplete(inputId, getItems, mode, onPick) {
+    var input = document.getElementById(inputId);
+    if (!input || input._acAttached) return;
+    input._acAttached = true;
+    input.setAttribute('autocomplete', 'off');
+    input.removeAttribute('list');
+    var box = document.createElement('div');
+    box.className = 'ac-dropdown';
+    box.style.display = 'none';
+    input.parentNode.style.position = 'relative';
+    input.parentNode.appendChild(box);
+
+    var active = -1, items = [];
+    function hide() { box.style.display = 'none'; active = -1; }
+    function render() {
+        var q = input.value.trim().toLowerCase();
+        var all = getItems() || [];
+        items = all.filter(function (v) { return v.toLowerCase().indexOf(q) !== -1; }).slice(0, 12);
+        if (!items.length) { hide(); return; }
+        box.innerHTML = items.map(function (v, i) {
+            return '<div class="ac-item' + (i === active ? ' active' : '') + '" data-i="' + i + '">' + esc(v) + '</div>';
+        }).join('');
+        box.style.display = 'block';
+    }
+    function pick(v) {
+        if (mode === 'add') { if (onPick) onPick(v); input.value = ''; }
+        else { input.value = v; if (onPick) onPick(v); }
+        hide();
+    }
+    input.addEventListener('input', function () { active = -1; render(); });
+    input.addEventListener('focus', render);
+    input.addEventListener('keydown', function (e) {
+        if (box.style.display === 'none') return;
+        if (e.key === 'ArrowDown') { active = Math.min(active + 1, items.length - 1); render(); e.preventDefault(); }
+        else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
+        else if (e.key === 'Enter') { if (active >= 0 && items[active]) { pick(items[active]); e.preventDefault(); } }
+        else if (e.key === 'Escape') { hide(); }
+    });
+    box.addEventListener('mousedown', function (e) {
+        var el = e.target.closest('.ac-item');
+        if (el) { pick(items[parseInt(el.getAttribute('data-i'), 10)]); e.preventDefault(); }
+    });
+    input.addEventListener('blur', function () { setTimeout(hide, 150); });
+}
+
+function setupEditAutocomplete() {
+    attachAutocomplete('edit-txn-dest', function () { return editAccountsList; }, 'set');
+    attachAutocomplete('edit-txn-cat', function () { return editCategoriesList; }, 'set');
+    attachAutocomplete('edit-txn-tag-input', function () { return editTagsList; }, 'add', function (v) { addEditTag(v); });
 }
 
 function openEditModal(txnId) {
@@ -413,6 +473,7 @@ function openEditModal(txnId) {
     $('#edit-similar-wrap').hide();
     editSimilar = [];
     $('#edit-txn-modal').modal('show');
+    setupEditAutocomplete();
     loadEditLists();
     fetch('/api/transactions/' + encodeURIComponent(txnId))
         .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })

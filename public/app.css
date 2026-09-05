@@ -813,3 +813,29 @@ body.dark-mode .outcome-review {
     border-color: #9a2a2a;
     color: #ef9a9a;
 }
+
+/* Custom autocomplete dropdown (replaces flaky native <datalist> on mobile) */
+.ac-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 10000;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #2b2b2b;
+    border: 1px solid #555;
+    border-radius: 4px;
+    margin-top: 2px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+}
+.ac-item {
+    padding: 9px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #ddd;
+    border-bottom: 1px solid rgba(255, 255, 255, .05);
+}
+.ac-item:last-child { border-bottom: none; }
+.ac-item.active,
+.ac-item:hover { background: #3c8dbc; color: #fff; }
