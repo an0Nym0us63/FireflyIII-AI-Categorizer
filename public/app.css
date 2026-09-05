@@ -317,6 +317,11 @@ pre.detail-pre {
     #job-table .j-amount  { display: none; }
     #job-table .j-time    { display: none; }
     #job-table .j-tags .job-real { flex-basis: 100%; }
+    #job-table .job-real {
+        font-size: 11px;
+        color: #7a8087;
+        opacity: .85;
+    }
     #job-table .j-actions {
         grid-area: actions;
         text-align: right;
