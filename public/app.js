@@ -463,10 +463,11 @@ function loadSimilarList() {
             if (!editSimilar.length) { $('#edit-similar-count').text(''); $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'de ce marchand.</span>'); return; }
             $('#edit-similar-list').html(editSimilar.map(function (s, i) {
                 var badge = s.reviewed ? ' <span class="label label-info" style="font-size:9px">traité</span>' : '';
+                var tags = (s.tags && s.tags.length) ? ' ' + s.tags.map(function (t) { return '<span class="label label-primary" style="font-size:9px;font-weight:normal">' + esc(t) + '</span>'; }).join(' ') : '';
                 return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
                     + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ');updateSimilarCount()"> '
                     + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
-                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + badge + '</label>';
+                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + tags + badge + '</label>';
             }).join(''));
             lastSimIndex = -1;
             updateSimilarCount();
