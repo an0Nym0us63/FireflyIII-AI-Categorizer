@@ -145,6 +145,16 @@ type SearchResult struct {
 	Note        string // diagnostic note (e.g. a swallowed IMAP search error)
 }
 
+// cand is one candidate email during an order-email search.
+type cand struct {
+	text        string
+	subject     string
+	total       float64
+	dayDiff     time.Duration
+	amt         bool
+	installment bool
+}
+
 func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int, subjectContains string, aggregate bool) (SearchResult, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return SearchResult{}, nil
@@ -175,14 +185,6 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 
 	var searchErr error
 
-	type cand struct {
-		text        string
-		subject     string
-		total       float64
-		dayDiff     time.Duration
-		amt         bool
-		installment bool
-	}
 	fetchCands := func(uids []uint32) ([]cand, error) {
 		if len(uids) == 0 {
 			return nil, nil
