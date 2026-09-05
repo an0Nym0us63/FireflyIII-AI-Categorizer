@@ -227,7 +227,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 				continue
 			}
 			ok, inst := amountMatch(body, amount)
-			out = append(out, cand{text: body, subject: subj, total: extractMaxMoney(body), dayDiff: diff, amt: ok, installment: inst})
+			out = append(out, cand{text: body, subject: subj, total: extractOrderAmount(body), dayDiff: diff, amt: ok, installment: inst})
 		}
 		if err := <-done; err != nil {
 			return nil, err
@@ -623,20 +623,47 @@ func subsetSummingTo(cands []cand, target, pct float64) []cand {
 	return best
 }
 
-// extractMaxMoney returns the largest currency amount found in the text (the
-// per-email total is normally the largest figure).
-func extractMaxMoney(text string) float64 {
-	var max float64
-	for _, m := range reMoney.FindAllStringSubmatch(text, -1) {
+// rePubCut marks the start of the promotional "you may also like" block, whose
+// prices must never be mistaken for the order total.
+var rePubCut = regexp.MustCompile(`(?i)(vous aimerez aussi|you may also like|voir plus d.articles|articles recommand|recommended for you|sponsoris)`)
+
+// reTotalLabel matches the label that precedes the real order total.
+var reTotalLabel = regexp.MustCompile(`(?i)(total de la commande|order total|montant total|grand total|total\s*[:\t ])`)
+
+// extractOrderAmount returns the order total from an email, ignoring the promo
+// block and preferring the amount that follows a "total" label.
+func extractOrderAmount(text string) float64 {
+	body := text
+	if loc := rePubCut.FindStringIndex(body); loc != nil {
+		body = body[:loc[0]] // drop the recommendations/promo section
+	}
+	// Prefer the amount right after a "total" label.
+	if loc := reTotalLabel.FindStringIndex(body); loc != nil {
+		tail := body[loc[1]:]
+		if len(tail) > 60 {
+			tail = tail[:60]
+		}
+		if m := reMoney.FindStringSubmatch(tail); m != nil {
+			tok := m[1]
+			if tok == "" {
+				tok = m[2]
+			}
+			if v, ok := parseAmountToken(tok); ok && v > 0 {
+				return v
+			}
+		}
+	}
+	// Fallback: the first currency amount in the non-promo part.
+	if m := reMoney.FindStringSubmatch(body); m != nil {
 		tok := m[1]
 		if tok == "" {
 			tok = m[2]
 		}
-		if v, ok := parseAmountToken(tok); ok && v > max {
-			max = v
+		if v, ok := parseAmountToken(tok); ok {
+			return v
 		}
 	}
-	return max
+	return 0
 }
 
 // candDiag builds a human diagnostic of the candidate emails seen (subject +
