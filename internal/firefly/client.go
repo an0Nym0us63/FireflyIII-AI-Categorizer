@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -304,22 +305,69 @@ func (c *Client) SearchTransactionsRaw(ctx context.Context, query string) ([]Tra
 	if query == "" {
 		return nil, nil
 	}
-	var txns []Transaction
-	for page := 1; ; page++ {
-		u := fmt.Sprintf("%s/api/v1/search/transactions?query=%s&page=%d", c.baseURL, url.QueryEscape(query), page)
+	esc := url.QueryEscape(query)
+	fetchPage := func(page int) (transactionsResponse, error) {
+		u := fmt.Sprintf("%s/api/v1/search/transactions?query=%s&page=%d", c.baseURL, esc, page)
 		var resp transactionsResponse
-		if err := c.get(ctx, u, &resp); err != nil {
-			return nil, fmt.Errorf("search transactions page %d: %w", page, err)
-		}
+		err := c.get(ctx, u, &resp)
+		return resp, err
+	}
+	keep := func(resp transactionsResponse) []Transaction {
+		var out []Transaction
 		for _, item := range resp.Data {
 			txn := toTransaction(item)
 			if len(txn.Splits) > 0 && txn.Splits[0].Type == "withdrawal" {
-				txns = append(txns, txn)
+				out = append(out, txn)
 			}
 		}
-		if resp.Meta.Pagination.TotalPages == 0 || page >= resp.Meta.Pagination.TotalPages {
-			break
-		}
+		return out
+	}
+
+	// Page 1 tells us how many pages there are.
+	first, err := fetchPage(1)
+	if err != nil {
+		return nil, fmt.Errorf("search transactions page 1: %w", err)
+	}
+	totalPages := first.Meta.Pagination.TotalPages
+	if totalPages <= 1 {
+		return keep(first), nil
+	}
+
+	// Fetch the remaining pages concurrently (read-only GETs; Firefly handles
+	// parallel reads fine and this is far faster than a sequential loop).
+	pages := make([][]Transaction, totalPages+1)
+	pages[1] = keep(first)
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+		sem      = make(chan struct{}, 6)
+	)
+	for page := 2; page <= totalPages; page++ {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(page int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			resp, err := fetchPage(page)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("search transactions page %d: %w", page, err)
+				}
+				return
+			}
+			pages[page] = keep(resp)
+		}(page)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	var txns []Transaction
+	for page := 1; page <= totalPages; page++ {
+		txns = append(txns, pages[page]...)
 	}
 	return txns, nil
 }
