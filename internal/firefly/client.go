@@ -22,10 +22,17 @@ type Client struct {
 
 func New(baseURL, token, tagPrefix string) *Client {
 	return &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
-		tagPrefix:  tagPrefix,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		token:     token,
+		tagPrefix: tagPrefix,
+		httpClient: &http.Client{
+			Timeout: 120 * time.Second,
+			// Open a fresh connection per request. Reusing a keep-alive connection
+			// that was silently dropped (Docker/conntrack via the host LAN IP)
+			// stalls the next write for tens of seconds; curl avoids this by always
+			// dialing anew — do the same. This is what makes bulk writes hang.
+			Transport: &http.Transport{DisableKeepAlives: true},
+		},
 	}
 }
 

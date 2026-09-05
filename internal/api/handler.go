@@ -884,19 +884,22 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		go func(id string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			// Bound each write so a single stuck transaction can't hang the batch.
+			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			defer cancel()
 			// Fast path: the front already knows the journal id (from the similar
 			// list), so we can PUT directly without a per-transaction GET.
 			var splits []firefly.Split
 			if jid := req.JournalIDs[id]; jid != "" {
 				splits = []firefly.Split{{JournalID: jid}}
 			} else {
-				txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+				txns, err := fc.GetTransactionsByIDs(ctx, []string{id})
 				if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
 					return
 				}
 				splits = txns[0].Splits
 			}
-			if err := fc.EditTransaction(r.Context(), id, splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+			if err := fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
 				return
 			}
 			_ = h.aidb.MarkTreated(id)
