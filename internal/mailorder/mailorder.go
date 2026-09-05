@@ -335,36 +335,30 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 		return SearchResult{Candidates: senderCount, SearchHits: rawHits, Note: note}, nil
 	}
 
-	// Aggregation: several emails (one per sub-order/shipment) share the same
-	// order number and each carries a partial amount. Group by the order number
-	// found in the subject, sum the amounts, and if a group's total ≈ the debit,
-	// merge those emails into one context for the LLM.
-	if aggregate && amount > 0 {
-		groups := map[string][]cand{}
+	// Aggregation: an order can arrive as several emails (one per item/shipment),
+	// each with a partial amount and NO shared identifier. If no single email
+	// matches the debit, try to find a subset of candidate emails whose amounts
+	// sum to the debit (±2%), and merge those into one context for the LLM.
+	if aggregate && amount > 0 && !hasAmt(cands) {
+		var priced []cand
 		for _, c := range cands {
-			if num := extractOrderNumber(c.subject); num != "" {
-				groups[num] = append(groups[num], c)
+			if c.total > 0 {
+				priced = append(priced, c)
 			}
 		}
-		for _, g := range groups {
-			var sum float64
-			for _, c := range g {
-				sum += c.total
+		if group := subsetSummingTo(priced, amount, 0.02); len(group) > 1 {
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "Order made of %d emails/shipments (use them all to choose category, destination and tags):\n", len(group))
+			for i, c := range group {
+				fmt.Fprintf(&sb, "\n--- Email %d/%d ---\n%s\n", i+1, len(group), c.text)
 			}
-			if sum > 0 && withinPct(sum, amount, 0.02) {
-				var sb strings.Builder
-				sb.WriteString(fmt.Sprintf("Order made of %d shipments (use them all to choose category, destination and tags):\n", len(g)))
-				for i, c := range g {
-					fmt.Fprintf(&sb, "\n--- Email %d/%d ---\n%s\n", i+1, len(g), c.text)
-				}
-				out := sb.String()
-				if len(out) > 8000 {
-					out = out[:8000]
-				}
-				return SearchResult{Text: out, Found: true, Candidates: len(cands), SearchHits: rawHits}, nil
+			out := sb.String()
+			if len(out) > 8000 {
+				out = out[:8000]
 			}
+			return SearchResult{Text: out, Found: true, Candidates: len(cands), SearchHits: rawHits}, nil
 		}
-		// No group matched → fall through to the normal single-email logic.
+		// No combination matched → fall through to the normal single-email logic.
 	}
 
 	pick := func(list []cand) cand {
@@ -576,22 +570,51 @@ func extractText(r io.Reader) string {
 	return ""
 }
 
-// reOrderNum1 matches an order number that follows a keyword in the subject.
-var reOrderNum1 = regexp.MustCompile(`(?i)(?:commande|order|bestellung|pedido|n[o°]|ref(?:[eé]rence)?|#)\s*[:#]?\s*([0-9]{6,})`)
-
-// reOrderNum2 is the fallback: the longest 8+ digit run in the subject.
-var reOrderNum2 = regexp.MustCompile(`[0-9]{8,}`)
-
-// extractOrderNumber pulls an order/reference number from an email subject,
-// generically (keyword+digits first, else the longest long digit run).
-func extractOrderNumber(subject string) string {
-	if m := reOrderNum1.FindStringSubmatch(subject); m != nil {
-		return m[1]
+// subsetSummingTo returns a subset of candidates (size ≥ 2) whose amounts sum
+// to target (±pct). Bounded search: sorts by amount, caps the candidate count,
+// and prefers the smallest subset. Returns nil if none found.
+func subsetSummingTo(cands []cand, target, pct float64) []cand {
+	n := len(cands)
+	if n < 2 || n > 18 { // cap to keep the 2^n search bounded
+		if n > 18 {
+			n = 18
+		} else {
+			return nil
+		}
 	}
-	best := ""
-	for _, m := range reOrderNum2.FindAllString(subject, -1) {
-		if len(m) > len(best) {
-			best = m
+	items := cands[:n]
+	tol := pct * target
+	var best []cand
+	// Iterate subsets via bitmask; keep the one closest to target with fewest items.
+	for mask := 1; mask < (1 << n); mask++ {
+		bits := 0
+		var sum float64
+		for i := 0; i < n; i++ {
+			if mask&(1<<i) != 0 {
+				sum += items[i].total
+				bits++
+			}
+		}
+		if bits < 2 {
+			continue
+		}
+		d := sum - target
+		if d < 0 {
+			d = -d
+		}
+		if d <= tol {
+			if best == nil || bits < len(best) {
+				var g []cand
+				for i := 0; i < n; i++ {
+					if mask&(1<<i) != 0 {
+						g = append(g, items[i])
+					}
+				}
+				best = g
+				if bits == 2 {
+					break // smallest useful combination, good enough
+				}
+			}
 		}
 	}
 	return best
@@ -611,16 +634,4 @@ func extractMaxMoney(text string) float64 {
 		}
 	}
 	return max
-}
-
-// withinPct reports whether v is within pct of target.
-func withinPct(v, target, pct float64) bool {
-	if target <= 0 {
-		return false
-	}
-	d := v - target
-	if d < 0 {
-		d = -d
-	}
-	return d <= pct*target
 }

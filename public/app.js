@@ -237,7 +237,7 @@ function renderMailDetectors() {
             + '</div></div>'
             + '<div class="row"><div class="col-sm-12" style="margin-top:6px">'
             + '<label style="font-weight:normal;margin-right:14px"><input type="checkbox" ' + (d.aggregate ? 'checked' : '')
-            + ' onchange="mailDetectors[' + i + '].aggregate=this.checked"> Agréger par n° de commande (plusieurs emails = 1 paiement)</label>'
+            + ' onchange="mailDetectors[' + i + '].aggregate=this.checked"> Plusieurs emails possibles (sommer les montants pour retrouver le paiement)</label>'
             + '<span style="display:inline-block">Objet contient : <input type="text" class="input-sm" style="width:200px" value="' + esc(d.subject_contains || '') + '"'
             + ' placeholder="ex: commande expédiée" oninput="mailDetectors[' + i + '].subject_contains=this.value"></span>'
             + '</div></div>'
