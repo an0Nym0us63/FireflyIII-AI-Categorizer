@@ -479,6 +479,8 @@ function openEditModal(txnId) {
         .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
         .then(function (t) {
             $('#edit-txn-desc').text((t.description || '') + (t.amount ? '  —  ' + t.amount : '') + (t.date ? '  (' + (t.date || '').substring(0, 10) + ')' : ''));
+            var suggest = (t.description || '').replace(/\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, '').trim();
+            $('#edit-similar-query').val(suggest);
             $('#edit-txn-dest').val(t.destination_name || '');
             $('#edit-txn-cat').val(t.category_name || '');
             editTxnTags = (t.tags || []).slice();
@@ -516,11 +518,20 @@ function toggleSimilarList(on) {
     $('#edit-similar-wrap').toggle(on);
     if (on) loadSimilarList();
 }
+function debouncedSimilarReload() {
+    clearTimeout(window._simReloadT);
+    window._simReloadT = setTimeout(loadSimilarList, 400);
+}
 function loadSimilarList() {
     if (!editTxnId) return;
     var incl = $('#edit-similar-include-reviewed').is(':checked');
-    $('#edit-similar-list').html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Recherche des transactions du même marchand…</span>');
-    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/similar' + (incl ? '?include_reviewed=true' : ''))
+    var q = ($('#edit-similar-query').val() || '').trim();
+    var params = [];
+    if (incl) params.push('include_reviewed=true');
+    if (q) params.push('q=' + encodeURIComponent(q));
+    var qs = params.length ? '?' + params.join('&') : '';
+    $('#edit-similar-list').html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Recherche…</span>');
+    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/similar' + qs)
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (list) {
             editSimilar = list || [];

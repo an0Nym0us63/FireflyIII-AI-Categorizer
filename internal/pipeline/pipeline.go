@@ -1528,12 +1528,59 @@ type SimilarTxn struct {
 
 // SimilarTransactions returns other withdrawals that share the merchant key of
 // the given transaction (for bulk apply). Lookback ~730 days.
-func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string) ([]SimilarTxn, error) {
+func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID, query string) ([]SimilarTxn, error) {
 	txns, err := p.firefly.GetTransactionsByIDs(ctx, []string{transactionID})
 	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
 		return nil, fmt.Errorf("transaction not found")
 	}
 	s := txns[0].Splits[0]
+
+	// Free-text mode: the user typed what to match (case-insensitive "contains
+	// all words"). Useful when the auto key fails, e.g. loan instalments whose
+	// description ends with a per-month date ("00004672447 ECHEANCE 10/11/25").
+	if q := strings.TrimSpace(query); q != "" {
+		words := strings.Fields(strings.ToLower(q))
+		term := ""
+		for _, w := range words {
+			if len(w) > len(term) {
+				term = w // longest word = most selective for the Firefly search
+			}
+		}
+		all, err := p.firefly.SearchWithdrawals(ctx, term)
+		if err != nil {
+			return nil, err
+		}
+		var out []SimilarTxn
+		for _, t := range all {
+			if t.ID == transactionID || len(t.Splits) == 0 {
+				continue
+			}
+			sp := t.Splits[0]
+			desc := strings.ToLower(sp.Description)
+			ok := true
+			for _, w := range words {
+				if !strings.Contains(desc, w) {
+					ok = false
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
+			amt, _ := strconv.ParseFloat(strings.TrimSpace(sp.Amount), 64)
+			date := sp.Date
+			if len(date) >= 10 {
+				date = date[:10]
+			}
+			out = append(out, SimilarTxn{
+				ID: t.ID, Date: date, Description: sp.Description, Amount: math.Abs(amt),
+				Category: sp.CategoryName, Destination: sp.DestinationName, Tags: classifier.SemanticTags(sp.Tags),
+				JournalID: sp.JournalID,
+			})
+		}
+		return out, nil
+	}
+
 	key := classifier.GroupKey(s.DestinationName, s.Description)
 	if key == "" {
 		return nil, nil

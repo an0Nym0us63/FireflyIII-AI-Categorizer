@@ -832,7 +832,7 @@ func (h *Handler) getSimilar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not configured", http.StatusServiceUnavailable)
 		return
 	}
-	sims, err := pipe.SimilarTransactions(r.Context(), chi.URLParam(r, "id"))
+	sims, err := pipe.SimilarTransactions(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("q"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

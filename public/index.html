@@ -1378,6 +1378,12 @@
                             Appliquer aussi à d'autres transactions du même marchand
                         </label>
                         <div id="edit-similar-wrap" style="display:none;margin-top:6px">
+                            <div style="margin-bottom:6px">
+                                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:2px">Rechercher les similaires (contient tous les mots) :</label>
+                                <input type="text" class="form-control input-sm" id="edit-similar-query"
+                                    placeholder="ex: 00004672447 ECHEANCE" oninput="debouncedSimilarReload()">
+                                <span class="text-muted" style="font-size:11px">Astuce : retire la date de fin pour retrouver toutes les échéances.</span>
+                            </div>
                             <div class="checkbox" style="margin:2px 0 6px">
                                 <label style="font-weight:normal">
                                     <input type="checkbox" id="edit-similar-include-reviewed" onchange="loadSimilarList()">
