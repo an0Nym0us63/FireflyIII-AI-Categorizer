@@ -628,7 +628,7 @@ function buildJobRow(j) {
     tr.innerHTML =
         '<td class="j-chevron" style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
         + '<td class="j-dest">' + destHtml + srcBadge + realDiv('dest') + '</td>'
-        + '<td class="j-desc text-muted">' + esc(trunc(j.description, 55)) + realDiv('date') + '</td>'
+        + '<td class="j-desc">' + esc(j.description || '') + realDiv('date') + '</td>'
         + '<td class="j-amount text-right">' + amount + '</td>'
         + '<td class="j-cat">' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'
         + '<td class="j-tags">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
@@ -871,7 +871,7 @@ function renderTxnTable(rows) {
             + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
             + '<td class="c-dest"><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
-            + '<td class="c-desc text-muted">' + esc(trunc(r.description, 42)) + '</td>'
+            + '<td class="c-desc">' + esc(r.description || '') + '</td>'
             + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
             + '<td class="c-state">' + stateBadge + (semTags ? ' ' + semTags : '') + '</td>'
