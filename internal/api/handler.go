@@ -876,7 +876,7 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		wg      sync.WaitGroup
 		mu      sync.Mutex
 		updated int
-		sem     = make(chan struct{}, 3)
+		sem     = make(chan struct{}, 6)
 	)
 	for _, id := range req.IDs {
 		wg.Add(1)
