@@ -379,8 +379,8 @@ var editTxnId = null;
 var editTxnTags = [];
 var editListsLoaded = false;
 
-function loadEditLists() {
-    if (editListsLoaded) return Promise.resolve();
+function loadEditLists(force) {
+    if (editListsLoaded && !force) return Promise.resolve();
     return Promise.all([
         fetch('/api/accounts').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
         fetch('/api/categories').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
@@ -393,7 +393,10 @@ function loadEditLists() {
         document.getElementById('edit-accounts-list').innerHTML = opts(res[0]);
         document.getElementById('edit-categories-list').innerHTML = opts(res[1]);
         document.getElementById('edit-tags-list').innerHTML = opts(res[2]);
-        editListsLoaded = true;
+        // Only remember success if we actually got data, so a transient Firefly
+        // hiccup (503 during a restart) doesn't permanently disable autocomplete.
+        var any = (res[0] && res[0].length) || (res[1] && res[1].length) || (res[2] && res[2].length);
+        editListsLoaded = !!any;
     });
 }
 
