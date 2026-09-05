@@ -895,10 +895,14 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 	// Run the whole batch in the background (detached from the browser). The
 	// front polls /api/transactions/edit-bulk/{id} for progress.
 	go func() {
+		conc := h.baseCfg.BulkConcurrency
+		if conc < 1 {
+			conc = 4
+		}
 		var (
 			wg  sync.WaitGroup
 			mu  sync.Mutex
-			sem = make(chan struct{}, 6)
+			sem = make(chan struct{}, conc)
 		)
 		applyOne := func(id string) bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

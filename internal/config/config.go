@@ -55,6 +55,7 @@ type Config struct {
 
 	WorkerConcurrency int
 	BatchConcurrency  int
+	BulkConcurrency   int
 }
 
 // TagRule strips a tag from a transaction; To optionally replaces it.
@@ -132,6 +133,7 @@ func Load() (*Config, *Store, error) {
 		AIDBFile:                getEnv("AI_DB_FILE", "/data/ai.db"),
 		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
 		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 3),
+		BulkConcurrency:         getEnvInt("BULK_CONCURRENCY", 4),
 	}
 
 	ttlStr := getEnv("HISTORY_CACHE_TTL", "10m")
