@@ -884,8 +884,10 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		go func(id string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			// Bound each write so a single stuck transaction can't hang the batch.
-			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			// Detach from the browser request: if the user closes the dialog or the
+			// connection drops, the writes must still finish (no half-done batch,
+			// no 499s cancelling in-flight PUTs). Each write is still bounded.
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			// Fast path: the front already knows the journal id (from the similar
 			// list), so we can PUT directly without a per-transaction GET.
