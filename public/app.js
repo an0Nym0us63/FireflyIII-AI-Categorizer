@@ -476,9 +476,11 @@ function saveEditTxn() {
         method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); }); });
 
+    var journalIds = {};
+    (editSimilar || []).forEach(function (s) { if (s.journal_id) journalIds[s.id] = s.journal_id; });
     var editRest = extra.length ? fetch('/api/transactions/edit-bulk', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ids: extra, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
+        body: JSON.stringify({ids: extra, journal_ids: journalIds, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
     }) : Promise.resolve();
 
     Promise.all([editOne, editRest]).then(function () {

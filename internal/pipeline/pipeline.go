@@ -1521,6 +1521,7 @@ type SimilarTxn struct {
 	Destination string   `json:"destination"`
 	Tags        []string `json:"tags"`
 	Reviewed    bool     `json:"reviewed"`
+	JournalID   string   `json:"journal_id"`
 }
 
 // SimilarTransactions returns other withdrawals that share the merchant key of
@@ -1556,6 +1557,7 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID string
 		out = append(out, SimilarTxn{
 			ID: t.ID, Date: date, Description: sp.Description, Amount: math.Abs(amt),
 			Category: sp.CategoryName, Destination: sp.DestinationName, Tags: classifier.SemanticTags(sp.Tags),
+			JournalID: sp.JournalID,
 		})
 	}
 	return out, nil

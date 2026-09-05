@@ -858,10 +858,11 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		IDs             []string `json:"ids"`
-		CategoryName    string   `json:"category_name"`
-		DestinationName string   `json:"destination_name"`
-		Tags            []string `json:"tags"`
+		IDs             []string          `json:"ids"`
+		JournalIDs      map[string]string `json:"journal_ids"`
+		CategoryName    string            `json:"category_name"`
+		DestinationName string            `json:"destination_name"`
+		Tags            []string          `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -883,11 +884,19 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		go func(id string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
-			if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
-				return
+			// Fast path: the front already knows the journal id (from the similar
+			// list), so we can PUT directly without a per-transaction GET.
+			var splits []firefly.Split
+			if jid := req.JournalIDs[id]; jid != "" {
+				splits = []firefly.Split{{JournalID: jid}}
+			} else {
+				txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
+				if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
+					return
+				}
+				splits = txns[0].Splits
 			}
-			if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+			if err := fc.EditTransaction(r.Context(), id, splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
 				return
 			}
 			_ = h.aidb.MarkTreated(id)
