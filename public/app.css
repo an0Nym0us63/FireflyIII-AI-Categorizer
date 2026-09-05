@@ -292,7 +292,7 @@ pre.detail-pre {
             "chevron dest    actions"
             "chevron cat     actions"
             "status  tags    tags"
-            "desc    desc    desc";
+            "desc    desc    amount";
         gap: 3px 8px;
         align-items: center;
         border: 1px solid rgba(128, 128, 128, .25);
@@ -314,7 +314,7 @@ pre.detail-pre {
     #job-table .j-tags    { grid-area: tags; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
     #job-table .j-status  { grid-area: status; }
     #job-table .j-desc    { grid-area: desc; font-size: 15px; font-weight: 600; }
-    #job-table .j-amount  { display: none; }
+    #job-table .j-amount  { grid-area: amount; text-align: right !important; font-weight: 700; font-size: 15px; white-space: nowrap; align-self: end; }
     #job-table .j-time    { display: none; }
     #job-table .j-tags .job-real { flex-basis: 100%; }
     #job-table .job-real {
