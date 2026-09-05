@@ -446,18 +446,27 @@ function loadSimilarList() {
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (list) {
             editSimilar = list || [];
-            if (!editSimilar.length) { $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'de ce marchand.</span>'); return; }
+            if (!editSimilar.length) { $('#edit-similar-count').text(''); $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'de ce marchand.</span>'); return; }
             $('#edit-similar-list').html(editSimilar.map(function (s, i) {
                 var badge = s.reviewed ? ' <span class="label label-info" style="font-size:9px">traité</span>' : '';
                 return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
-                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ')"> '
+                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ');updateSimilarCount()"> '
                     + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
                     + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + badge + '</label>';
             }).join(''));
             lastSimIndex = -1;
+            updateSimilarCount();
         }).catch(function () { $('#edit-similar-list').html('<span class="text-danger">Erreur.</span>'); });
 }
-function checkAllSimilar(on) { document.querySelectorAll('#edit-similar-list .edit-sim-cb').forEach(function (c) { c.checked = on; }); }
+function updateSimilarCount() {
+    var boxes = document.querySelectorAll('#edit-similar-list .edit-sim-cb');
+    var checked = document.querySelectorAll('#edit-similar-list .edit-sim-cb:checked').length;
+    $('#edit-similar-count').text(checked + ' / ' + boxes.length + ' cochées');
+}
+function checkAllSimilar(on) {
+    document.querySelectorAll('#edit-similar-list .edit-sim-cb').forEach(function (c) { c.checked = on; });
+    updateSimilarCount();
+}
 
 function saveEditTxn() {
     if (!editTxnId) return;
