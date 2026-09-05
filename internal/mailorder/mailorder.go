@@ -145,7 +145,7 @@ type SearchResult struct {
 	Note        string // diagnostic note (e.g. a swallowed IMAP search error)
 }
 
-func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int) (SearchResult, error) {
+func FindOrderEmail(a Account, senders []string, date time.Time, amount float64, backDays, fwdDays int, subjectContains string, aggregate bool) (SearchResult, error) {
 	if a.Host == "" || a.User == "" || date.IsZero() {
 		return SearchResult{}, nil
 	}
@@ -177,6 +177,8 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 
 	type cand struct {
 		text        string
+		subject     string
+		total       float64
 		dayDiff     time.Duration
 		amt         bool
 		installment bool
@@ -199,12 +201,20 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 				continue
 			}
 			var diff time.Duration
-			if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
-				d := msg.Envelope.Date.Sub(date)
-				if d < 0 {
-					d = -d
+			subj := ""
+			if msg.Envelope != nil {
+				subj = msg.Envelope.Subject
+				if !msg.Envelope.Date.IsZero() {
+					d := msg.Envelope.Date.Sub(date)
+					if d < 0 {
+						d = -d
+					}
+					diff = d
 				}
-				diff = d
+			}
+			// Optional subject filter (case-insensitive "contains").
+			if subjectContains != "" && !strings.Contains(strings.ToLower(subj), strings.ToLower(subjectContains)) {
+				continue
 			}
 			r := msg.GetBody(section)
 			if r == nil {
@@ -215,7 +225,7 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 				continue
 			}
 			ok, inst := amountMatch(body, amount)
-			out = append(out, cand{text: body, dayDiff: diff, amt: ok, installment: inst})
+			out = append(out, cand{text: body, subject: subj, total: extractMaxMoney(body), dayDiff: diff, amt: ok, installment: inst})
 		}
 		if err := <-done; err != nil {
 			return nil, err
@@ -323,6 +333,38 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 			note = fmt.Sprintf("expéditeur: %d email(s) accessibles (INBOX), plus ancien: %s ; dossiers scannés: %s", senderTotal, od, strings.Join(scanned, ", "))
 		}
 		return SearchResult{Candidates: senderCount, SearchHits: rawHits, Note: note}, nil
+	}
+
+	// Aggregation: several emails (one per sub-order/shipment) share the same
+	// order number and each carries a partial amount. Group by the order number
+	// found in the subject, sum the amounts, and if a group's total ≈ the debit,
+	// merge those emails into one context for the LLM.
+	if aggregate && amount > 0 {
+		groups := map[string][]cand{}
+		for _, c := range cands {
+			if num := extractOrderNumber(c.subject); num != "" {
+				groups[num] = append(groups[num], c)
+			}
+		}
+		for _, g := range groups {
+			var sum float64
+			for _, c := range g {
+				sum += c.total
+			}
+			if sum > 0 && withinPct(sum, amount, 0.02) {
+				var sb strings.Builder
+				sb.WriteString(fmt.Sprintf("Order made of %d shipments (use them all to choose category, destination and tags):\n", len(g)))
+				for i, c := range g {
+					fmt.Fprintf(&sb, "\n--- Email %d/%d ---\n%s\n", i+1, len(g), c.text)
+				}
+				out := sb.String()
+				if len(out) > 8000 {
+					out = out[:8000]
+				}
+				return SearchResult{Text: out, Found: true, Candidates: len(cands), SearchHits: rawHits}, nil
+			}
+		}
+		// No group matched → fall through to the normal single-email logic.
 	}
 
 	pick := func(list []cand) cand {
@@ -532,4 +574,53 @@ func extractText(r io.Reader) string {
 		return stripHTML(html)
 	}
 	return ""
+}
+
+// reOrderNum1 matches an order number that follows a keyword in the subject.
+var reOrderNum1 = regexp.MustCompile(`(?i)(?:commande|order|bestellung|pedido|n[o°]|ref(?:[eé]rence)?|#)\s*[:#]?\s*([0-9]{6,})`)
+
+// reOrderNum2 is the fallback: the longest 8+ digit run in the subject.
+var reOrderNum2 = regexp.MustCompile(`[0-9]{8,}`)
+
+// extractOrderNumber pulls an order/reference number from an email subject,
+// generically (keyword+digits first, else the longest long digit run).
+func extractOrderNumber(subject string) string {
+	if m := reOrderNum1.FindStringSubmatch(subject); m != nil {
+		return m[1]
+	}
+	best := ""
+	for _, m := range reOrderNum2.FindAllString(subject, -1) {
+		if len(m) > len(best) {
+			best = m
+		}
+	}
+	return best
+}
+
+// extractMaxMoney returns the largest currency amount found in the text (the
+// per-email total is normally the largest figure).
+func extractMaxMoney(text string) float64 {
+	var max float64
+	for _, m := range reMoney.FindAllStringSubmatch(text, -1) {
+		tok := m[1]
+		if tok == "" {
+			tok = m[2]
+		}
+		if v, ok := parseAmountToken(tok); ok && v > max {
+			max = v
+		}
+	}
+	return max
+}
+
+// withinPct reports whether v is within pct of target.
+func withinPct(v, target, pct float64) bool {
+	if target <= 0 {
+		return false
+	}
+	d := v - target
+	if d < 0 {
+		d = -d
+	}
+	return d <= pct*target
 }

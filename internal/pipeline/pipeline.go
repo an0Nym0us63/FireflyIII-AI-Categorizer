@@ -936,7 +936,7 @@ func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amou
 	}
 	res, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
-	}, det.Senders, date, amount, det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays))
+	}, det.Senders, date, amount, det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays), det.SubjectContains, det.Aggregate)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
 		return "", false, false, 0, 0, err.Error()

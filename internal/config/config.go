@@ -83,6 +83,8 @@ type MailDetector struct {
 	Tag                string   `json:"tag"`                 // extra tag to always apply (e.g. "paypal")
 	BackDays           int      `json:"back_days"`           // days before the bank date to search (0 = default 14)
 	FwdDays            int      `json:"fwd_days"`            // days after the bank date to search (0 = default 2)
+	SubjectContains    string   `json:"subject_contains"`    // only emails whose subject contains this (case-insensitive)
+	Aggregate          bool     `json:"aggregate"`           // group emails by order number and sum amounts
 }
 
 // BackDaysOr returns the configured look-back window or the default.

@@ -235,6 +235,12 @@ function renderMailDetectors() {
             + ' oninput="mailDetectors[' + i + '].fwd_days=parseInt(this.value)||0"> jours après'
             + ' <span class="text-muted">(défaut 14 / 2)</span>'
             + '</div></div>'
+            + '<div class="row"><div class="col-sm-12" style="margin-top:6px">'
+            + '<label style="font-weight:normal;margin-right:14px"><input type="checkbox" ' + (d.aggregate ? 'checked' : '')
+            + ' onchange="mailDetectors[' + i + '].aggregate=this.checked"> Agréger par n° de commande (plusieurs emails = 1 paiement)</label>'
+            + '<span style="display:inline-block">Objet contient : <input type="text" class="input-sm" style="width:200px" value="' + esc(d.subject_contains || '') + '"'
+            + ' placeholder="ex: commande expédiée" oninput="mailDetectors[' + i + '].subject_contains=this.value"></span>'
+            + '</div></div>'
             + '<div class="row"><div class="col-sm-12" style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" onclick="removeMailDetector(' + i + ')"><i class="fa fa-trash"></i> Supprimer</button></div></div>'
             + '</div>';
     }).join('');
