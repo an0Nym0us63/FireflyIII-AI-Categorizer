@@ -385,8 +385,9 @@ func FindOrderEmail(a Account, senders []string, date time.Time, amount float64,
 	case amount <= 0 && len(cands) == 1:
 		chosen = cands[0]
 	default:
-		// Amount known but no email matches it → don't guess.
-		return SearchResult{Candidates: len(cands)}, nil
+		// Amount known but no email matches it (and no subset summed to it) →
+		// don't guess, but explain what was seen so the user can adjust.
+		return SearchResult{Candidates: len(cands), SearchHits: rawHits, Note: candDiag(cands, amount, aggregate)}, nil
 	}
 	out := chosen.text
 	if len(out) > 5000 {
@@ -636,4 +637,40 @@ func extractMaxMoney(text string) float64 {
 		}
 	}
 	return max
+}
+
+// candDiag builds a human diagnostic of the candidate emails seen (subject +
+// extracted amount) and the sum, for the "ignored" reason.
+func candDiag(cands []cand, amount float64, aggregate bool) string {
+	if len(cands) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	var sum float64
+	fmt.Fprintf(&sb, "%d email(s) candidat(s), aucun au montant %.2f€", len(cands), amount)
+	if aggregate {
+		sb.WriteString(" et aucune combinaison ne fait la somme")
+	}
+	sb.WriteString(" : ")
+	max := len(cands)
+	if max > 8 {
+		max = 8
+	}
+	for i := 0; i < max; i++ {
+		c := cands[i]
+		sum += c.total
+		subj := c.subject
+		if len(subj) > 45 {
+			subj = subj[:45] + "…"
+		}
+		if i > 0 {
+			sb.WriteString(" | ")
+		}
+		fmt.Fprintf(&sb, "%.2f€ «%s»", c.total, subj)
+	}
+	if len(cands) > max {
+		fmt.Fprintf(&sb, " | …(+%d)", len(cands)-max)
+	}
+	fmt.Fprintf(&sb, " ; somme des montants extraits = %.2f€", sum)
+	return sb.String()
 }
