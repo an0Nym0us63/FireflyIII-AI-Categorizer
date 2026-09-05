@@ -501,17 +501,41 @@ function saveEditTxn() {
 
     var journalIds = {};
     (editSimilar || []).forEach(function (s) { if (s.journal_id) journalIds[s.id] = s.journal_id; });
-    var editRest = extra.length ? fetch('/api/transactions/edit-bulk', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ids: extra, journal_ids: journalIds, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
-    }) : Promise.resolve();
 
-    Promise.all([editOne, editRest]).then(function () {
-        $('#edit-txn-modal').modal('hide');
+    function finish() {
         delete txnDetailsCache[editTxnId];
         extra.forEach(function (id) { delete txnDetailsCache[id]; });
         if (typeof loadTransactions === 'function' && document.getElementById('txn-tbody')) loadTransactions(txnPage);
         if (typeof renderJobTable === 'function' && Object.keys(jobs).length) renderJobTable();
+    }
+
+    editOne.then(function () {
+        if (!extra.length) { $('#edit-txn-modal').modal('hide'); finish(); return; }
+        fetch('/api/transactions/edit-bulk', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids: extra, journal_ids: journalIds, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            if (!res.job_id) { $('#edit-txn-modal').modal('hide'); finish(); return; }
+            var total = res.total;
+            var poll = setInterval(function () {
+                fetch('/api/transactions/edit-bulk/' + res.job_id).then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
+                    if (!p) return;
+                    var fail = p.failed ? ' · ' + p.failed + ' échec(s)' : '';
+                    $('#edit-txn-status').html('<i class="fa fa-spinner fa-spin"></i> Traitement… ' + (p.done + p.failed) + '/' + total + fail);
+                    if (!p.running) {
+                        clearInterval(poll);
+                        finish();
+                        if (p.failed) {
+                            $('#edit-txn-status').html('<span class="text-warning">Terminé : ' + p.done + '/' + total + ' appliquées, ' + p.failed + ' échec(s). Tu peux relancer pour les échecs.</span>');
+                        } else {
+                            $('#edit-txn-modal').modal('hide');
+                        }
+                    }
+                });
+            }, 1000);
+        }).catch(function (e) {
+            $('#edit-txn-status').html('<span class="text-danger">Échec: ' + esc(e.message) + '</span>');
+        });
     }).catch(function (e) {
         $('#edit-txn-status').html('<span class="text-danger">Échec: ' + esc(e.message) + '</span>');
     });

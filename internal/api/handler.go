@@ -56,6 +56,17 @@ type Handler struct {
 	reviewCachedAt   time.Time
 	reviewRefreshing bool
 	reviewSplits     map[string][]firefly.Split // txn id -> splits, to skip a re-fetch on validate
+
+	// Async bulk-apply jobs with progress, so big batches don't block the UI.
+	bulkMu   sync.Mutex
+	bulkJobs map[string]*bulkProgress
+}
+
+type bulkProgress struct {
+	Total   int  `json:"total"`
+	Done    int  `json:"done"`
+	Failed  int  `json:"failed"`
+	Running bool `json:"running"`
 }
 
 func New(
@@ -73,6 +84,7 @@ func New(
 		batchPool:       batchPool,
 		aidb:            adb,
 		transferHistory: make(map[string]string),
+		bulkJobs:        make(map[string]*bulkProgress),
 	}
 	// Best-effort: if not configured yet, server still starts.
 	if err := h.reloadClients(); err != nil {
@@ -110,6 +122,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/transactions/{id}/automatch", h.getAutoMatch)
 	r.Get("/api/transactions/{id}/similar", h.getSimilar)
 	r.Post("/api/transactions/edit-bulk", h.editBulk)
+	r.Get("/api/transactions/edit-bulk/{id}", h.bulkStatus)
 	r.Put("/api/transactions/{id}/edit", h.editTransaction)
 	r.Post("/api/transactions/details", h.getTransactionDetails)
 	r.Get("/api/transactions", h.getTransactions)
@@ -869,52 +882,81 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.IDs) == 0 {
-		writeJSON(w, http.StatusOK, map[string]int{"updated": 0})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"job_id": "", "total": 0})
 		return
 	}
-	var (
-		wg      sync.WaitGroup
-		mu      sync.Mutex
-		updated int
-		sem     = make(chan struct{}, 6)
-	)
-	for _, id := range req.IDs {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(id string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			// Detach from the browser request: if the user closes the dialog or the
-			// connection drops, the writes must still finish (no half-done batch,
-			// no 499s cancelling in-flight PUTs). Each write is still bounded.
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+	jobID := uuid.New().String()
+	prog := &bulkProgress{Total: len(req.IDs), Running: true}
+	h.bulkMu.Lock()
+	h.bulkJobs[jobID] = prog
+	h.bulkMu.Unlock()
+
+	// Run the whole batch in the background (detached from the browser). The
+	// front polls /api/transactions/edit-bulk/{id} for progress.
+	go func() {
+		var (
+			wg  sync.WaitGroup
+			mu  sync.Mutex
+			sem = make(chan struct{}, 6)
+		)
+		applyOne := func(id string) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			// Fast path: the front already knows the journal id (from the similar
-			// list), so we can PUT directly without a per-transaction GET.
 			var splits []firefly.Split
 			if jid := req.JournalIDs[id]; jid != "" {
 				splits = []firefly.Split{{JournalID: jid}}
 			} else {
 				txns, err := fc.GetTransactionsByIDs(ctx, []string{id})
 				if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
-					return
+					return false
 				}
 				splits = txns[0].Splits
 			}
-			if err := fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
-				return
-			}
-			_ = h.aidb.MarkTreated(id)
-			h.registry.MarkReviewedByTxn(id)
-			mu.Lock()
-			updated++
-			mu.Unlock()
-		}(id)
-	}
-	wg.Wait()
+			return fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.Tags) == nil
+		}
+		for _, id := range req.IDs {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(id string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ok := applyOne(id)
+				if !ok {
+					ok = applyOne(id) // one retry on transient failure
+				}
+				mu.Lock()
+				if ok {
+					_ = h.aidb.MarkTreated(id)
+					h.registry.MarkReviewedByTxn(id)
+					prog.Done++
+				} else {
+					prog.Failed++
+				}
+				mu.Unlock()
+			}(id)
+		}
+		wg.Wait()
+		h.bulkMu.Lock()
+		prog.Running = false
+		h.bulkMu.Unlock()
+		h.invalidateReviewCache()
+	}()
 
-	h.invalidateReviewCache()
-	writeJSON(w, http.StatusOK, map[string]int{"updated": updated})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"job_id": jobID, "total": len(req.IDs)})
+}
+
+// bulkStatus reports progress for an async bulk-apply job.
+func (h *Handler) bulkStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	h.bulkMu.Lock()
+	prog := h.bulkJobs[id]
+	h.bulkMu.Unlock()
+	if prog == nil {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, prog)
 }
 
 // getTransaction returns a single transaction's editable fields.
