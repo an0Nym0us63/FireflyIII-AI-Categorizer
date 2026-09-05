@@ -185,6 +185,10 @@ pre.detail-pre {
     /* Give content the full width; AdminLTE margins waste space on phones. */
     .content-wrapper {
         margin-left: 0 !important;
+        overflow-x: hidden;
+    }
+    body {
+        overflow-x: hidden;
     }
     .content {
         padding: 8px !important;
@@ -249,6 +253,10 @@ pre.detail-pre {
     }
     #txn-tbody .c-state {
         grid-area: status;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 6px;
+        align-items: center;
     }
     #txn-tbody .c-desc {
         grid-area: desc;
@@ -293,11 +301,12 @@ pre.detail-pre {
     #job-table .j-chevron { grid-area: chevron; }
     #job-table .j-dest    { grid-area: dest; font-size: 15px; font-weight: 600; }
     #job-table .j-cat     { grid-area: cat; }
-    #job-table .j-tags    { grid-area: tags; }
+    #job-table .j-tags    { grid-area: tags; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
     #job-table .j-status  { grid-area: status; }
     #job-table .j-desc    { grid-area: desc; font-size: 12px; color: #8a8a8a; }
     #job-table .j-amount  { display: none; }
     #job-table .j-time    { display: none; }
+    #job-table .j-tags .job-real { flex-basis: 100%; }
     #job-table .j-actions {
         grid-area: actions;
         text-align: right;
