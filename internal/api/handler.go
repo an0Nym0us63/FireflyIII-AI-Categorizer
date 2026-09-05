@@ -824,6 +824,29 @@ func (h *Handler) getSimilar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// Mark which are already treated/reviewed (status lives in the local DB).
+	ids := make([]string, len(sims))
+	for i := range sims {
+		ids[i] = sims[i].ID
+	}
+	recs, _ := h.aidb.GetMany(ids)
+	for i := range sims {
+		if rec, ok := recs[sims[i].ID]; ok && rec.Reviewed {
+			sims[i].Reviewed = true
+		}
+	}
+	// By default only propose not-yet-treated transactions, so applying to
+	// "others" never overwrites work already validated. ?include_reviewed=true
+	// keeps everything.
+	if r.URL.Query().Get("include_reviewed") != "true" {
+		filtered := sims[:0]
+		for _, s := range sims {
+			if !s.Reviewed {
+				filtered = append(filtered, s)
+			}
+		}
+		sims = filtered
+	}
 	writeJSON(w, http.StatusOK, sims)
 }
 

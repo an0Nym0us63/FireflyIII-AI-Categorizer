@@ -1520,6 +1520,7 @@ type SimilarTxn struct {
 	Category    string   `json:"category"`
 	Destination string   `json:"destination"`
 	Tags        []string `json:"tags"`
+	Reviewed    bool     `json:"reviewed"`
 }
 
 // SimilarTransactions returns other withdrawals that share the merchant key of

@@ -392,6 +392,7 @@ function openEditModal(txnId) {
     $('#edit-txn-cat').val('');
     renderEditTags();
     $('#edit-apply-similar').prop('checked', false);
+    $('#edit-similar-include-reviewed').prop('checked', false);
     $('#edit-similar-wrap').hide();
     editSimilar = [];
     $('#edit-txn-modal').modal('show');
@@ -435,18 +436,23 @@ function simCbClick(ev, cb, idx) {
 }
 function toggleSimilarList(on) {
     $('#edit-similar-wrap').toggle(on);
-    if (!on || !editTxnId) return;
+    if (on) loadSimilarList();
+}
+function loadSimilarList() {
+    if (!editTxnId) return;
+    var incl = $('#edit-similar-include-reviewed').is(':checked');
     $('#edit-similar-list').html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Recherche des transactions du même marchand…</span>');
-    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/similar')
+    fetch('/api/transactions/' + encodeURIComponent(editTxnId) + '/similar' + (incl ? '?include_reviewed=true' : ''))
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (list) {
             editSimilar = list || [];
-            if (!editSimilar.length) { $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction de ce marchand.</span>'); return; }
+            if (!editSimilar.length) { $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'de ce marchand.</span>'); return; }
             $('#edit-similar-list').html(editSimilar.map(function (s, i) {
+                var badge = s.reviewed ? ' <span class="label label-info" style="font-size:9px">traité</span>' : '';
                 return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
                     + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ')"> '
                     + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
-                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span></label>';
+                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + badge + '</label>';
             }).join(''));
             lastSimIndex = -1;
         }).catch(function () { $('#edit-similar-list').html('<span class="text-danger">Erreur.</span>'); });

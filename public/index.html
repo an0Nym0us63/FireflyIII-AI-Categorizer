@@ -1378,6 +1378,12 @@
                             Appliquer aussi à d'autres transactions du même marchand
                         </label>
                         <div id="edit-similar-wrap" style="display:none;margin-top:6px">
+                            <div class="checkbox" style="margin:2px 0 6px">
+                                <label style="font-weight:normal">
+                                    <input type="checkbox" id="edit-similar-include-reviewed" onchange="loadSimilarList()">
+                                    Inclure aussi les transactions déjà traitées
+                                </label>
+                            </div>
                             <div style="margin-bottom:4px">
                                 <a href="#" onclick="checkAllSimilar(true);return false">Tout cocher</a> ·
                                 <a href="#" onclick="checkAllSimilar(false);return false">Tout décocher</a>
