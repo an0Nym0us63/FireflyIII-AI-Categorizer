@@ -111,7 +111,7 @@ func Load() (*Config, *Store, error) {
 		GeminiThinking:          getEnv("GEMINI_THINKING", "low"),
 		AIDBFile:                getEnv("AI_DB_FILE", "/data/ai.db"),
 		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
-		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 5),
+		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 3),
 	}
 
 	ttlStr := getEnv("HISTORY_CACHE_TTL", "10m")
