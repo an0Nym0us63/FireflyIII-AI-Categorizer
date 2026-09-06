@@ -839,3 +839,7 @@ body.dark-mode .outcome-review {
 .ac-item:last-child { border-bottom: none; }
 .ac-item.active,
 .ac-item:hover { background: #3c8dbc; color: #fff; }
+
+.ac-item.ac-create { font-style: italic; color: #8fd19e; }
+.ac-item.ac-create.active,
+.ac-item.ac-create:hover { background: #3c8dbc; color: #fff; }

@@ -422,19 +422,39 @@ function attachAutocomplete(inputId, getItems, mode, onPick) {
     input.parentNode.style.position = 'relative';
     input.parentNode.appendChild(box);
 
-    var active = -1, items = [];
+    var active = -1, items = [], hasCreate = false;
     function hide() { box.style.display = 'none'; active = -1; }
     function render() {
-        var q = input.value.trim().toLowerCase();
+        var raw = input.value.trim();
+        var q = raw.toLowerCase();
         var all = getItems() || [];
         items = all.filter(function (v) { return v.toLowerCase().indexOf(q) !== -1; }).slice(0, 12);
-        if (!items.length) { hide(); return; }
-        box.innerHTML = items.map(function (v, i) {
-            return '<div class="ac-item' + (i === active ? ' active' : '') + '" data-i="' + i + '">' + esc(v) + '</div>';
+        // In 'add' mode (tags), let the user validate a value that isn't in the
+        // list: offer a "+ Ajouter «raw»" row unless it's an exact match.
+        hasCreate = false;
+        if (mode === 'add' && raw && !all.some(function (v) { return v.toLowerCase() === q; })) {
+            hasCreate = true;
+        }
+        if (!items.length && !hasCreate) { hide(); return; }
+        var html = '';
+        if (hasCreate) {
+            html += '<div class="ac-item ac-create' + (active === 0 ? ' active' : '') + '" data-create="1">+ Ajouter « ' + esc(raw) + ' »</div>';
+        }
+        html += items.map(function (v, i) {
+            var idx = hasCreate ? i + 1 : i;
+            return '<div class="ac-item' + (idx === active ? ' active' : '') + '" data-i="' + i + '">' + esc(v) + '</div>';
         }).join('');
+        box.innerHTML = html;
         box.style.display = 'block';
     }
+    function count() { return items.length + (hasCreate ? 1 : 0); }
+    function pickAt(idx) {
+        if (hasCreate && idx === 0) { pick(input.value.trim()); return; }
+        var i = hasCreate ? idx - 1 : idx;
+        if (items[i] != null) pick(items[i]);
+    }
     function pick(v) {
+        if (!v) { hide(); return; }
         if (mode === 'add') { if (onPick) onPick(v); input.value = ''; }
         else { input.value = v; if (onPick) onPick(v); }
         hide();
@@ -443,14 +463,20 @@ function attachAutocomplete(inputId, getItems, mode, onPick) {
     input.addEventListener('focus', render);
     input.addEventListener('keydown', function (e) {
         if (box.style.display === 'none') return;
-        if (e.key === 'ArrowDown') { active = Math.min(active + 1, items.length - 1); render(); e.preventDefault(); }
+        if (e.key === 'ArrowDown') { active = Math.min(active + 1, count() - 1); render(); e.preventDefault(); }
         else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
-        else if (e.key === 'Enter') { if (active >= 0 && items[active]) { pick(items[active]); e.preventDefault(); } }
+        else if (e.key === 'Enter') {
+            if (active >= 0) { pickAt(active); e.preventDefault(); }
+            else if (mode === 'add' && input.value.trim()) { pick(input.value.trim()); e.preventDefault(); }
+        }
         else if (e.key === 'Escape') { hide(); }
     });
     box.addEventListener('mousedown', function (e) {
         var el = e.target.closest('.ac-item');
-        if (el) { pick(items[parseInt(el.getAttribute('data-i'), 10)]); e.preventDefault(); }
+        if (!el) return;
+        e.preventDefault();
+        if (el.getAttribute('data-create')) pick(input.value.trim());
+        else pickAt(hasCreate ? parseInt(el.getAttribute('data-i'), 10) + 1 : parseInt(el.getAttribute('data-i'), 10));
     });
     input.addEventListener('blur', function () { setTimeout(hide, 150); });
 }
