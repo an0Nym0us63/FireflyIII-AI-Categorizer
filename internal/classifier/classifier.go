@@ -84,6 +84,7 @@ var (
 	reDatePart   = regexp.MustCompile(`\b\d{2}/\d{2}(?:/\d{2,4})?\b`)
 	reProcessor  = regexp.MustCompile(`^(HPY|SUMUP|SUM-UP|PAYPAL|PP|SQ|SQUARE|STRIPE|MOLLIE|CKO|ADYEN|IZ|IZETTLE|ZTL|ZETTLE|LYDIA|GOCARDLESS|GC|PADDLE|WISE|REVOLUT|SP|SC)\*`)
 	reHasDigit   = regexp.MustCompile(`\d`)
+	reAllDigits  = regexp.MustCompile(`^\d+$`)
 )
 
 // txnTypePrefixes are leading French bank keywords to strip before the merchant.
@@ -177,6 +178,21 @@ func merchantFingerprint(description string) string {
 		}
 	}
 	if len(parts) == 0 {
+		// No digit-free merchant word left: this is usually a bank operation
+		// (loan instalment, direct debit…) identified by a stable contract or
+		// account number that lives in the description. Use the longest long
+		// digit run as the key so it groups per contract and stays matchable
+		// across months (the per-month date was already stripped above).
+		longest := ""
+		for _, f := range fields {
+			tok := clean(f)
+			if len(tok) >= 6 && reAllDigits.MatchString(tok) && len(tok) > len(longest) {
+				longest = tok
+			}
+		}
+		if longest != "" {
+			return strings.ToLower(longest)
+		}
 		parts = append(parts, clean(fields[0]))
 	}
 
