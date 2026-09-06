@@ -844,12 +844,16 @@ func (h *Handler) getSimilar(w http.ResponseWriter, r *http.Request) {
 	}
 	recs, _ := h.aidb.GetMany(ids)
 	for i := range sims {
-		if rec, ok := recs[sims[i].ID]; ok && rec.Reviewed {
+		rec, ok := recs[sims[i].ID]
+		// "Treated" = already has a settled AI/human result. Only truly untreated
+		// items and those explicitly flagged needs_review are proposed by default,
+		// so applying to "others" never re-touches already-classified work.
+		st := aiStatusFromRecord(rec, ok)
+		if ok && st != "untreated" && st != "needs_review" {
 			sims[i].Reviewed = true
 		}
 	}
-	// By default only propose not-yet-treated transactions, so applying to
-	// "others" never overwrites work already validated. ?include_reviewed=true
+	// By default only propose not-yet-treated transactions. ?include_reviewed=true
 	// keeps everything.
 	if r.URL.Query().Get("include_reviewed") != "true" {
 		filtered := sims[:0]
