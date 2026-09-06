@@ -77,10 +77,25 @@ function setConn(state) {
     $('#conn-label').text(l[state]);
 }
 
+var _sse = null;
 function connectSSE() {
+    // Ensure only ONE EventSource is ever open. Leaking SSE connections (one per
+    // reconnect) exhausts the browser's ~6-connections-per-domain limit and makes
+    // every other request to the app queue — the page appears frozen.
+    if (_sse) { try { _sse.close(); } catch (e) {} _sse = null; }
     var es = new EventSource('/events');
+    _sse = es;
     es.onopen = function () {setConn('live');};
-    es.onerror = function () {setConn('error'); setTimeout(connectSSE, 3000);};
+    es.onerror = function () {
+        setConn('error');
+        // EventSource reconnects on its own while CONNECTING; only re-create it
+        // when the connection is truly CLOSED, and never stack a second one.
+        if (es.readyState === EventSource.CLOSED) {
+            try { es.close(); } catch (e) {}
+            if (_sse === es) _sse = null;
+            setTimeout(connectSSE, 3000);
+        }
+    };
     es.onmessage = function (e) {
         var data = JSON.parse(e.data);
         if (data.type === 'snapshot') {
