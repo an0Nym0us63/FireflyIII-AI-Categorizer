@@ -483,8 +483,8 @@ function openEditModal(txnId) {
             $('#edit-txn-desc').text((t.description || '') + (t.amount ? '  —  ' + t.amount : '') + (t.date ? '  (' + (t.date || '').substring(0, 10) + ')' : ''));
             editTxnAmount = Math.abs(parseFloat(t.amount) || 0);
             var suggest = (t.description || '')
-                .replace(/^X\d{3,4}\s+/i, '')                     // leading card marker (X0938 …)
-                .replace(/\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, '')  // trailing date (10/11/25)
+                .replace(/^X\d{3,4}\s+/i, '')                                // leading card marker (X0938 …)
+                .replace(/\s*\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\s*$/, '')        // trailing date: 08/11 or 10/11/25
                 .trim();
             $('#edit-similar-query').val(suggest);
             $('#edit-txn-dest').val(t.destination_name || '');
