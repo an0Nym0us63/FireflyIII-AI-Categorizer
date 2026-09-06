@@ -1848,7 +1848,7 @@ func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
 
 	h.randomMu.Lock()
 	pool := h.randomPool
-	fresh := !h.randomAt.IsZero() && time.Since(h.randomAt) < 2*time.Minute
+	fresh := !h.randomAt.IsZero() && time.Since(h.randomAt) < 10*time.Minute
 	h.randomMu.Unlock()
 
 	if !fresh {
@@ -1878,24 +1878,31 @@ func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
 		h.randomMu.Unlock()
 	}
 
-	// Sample n at random.
+	// Sample n at random. Over-sample and re-check status so items treated during
+	// the cache window (a sorting session) don't reappear even though the pool is
+	// still cached.
 	idx := rand.Perm(len(pool))
-	if len(idx) > n {
-		idx = idx[:n]
+	cand := idx
+	if len(cand) > n*4 {
+		cand = cand[:n*4]
 	}
-	rows := make([]firefly.TransactionRow, 0, len(idx))
-	for _, i := range idx {
-		rows = append(rows, pool[i])
+	candIDs := make([]string, len(cand))
+	for i, j := range cand {
+		candIDs[i] = pool[j].ID
 	}
-	// Enrich with AI status (all untreated, but keep the shape consistent).
-	ids := make([]string, len(rows))
-	for i := range rows {
-		ids[i] = rows[i].ID
-	}
-	recs, _ := h.aidb.GetMany(ids)
-	for i := range rows {
-		rec, ok := recs[rows[i].ID]
-		rows[i].AIStatus = aiStatusFromRecord(rec, ok)
+	recs, _ := h.aidb.GetMany(candIDs)
+	rows := make([]firefly.TransactionRow, 0, n)
+	for _, j := range cand {
+		rec, ok := recs[pool[j].ID]
+		if ok && aiStatusFromRecord(rec, ok) != "untreated" {
+			continue // treated since the pool was built — skip
+		}
+		row := pool[j]
+		row.AIStatus = "untreated"
+		rows = append(rows, row)
+		if len(rows) >= n {
+			break
+		}
 	}
 
 	writeJSON(w, http.StatusOK, firefly.TransactionsPage{
