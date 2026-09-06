@@ -376,6 +376,7 @@ function renderAutoMatch(ex) {
 
 // ─── Edit-transaction modal (shared across pages) ──────────────────────────
 var editTxnId = null;
+var editTxnAmount = 0;
 var editTxnTags = [];
 var editListsLoaded = false;
 var editAccountsList = [], editCategoriesList = [], editTagsList = [];
@@ -470,6 +471,7 @@ function openEditModal(txnId) {
     renderEditTags();
     $('#edit-apply-similar').prop('checked', false);
     $('#edit-similar-include-reviewed').prop('checked', false);
+    $('#edit-similar-amount').prop('checked', false);
     $('#edit-similar-wrap').hide();
     editSimilar = [];
     $('#edit-txn-modal').modal('show');
@@ -479,6 +481,7 @@ function openEditModal(txnId) {
         .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
         .then(function (t) {
             $('#edit-txn-desc').text((t.description || '') + (t.amount ? '  —  ' + t.amount : '') + (t.date ? '  (' + (t.date || '').substring(0, 10) + ')' : ''));
+            editTxnAmount = Math.abs(parseFloat(t.amount) || 0);
             var suggest = (t.description || '').replace(/\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, '').trim();
             $('#edit-similar-query').val(suggest);
             $('#edit-txn-dest').val(t.destination_name || '');
@@ -505,6 +508,7 @@ function addEditTag(v) {
 function removeEditTag(i) { editTxnTags.splice(i, 1); renderEditTags(); }
 
 var editSimilar = [];
+var editSimilarShown = [];
 var lastSimIndex = -1;
 function simCbClick(ev, cb, idx) {
     var boxes = Array.prototype.slice.call(document.querySelectorAll('#edit-similar-list .edit-sim-cb'));
@@ -535,18 +539,36 @@ function loadSimilarList() {
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (list) {
             editSimilar = list || [];
-            if (!editSimilar.length) { $('#edit-similar-count').text(''); $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'de ce marchand.</span>'); return; }
-            $('#edit-similar-list').html(editSimilar.map(function (s, i) {
-                var badge = s.reviewed ? ' <span class="label label-info" style="font-size:9px">traité</span>' : '';
-                var tags = (s.tags && s.tags.length) ? ' ' + s.tags.map(function (t) { return '<span class="label label-primary" style="font-size:9px;font-weight:normal">' + esc(t) + '</span>'; }).join(' ') : '';
-                return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
-                    + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ');updateSimilarCount()"> '
-                    + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
-                    + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + tags + badge + '</label>';
-            }).join(''));
-            lastSimIndex = -1;
-            updateSimilarCount();
+            renderSimilarList();
         }).catch(function () { $('#edit-similar-list').html('<span class="text-danger">Erreur.</span>'); });
+}
+function renderSimilarList() {
+    var incl = $('#edit-similar-include-reviewed').is(':checked');
+    var list = editSimilar || [];
+    // Optional amount-proximity filter (client-side on the fetched list).
+    if ($('#edit-similar-amount').is(':checked') && editTxnAmount > 0) {
+        var tol = parseFloat($('#edit-similar-amount-tol').val()) || 0.10;
+        list = list.filter(function (s) {
+            return s.amount > 0 && Math.abs(s.amount - editTxnAmount) <= tol * editTxnAmount;
+        });
+    }
+    if (!list.length) {
+        $('#edit-similar-count').text('');
+        $('#edit-similar-list').html('<span class="text-muted">Aucune autre transaction ' + (incl ? '' : 'non traitée ') + 'correspondante.</span>');
+        editSimilarShown = [];
+        return;
+    }
+    editSimilarShown = list;
+    $('#edit-similar-list').html(list.map(function (s, i) {
+        var badge = s.reviewed ? ' <span class="label label-info" style="font-size:9px">traité</span>' : '';
+        var tags = (s.tags && s.tags.length) ? ' ' + s.tags.map(function (t) { return '<span class="label label-primary" style="font-size:9px;font-weight:normal">' + esc(t) + '</span>'; }).join(' ') : '';
+        return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
+            + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ');updateSimilarCount()"> '
+            + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
+            + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + tags + badge + '</label>';
+    }).join(''));
+    lastSimIndex = -1;
+    updateSimilarCount();
 }
 function updateSimilarCount() {
     var boxes = document.querySelectorAll('#edit-similar-list .edit-sim-cb');

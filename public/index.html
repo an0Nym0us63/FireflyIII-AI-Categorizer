@@ -1390,6 +1390,16 @@
                                     Inclure aussi les transactions déjà traitées
                                 </label>
                             </div>
+                            <div style="margin:2px 0 6px">
+                                <label style="font-weight:normal">
+                                    <input type="checkbox" id="edit-similar-amount" onchange="renderSimilarList()">
+                                    Montant
+                                </label>
+                                <select id="edit-similar-amount-tol" class="input-sm" style="width:auto;margin-left:4px" onchange="renderSimilarList()">
+                                    <option value="0.10">proche (±10%)</option>
+                                    <option value="0.02">très proche (±2%)</option>
+                                </select>
+                            </div>
                             <div style="margin-bottom:4px">
                                 <a href="#" onclick="checkAllSimilar(true);return false">Tout cocher</a> ·
                                 <a href="#" onclick="checkAllSimilar(false);return false">Tout décocher</a>
