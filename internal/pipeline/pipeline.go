@@ -133,6 +133,7 @@ func (p *Pipeline) DestinationMatchEnabled() bool {
 type RunOptions struct {
 	ClassifyCategory bool // if true, run category classification
 	MatchDestination bool // if true, run destination matching
+	ForceAI          bool // if true, skip deterministic auto-match (B) and history examples (A) — pure LLM
 }
 
 // Run executes the full classification pipeline for a queued job.
@@ -273,8 +274,12 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	}
 
 	// Same-merchant history via Firefly's indexed search, windowed around the
-	// transaction date and recency-weighted.
-	history := excludeTransaction(p.merchantHistory(ctx, gkey, fireflyDate), transactionID)
+	// transaction date and recency-weighted. Skipped entirely when ForceAI is
+	// set (forced pure-LLM re-analysis: no deterministic match, no examples).
+	var history []classifier.HistoricalEntry
+	if !opts.ForceAI {
+		history = excludeTransaction(p.merchantHistory(ctx, gkey, fireflyDate), transactionID)
+	}
 
 	historyMatchCat, _ := weightedCategory(history, fireflyDate, derefAmount(j.Amount))
 	historyMatchDestID, _ := weightedDestination(history, fireflyDate, derefAmount(j.Amount))
@@ -403,7 +408,10 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 
 	// Examples for the LLM: broad label match, real categories, up to 10 (A).
 	// Independent of the deterministic auto-match history (B) above.
-	promptHistory := p.promptExamples(ctx, gkey, transactionID)
+	var promptHistory []classifier.HistoricalEntry
+	if !opts.ForceAI {
+		promptHistory = p.promptExamples(ctx, gkey, transactionID)
+	}
 	// Merchants configured with a mail detector (Amazon, PayPal, AliExpress…) are
 	// multi-purpose: their past classifications are irrelevant/misleading, so the
 	// LLM must rely on the order email/CSV content only — no examples.

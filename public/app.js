@@ -818,14 +818,16 @@ function buildJobRow(j) {
         + '<td class="j-time text-right text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
         + '<td class="j-actions text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
-        + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button></td>';
+        + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button> '
+        + '<button class="btn btn-xs btn-default" title="Réanalyser en IA pure (sans auto-match ni exemples passés)" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\',true)"><i class="fa fa-bolt"></i></button></td>';
     return tr;
 }
 
-function rerunJob(ev, txnId) {
+function rerunJob(ev, txnId, force) {
     ev.stopPropagation();
     if (!txnId) return;
-    $.ajax({url: '/api/transactions/' + encodeURIComponent(txnId) + '/rerun', method: 'POST'})
+    var url = '/api/transactions/' + encodeURIComponent(txnId) + '/rerun' + (force ? '?force=1' : '');
+    $.ajax({url: url, method: 'POST'})
         .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }
 
