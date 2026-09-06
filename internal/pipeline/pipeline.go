@@ -981,19 +981,22 @@ func (p *Pipeline) getCategories(ctx context.Context) ([]firefly.Category, error
 	}
 	p.catMu.RUnlock()
 
-	p.catMu.Lock()
-	defer p.catMu.Unlock()
-
-	if !p.catFetched.IsZero() && time.Since(p.catFetched) < categoryTTL {
-		return p.catCache, nil
-	}
-
+	// Fetch WITHOUT holding the lock, so a slow Firefly call never blocks other
+	// callers (a held lock during network I/O can freeze the whole pipeline).
 	cats, err := p.firefly.GetCategories(ctx)
 	if err != nil {
+		p.catMu.RLock()
+		stale := p.catCache
+		p.catMu.RUnlock()
+		if stale != nil {
+			return stale, nil // serve stale rather than fail/block
+		}
 		return nil, err
 	}
+	p.catMu.Lock()
 	p.catCache = cats
 	p.catFetched = time.Now()
+	p.catMu.Unlock()
 	return cats, nil
 }
 
@@ -1007,19 +1010,20 @@ func (p *Pipeline) getExpenseAccounts(ctx context.Context) ([]firefly.Account, e
 	}
 	p.acctMu.RUnlock()
 
-	p.acctMu.Lock()
-	defer p.acctMu.Unlock()
-
-	if !p.acctFetched.IsZero() && time.Since(p.acctFetched) < categoryTTL {
-		return p.acctCache, nil
-	}
-
 	accts, err := p.firefly.GetExpenseAccounts(ctx)
 	if err != nil {
+		p.acctMu.RLock()
+		stale := p.acctCache
+		p.acctMu.RUnlock()
+		if stale != nil {
+			return stale, nil
+		}
 		return nil, err
 	}
+	p.acctMu.Lock()
 	p.acctCache = accts
 	p.acctFetched = time.Now()
+	p.acctMu.Unlock()
 	return accts, nil
 }
 
@@ -1033,19 +1037,20 @@ func (p *Pipeline) getTags(ctx context.Context) ([]string, error) {
 	}
 	p.tagMu.RUnlock()
 
-	p.tagMu.Lock()
-	defer p.tagMu.Unlock()
-
-	if !p.tagFetched.IsZero() && time.Since(p.tagFetched) < categoryTTL {
-		return p.tagCache, nil
-	}
-
 	tags, err := p.firefly.GetTags(ctx)
 	if err != nil {
+		p.tagMu.RLock()
+		stale := p.tagCache
+		p.tagMu.RUnlock()
+		if stale != nil {
+			return stale, nil
+		}
 		return nil, err
 	}
+	p.tagMu.Lock()
 	p.tagCache = tags
 	p.tagFetched = time.Now()
+	p.tagMu.Unlock()
 	return tags, nil
 }
 

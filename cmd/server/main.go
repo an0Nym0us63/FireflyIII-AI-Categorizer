@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // debug: enabled only when PPROF_ADDR is set
 	"os"
 	"os/signal"
 	"strconv"
@@ -77,6 +78,19 @@ func main() {
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Optional pprof server for diagnosing hangs/leaks. Set PPROF_ADDR=:6060 to
+	// enable, then when the app is stuck:
+	//   curl http://<host>:6060/debug/pprof/goroutine?debug=2
+	// gives a full stack of every goroutine (shows exactly what's blocked).
+	if addr := os.Getenv("PPROF_ADDR"); addr != "" {
+		go func() {
+			slog.Info("pprof listening", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Warn("pprof server stopped", "error", err)
+			}
+		}()
+	}
 
 	go func() {
 		slog.Info("server starting",
