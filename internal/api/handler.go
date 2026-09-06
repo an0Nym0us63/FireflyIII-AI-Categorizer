@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -60,6 +61,12 @@ type Handler struct {
 	// Async bulk-apply jobs with progress, so big batches don't block the UI.
 	bulkMu   sync.Mutex
 	bulkJobs map[string]*bulkProgress
+
+	// Cached pool of untreated transactions for the "random tri" button, so
+	// re-clicks reshuffle instantly without refetching all of history.
+	randomMu   sync.Mutex
+	randomPool []firefly.TransactionRow
+	randomAt   time.Time
 }
 
 type bulkProgress struct {
@@ -126,6 +133,7 @@ func (h *Handler) Router() http.Handler {
 	r.Put("/api/transactions/{id}/edit", h.editTransaction)
 	r.Post("/api/transactions/details", h.getTransactionDetails)
 	r.Get("/api/transactions", h.getTransactions)
+	r.Get("/api/transactions/random", h.randomUntreated)
 	r.Get("/api/review", h.getReview)
 	r.Put("/api/transactions/{id}/categorize", h.categorizeTransaction)
 	r.Post("/api/transactions/{id}/tags/resolve", h.resolveTags)
@@ -1820,6 +1828,80 @@ func containsTag(tags []string, tag string) bool {
 }
 
 // --- Transactions list ---
+
+// randomUntreated returns a random sample of untreated (no AI record)
+// withdrawals from the whole history — for tidy-up "sorting sessions". The pool
+// is cached briefly so re-clicks reshuffle instantly.
+func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
+	fc := h.getFC()
+	if fc == nil {
+		http.Error(w, "Firefly not configured", http.StatusServiceUnavailable)
+		return
+	}
+	n := queryInt(r.URL.Query().Get("n"), 12)
+	if n < 1 {
+		n = 12
+	}
+	if n > 50 {
+		n = 50
+	}
+
+	h.randomMu.Lock()
+	pool := h.randomPool
+	fresh := !h.randomAt.IsZero() && time.Since(h.randomAt) < 2*time.Minute
+	h.randomMu.Unlock()
+
+	if !fresh {
+		txns, err := fc.SearchTransactionsRaw(r.Context(), "type:withdrawal")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
+			return
+		}
+		treated, _ := h.aidb.AllIDs()
+		pool = pool[:0]
+		for _, t := range txns {
+			if len(t.Splits) == 0 {
+				continue
+			}
+			if _, done := treated[t.ID]; done {
+				continue
+			}
+			s := t.Splits[0]
+			pool = append(pool, firefly.TransactionRow{
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
+				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
+			})
+		}
+		h.randomMu.Lock()
+		h.randomPool = pool
+		h.randomAt = time.Now()
+		h.randomMu.Unlock()
+	}
+
+	// Sample n at random.
+	idx := rand.Perm(len(pool))
+	if len(idx) > n {
+		idx = idx[:n]
+	}
+	rows := make([]firefly.TransactionRow, 0, len(idx))
+	for _, i := range idx {
+		rows = append(rows, pool[i])
+	}
+	// Enrich with AI status (all untreated, but keep the shape consistent).
+	ids := make([]string, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	recs, _ := h.aidb.GetMany(ids)
+	for i := range rows {
+		rec, ok := recs[rows[i].ID]
+		rows[i].AIStatus = aiStatusFromRecord(rec, ok)
+	}
+
+	writeJSON(w, http.StatusOK, firefly.TransactionsPage{
+		Data: rows, Page: 1, TotalPages: 1, Total: len(rows),
+	})
+}
 
 func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	fc := h.getFC()

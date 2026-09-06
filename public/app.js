@@ -1013,6 +1013,34 @@ function clearTxnFilters() {
     loadTransactions();
 }
 
+async function loadRandomUntreated() {
+    txnPage = 1;
+    txnFlash('', '');
+    $('#txn-select-all-bar').hide();
+    $('#txn-select-all').prop('checked', false);
+    $('#txn-tbody').html('<tr><td colspan="8" class="text-center" style="padding:30px">'
+        + '<i class="fa fa-spinner fa-spin"></i> Tirage de transactions non traitées&hellip;</td></tr>');
+    try {
+        var res = await fetch('/api/transactions/random?n=12');
+        if (res.status === 503) {
+            txnFlash('<i class="fa fa-warning"></i> Firefly III is not configured.', 'warning');
+            $('#txn-tbody').html(''); return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        var d = await res.json();
+        txnTotalPages = 1;
+        txnTotal = d.total || 0;
+        renderTxnTable(d.data || []);
+        renderTxnPagination();
+        if (!(d.data || []).length) {
+            txnFlash('<i class="fa fa-check"></i> Aucune transaction non traitée trouvée.', 'success');
+        }
+    } catch (e) {
+        txnFlash('<i class="fa fa-times-circle"></i> Échec du tirage: ' + esc(e.message), 'danger');
+        $('#txn-tbody').html('');
+    }
+}
+
 async function loadTransactions(page) {
     if (!page) page = 1;
     txnPage = page;

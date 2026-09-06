@@ -290,3 +290,22 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// AllIDs returns the set of transaction IDs that have any AI record (i.e. that
+// have been treated in some way). Used to compute the untreated pool.
+func (d *DB) AllIDs() (map[string]struct{}, error) {
+	rows, err := d.db.Query(`SELECT transaction_id FROM ai_records`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = struct{}{}
+	}
+	return out, rows.Err()
+}
