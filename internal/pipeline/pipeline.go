@@ -437,9 +437,16 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		notes = cleanNotes(splits[0].Notes)
 	}
 
+	// In forced pure-LLM mode, hide the existing destination/payee so the model
+	// judges on label + amount only and isn't anchored by a possibly-wrong payee.
+	promptDestName := j.DestinationName
+	if opts.ForceAI {
+		promptDestName = ""
+	}
+
 	result, err := p.classifier.Classify(ctx, classifier.Request{
 		Categories:          clCats,
-		DestinationName:     j.DestinationName,
+		DestinationName:     promptDestName,
 		Description:         j.Description,
 		Amount:              j.Amount,
 		History:             promptHistory,
