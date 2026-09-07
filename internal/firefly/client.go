@@ -600,52 +600,82 @@ func (c *Client) GetDestAssumedWithdrawals(ctx context.Context) ([]Transaction, 
 
 // EditTransaction sets the category, destination and tags on a transaction from
 // a manual edit (category/destination created by name if they don't exist).
+// fetchGroupSplitIDs returns the journal IDs of every split in a transaction
+// group, in order, straight from Firefly with no filtering.
+//
+// This is mandatory before any partial update of a split transaction: a Firefly
+// III PUT /transactions/{id} REPLACES the whole transactions[] array, and any
+// split whose transaction_journal_id is omitted is DELETED (see the API
+// "special endpoints" docs). Callers here often work on a filtered subset of
+// splits (e.g. only the one carrying an ai:* tag); echoing every sibling by ID
+// keeps them alive.
+func (c *Client) fetchGroupSplitIDs(ctx context.Context, id string) ([]string, error) {
+	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
+	var tr singleTransactionResponse
+	if err := c.get(ctx, u, &tr); err != nil {
+		return nil, fmt.Errorf("fetch group %s: %w", id, err)
+	}
+	txn := toTransaction(tr.Data)
+	ids := make([]string, 0, len(txn.Splits))
+	for _, s := range txn.Splits {
+		ids = append(ids, s.JournalID)
+	}
+	return ids, nil
+}
+
+// putGroupPreserving updates specific splits of a transaction group while
+// preserving all sibling splits. changes maps a split's journal ID to the JSON
+// fields to change on it. Every split of the group is (re)submitted: targets
+// carry their changes, all others are echoed by transaction_journal_id only,
+// which leaves them untouched instead of being deleted.
+func (c *Client) putGroupPreserving(ctx context.Context, id string, applyRules bool, changes map[string]map[string]interface{}) error {
+	ids, err := c.fetchGroupSplitIDs(ctx, id)
+	if err != nil {
+		return err
+	}
+	// Never PUT an empty transactions array: it would wipe the group.
+	if len(ids) == 0 {
+		return fmt.Errorf("transaction %s has no splits to update", id)
+	}
+	txs := make([]map[string]interface{}, 0, len(ids))
+	for _, jid := range ids {
+		entry := map[string]interface{}{"transaction_journal_id": jid}
+		for k, v := range changes[jid] { // no-op for sibling splits
+			entry[k] = v
+		}
+		txs = append(txs, entry)
+	}
+	body := map[string]interface{}{
+		"apply_rules":   applyRules,
+		"fire_webhooks": false,
+		"transactions":  txs,
+	}
+	return c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id), body)
+}
+
 func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName string, tags []string) error {
-	type splitUpdate struct {
-		TransactionJournalID string   `json:"transaction_journal_id"`
-		Tags                 []string `json:"tags"`
-		CategoryName         string   `json:"category_name,omitempty"`
-		DestinationName      string   `json:"destination_name,omitempty"`
-	}
-	type body struct {
-		ApplyRules   bool          `json:"apply_rules"`
-		FireWebhooks bool          `json:"fire_webhooks"`
-		Transactions []splitUpdate `json:"transactions"`
-	}
 	if tags == nil {
 		tags = []string{}
 	}
-	b := body{ApplyRules: false, FireWebhooks: false}
+	changes := make(map[string]map[string]interface{}, len(splits))
 	for _, s := range splits {
-		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
+		ch := map[string]interface{}{"tags": tags}
 		if strings.TrimSpace(categoryName) != "" {
-			su.CategoryName = categoryName
+			ch["category_name"] = categoryName
 		}
 		if strings.TrimSpace(destinationName) != "" {
-			su.DestinationName = destinationName
+			ch["destination_name"] = destinationName
 		}
-		b.Transactions = append(b.Transactions, su)
+		changes[s.JournalID] = ch
 	}
-	return c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id), b)
+	return c.putGroupPreserving(ctx, id, false, changes)
 }
 
 // ApplyHumanCategory sets a category on a previously-flagged transaction.
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
 // When destinationID is non-empty, it also sets the destination expense account.
 func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
-	type splitUpdate struct {
-		TransactionJournalID string   `json:"transaction_journal_id"`
-		Tags                 []string `json:"tags"`
-		CategoryID           string   `json:"category_id,omitempty"`
-		DestinationID        string   `json:"destination_id,omitempty"`
-	}
-	type body struct {
-		ApplyRules   bool          `json:"apply_rules"`
-		FireWebhooks bool          `json:"fire_webhooks"`
-		Transactions []splitUpdate `json:"transactions"`
-	}
-
-	b := body{ApplyRules: true, FireWebhooks: false}
+	changes := make(map[string]map[string]interface{}, len(splits))
 	for _, s := range splits {
 		// Drop any old AI control tags; review status now lives in the local DB.
 		tags := make([]string, 0, len(s.Tags))
@@ -655,19 +685,16 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 			}
 			tags = append(tags, t)
 		}
-		su := splitUpdate{
-			TransactionJournalID: s.JournalID,
-			Tags:                 tags,
-			CategoryID:           categoryID,
+		ch := map[string]interface{}{
+			"tags":        tags,
+			"category_id": categoryID,
 		}
 		if destinationID != "" {
-			su.DestinationID = destinationID
+			ch["destination_id"] = destinationID
 		}
-		b.Transactions = append(b.Transactions, su)
+		changes[s.JournalID] = ch
 	}
-
-	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	return c.put(ctx, u, b)
+	return c.putGroupPreserving(ctx, id, true, changes)
 }
 
 // ResolveSuggestedTags applies or rejects previously suggested tags on a
@@ -678,17 +705,7 @@ func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []S
 	_ = reject // rejections are handled locally (no Firefly change needed)
 	prefix := c.tagPrefix + ":suggest:"
 
-	type splitUpdate struct {
-		TransactionJournalID string   `json:"transaction_journal_id"`
-		Tags                 []string `json:"tags"`
-	}
-	type body struct {
-		ApplyRules   bool          `json:"apply_rules"`
-		FireWebhooks bool          `json:"fire_webhooks"`
-		Transactions []splitUpdate `json:"transactions"`
-	}
-
-	b := body{ApplyRules: false, FireWebhooks: false}
+	changes := make(map[string]map[string]interface{}, len(splits))
 	for _, s := range splits {
 		tags := make([]string, 0, len(s.Tags)+len(apply))
 		for _, t := range s.Tags {
@@ -705,14 +722,9 @@ func (c *Client) ResolveSuggestedTags(ctx context.Context, id string, splits []S
 				tags = append(tags, n)
 			}
 		}
-		b.Transactions = append(b.Transactions, splitUpdate{
-			TransactionJournalID: s.JournalID,
-			Tags:                 tags,
-		})
+		changes[s.JournalID] = map[string]interface{}{"tags": tags}
 	}
-
-	u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
-	return c.put(ctx, u, b)
+	return c.putGroupPreserving(ctx, id, false, changes)
 }
 
 // PurgeControlTags removes all of the app's old AI control tags (ai:classified,
