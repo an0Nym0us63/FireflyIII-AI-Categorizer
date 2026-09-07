@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,11 @@ import (
 	"sync"
 	"time"
 )
+
+// ErrNotFound is returned (wrapped) when Firefly answers 404 for a resource.
+// Callers can errors.Is(err, ErrNotFound) to tolerate deleted resources
+// instead of failing a whole batch.
+var ErrNotFound = errors.New("firefly: resource not found")
 
 type Client struct {
 	baseURL    string
@@ -785,6 +791,12 @@ func (c *Client) GetTransactionsByIDs(ctx context.Context, ids []string) ([]Tran
 		u := fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id)
 		var resp singleTransactionResponse
 		if err := c.get(ctx, u, &resp); err != nil {
+			// Transaction was deleted in Firefly but a stale reference remains
+			// (e.g. in the local AI review DB). Skip it rather than failing the
+			// whole batch — callers tolerate missing IDs.
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
 			return nil, fmt.Errorf("get transaction %s: %w", id, err)
 		}
 		txns = append(txns, toTransaction(resp.Data))
@@ -1103,6 +1115,9 @@ func (c *Client) get(ctx context.Context, u string, out interface{}) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", ErrNotFound, string(body))
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
