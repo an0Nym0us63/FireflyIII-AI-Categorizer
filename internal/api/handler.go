@@ -152,6 +152,14 @@ func (h *Handler) Router() http.Handler {
 	if h.baseCfg.EnableUI {
 		fs := http.FileServer(http.Dir("public"))
 		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// Only the SPA/static assets are served here, and only for GET/HEAD.
+			// Any other method (e.g. a webhook POST sent to the wrong URL without
+			// /webhook) must NOT be swallowed with a 200 page — return 404 so the
+			// misconfiguration is visible (Firefly marks the delivery as failed).
+			if req.Method != http.MethodGet && req.Method != http.MethodHead {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
 			// Force revalidation so a freshly deployed UI is never served stale
 			// from the browser cache (ETag/Last-Modified still yield 304s).
 			w.Header().Set("Cache-Control", "no-cache")
