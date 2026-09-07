@@ -60,7 +60,10 @@ func (c *GeminiClassifier) thinkingConfig() *genai.ThinkingConfig {
 	return &genai.ThinkingConfig{ThinkingLevel: level}
 }
 
-const groundingInstruction = `WEB SEARCH — MANDATORY BY DEFAULT: You have Google Search available. Unless the merchant is one of a handful of obviously huge, unambiguous national/global brands (e.g. Carrefour, Leclerc, Amazon, SNCF, Netflix, Total, McDonald's), you MUST perform a Google Search on the merchant label (name + town, taken verbatim from the description) BEFORE classifying. This is not optional. Do NOT guess a local or independent business's activity from its name — a name like "Le Tonneau" is NOT necessarily a bar/restaurant; look it up and use the REAL activity you find (e.g. tabac-presse, garage, vétérinaire, coiffeur…). If in any doubt whether a brand is "big enough" to skip, search. Only search to identify THIS merchant, nothing else. After searching, classify from the real business you found, and still return ONLY the required JSON object.`
+const groundingInstruction = `WEB SEARCH — DECISION ORDER:
+1. HISTORY FIRST: if the examples of previously-categorized transactions provided in the prompt include the SAME merchant and they consistently point to a category, trust that history and classify accordingly — no web search needed.
+2. OTHERWISE, WEB SEARCH IS MANDATORY: unless the merchant is one of a handful of obviously huge, unambiguous national/global brands (e.g. Carrefour, Leclerc, Amazon, SNCF, Netflix, Total, McDonald's), you MUST perform a Google Search on the merchant label (name + town, taken verbatim from the description) BEFORE classifying. This is not optional, and you must dig: find the REAL business and its REAL activity. Do NOT guess a local or independent business's activity from its name — a name like "Le Tonneau" is NOT necessarily a bar/restaurant (it may be a tabac-presse, garage, vétérinaire, coiffeur…). If in any doubt whether a brand is "big enough" to skip, search.
+Only search to identify THIS merchant, nothing else. After searching, classify from what you actually found, and still return ONLY the required JSON object.`
 
 func (c *GeminiClassifier) Classify(ctx context.Context, req Request) (Result, error) {
 	prompt := buildUserPrompt(req)
