@@ -388,14 +388,16 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
+	slog.Info("webhook received", "trigger", payload.Trigger, "response", payload.Response,
+		"txn_id", string(payload.Content.ID), "txns", len(payload.Content.Transactions))
 
 	if payload.Trigger != "STORE_TRANSACTION" {
-		slog.Debug("webhook skipped: trigger is not STORE_TRANSACTION", "trigger", payload.Trigger)
+		slog.Info("webhook skipped: trigger is not STORE_TRANSACTION", "trigger", payload.Trigger)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("trigger %q is not STORE_TRANSACTION", payload.Trigger)})
 		return
 	}
 	if payload.Response != "TRANSACTIONS" {
-		slog.Debug("webhook skipped: response is not TRANSACTIONS", "response", payload.Response)
+		slog.Info("webhook skipped: response is not TRANSACTIONS", "response", payload.Response)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "response is not TRANSACTIONS"})
 		return
 	}
@@ -405,24 +407,24 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(payload.Content.Transactions) == 0 {
-		slog.Debug("webhook skipped: no transactions in payload")
+		slog.Info("webhook skipped: no transactions in payload", "txn_id", string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no transactions in payload"})
 		return
 	}
 
 	first := payload.Content.Transactions[0]
 	if first.Type != "withdrawal" {
-		slog.Debug("webhook skipped: not a withdrawal", "type", first.Type, "txn_id", payload.Content.ID)
+		slog.Info("webhook skipped: not a withdrawal", "type", first.Type, "txn_id", payload.Content.ID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not a withdrawal", first.Type)})
 		return
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
-		slog.Debug("webhook skipped: category already set", "category_id", first.CategoryID, "txn_id", payload.Content.ID)
+		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
 	}
 	if first.Description == "" && first.DestinationName == "" {
-		slog.Debug("webhook skipped: no description or destination", "txn_id", payload.Content.ID)
+		slog.Info("webhook skipped: no description or destination", "txn_id", payload.Content.ID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or destination — cannot classify"})
 		return
 	}
