@@ -135,7 +135,26 @@ func (d *DB) GetMany(ids []string) (map[string]Record, error) {
 	return out, rows.Err()
 }
 
-// PendingReview returns records that still need human attention: not yet
+// DeleteByIDs removes the AI records for the given transaction IDs. Used to
+// purge orphans: transactions referenced locally but deleted in Firefly.
+// Returns the number of rows removed.
+func (d *DB) DeleteByIDs(ids []string) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := d.db.Exec(`DELETE FROM ai_records WHERE transaction_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // reviewed and either assumed/needs-review, an assumed destination, or with
 // pending tag suggestions.
 func (d *DB) PendingReview() ([]Record, error) {

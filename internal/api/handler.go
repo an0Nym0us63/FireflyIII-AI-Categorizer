@@ -1295,6 +1295,35 @@ func (h *Handler) refreshReviewCache() {
 	h.reviewMu.Unlock()
 }
 
+// fetchTxnsPurgingOrphans fetches the given transaction groups and self-heals
+// the local AI DB: any ID that no longer exists in Firefly (deleted -> skipped
+// as 404 by GetTransactionsByIDs) has its orphan record purged so it stops
+// being queried on every review load. Returns the surviving transactions by ID.
+func (h *Handler) fetchTxnsPurgingOrphans(ctx context.Context, fc *firefly.Client, ids []string) (map[string]firefly.Transaction, error) {
+	txns, err := fc.GetTransactionsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	txnByID := make(map[string]firefly.Transaction, len(txns))
+	for _, t := range txns {
+		txnByID[t.ID] = t
+	}
+	var orphans []string
+	for _, id := range ids {
+		if _, ok := txnByID[id]; !ok {
+			orphans = append(orphans, id)
+		}
+	}
+	if len(orphans) > 0 {
+		if n, err := h.aidb.DeleteByIDs(orphans); err != nil {
+			slog.Warn("failed to purge orphan AI records", "count", len(orphans), "error", err)
+		} else {
+			slog.Info("purged orphan AI records (transactions deleted in Firefly)", "count", n, "ids", orphans)
+		}
+	}
+	return txnByID, nil
+}
+
 func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) ([]*reviewGroup, error) {
 	records, err := h.aidb.PendingReview()
 	if err != nil {
@@ -1336,18 +1365,14 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 		return nil, nil
 	}
 
-	txns, err := fc.GetTransactionsByIDs(ctx, ids)
+	txnByID, err := h.fetchTxnsPurgingOrphans(ctx, fc, ids)
 	if err != nil {
 		return nil, err
-	}
-	txnByID := map[string]firefly.Transaction{}
-	for _, t := range txns {
-		txnByID[t.ID] = t
 	}
 
 	// Cache the splits so validating a row can skip re-fetching the transaction.
 	splitsByID := map[string][]firefly.Split{}
-	for _, t := range txns {
+	for _, t := range txnByID {
 		splitsByID[t.ID] = t.Splits
 	}
 	h.reviewMu.Lock()
@@ -1419,13 +1444,9 @@ func (h *Handler) computeReviewedGroups(ctx context.Context, fc *firefly.Client)
 	for _, r := range records {
 		ids = append(ids, r.TransactionID)
 	}
-	txns, err := fc.GetTransactionsByIDs(ctx, ids)
+	txnByID, err := h.fetchTxnsPurgingOrphans(ctx, fc, ids)
 	if err != nil {
 		return nil, err
-	}
-	txnByID := map[string]firefly.Transaction{}
-	for _, t := range txns {
-		txnByID[t.ID] = t
 	}
 
 	var result []*reviewGroup
