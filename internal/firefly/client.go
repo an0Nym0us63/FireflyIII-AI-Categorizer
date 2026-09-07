@@ -844,6 +844,27 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 	}
 
 	b := body{ApplyRules: true, FireWebhooks: false}
+
+	// Safety net: never overwrite existing notes with a truncated version. If any
+	// split arrives without notes (e.g. a webhook payload that omitted them), read
+	// the current notes from Firefly and use those as the preservation base, so
+	// the bank's "MORE DETAILS" block and any human notes are always kept.
+	notesBase := make(map[string]string)
+	needFetch := false
+	for _, s := range splits {
+		if strings.TrimSpace(s.Notes) == "" {
+			needFetch = true
+			break
+		}
+	}
+	if needFetch {
+		if cur, err := c.GetTransactionsByIDs(ctx, []string{id}); err == nil && len(cur) > 0 {
+			for _, cs := range cur[0].Splits {
+				notesBase[cs.JournalID] = cs.Notes
+			}
+		}
+	}
+
 	for _, s := range splits {
 		// Keep the user's existing tags, but drop any of OUR old control tags
 		// (self-cleaning on reprocess) — AI status now lives in the local DB.
@@ -875,7 +896,11 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		if outcome.DestinationID != "" {
 			su.DestinationID = outcome.DestinationID
 		}
-		if notes := buildNotes(s.Notes, outcome); notes != "" {
+		noteSrc := s.Notes
+		if strings.TrimSpace(noteSrc) == "" {
+			noteSrc = notesBase[s.JournalID] // preserve what's currently in Firefly
+		}
+		if notes := buildNotes(noteSrc, outcome); notes != "" {
 			su.Notes = notes
 		}
 		b.Transactions = append(b.Transactions, su)
