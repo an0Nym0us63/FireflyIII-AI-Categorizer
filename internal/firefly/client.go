@@ -843,10 +843,17 @@ func (c *Client) GetTransactionsByIDs(ctx context.Context, ids []string) ([]Tran
 	return txns, nil
 }
 
-// GetWithdrawalsPage returns a paginated, flat list of withdrawals for the UI.
+// GetWithdrawalsPage returns a paginated withdrawals list for the UI.
 func (c *Client) GetWithdrawalsPage(ctx context.Context, page, limit int, startDate, endDate string) (TransactionsPage, error) {
+	return c.GetTransactionsPage(ctx, "withdrawal", page, limit, startDate, endDate)
+}
+
+// GetTransactionsPage returns a paginated list for the UI filtered by Firefly
+// "type" (e.g. "withdrawal" or "all"). Transfers are dropped; the counterparty
+// shown is the payee for expenses and the payer (source) for income.
+func (c *Client) GetTransactionsPage(ctx context.Context, txFilter string, page, limit int, startDate, endDate string) (TransactionsPage, error) {
 	params := url.Values{
-		"type":  {"withdrawal"},
+		"type":  {txFilter},
 		"page":  {fmt.Sprintf("%d", page)},
 		"limit": {fmt.Sprintf("%d", limit)},
 	}
@@ -870,11 +877,16 @@ func (c *Client) GetWithdrawalsPage(ctx context.Context, page, limit int, startD
 			continue
 		}
 		s := txn.Splits[0]
+		if s.Type == "transfer" {
+			continue
+		}
 		rows = append(rows, TransactionRow{
 			ID:              txn.ID,
 			Date:            s.Date,
 			Description:     s.Description,
-			DestinationName: s.DestinationName,
+			DestinationName: s.CounterpartyName(),
+			SourceName:      s.SourceName,
+			Type:            s.Type,
 			Amount:          s.Amount,
 			CategoryID:      s.CategoryID,
 			CategoryName:    s.CategoryName,

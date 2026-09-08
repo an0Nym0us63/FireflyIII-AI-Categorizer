@@ -1164,6 +1164,12 @@ type reviewGroup struct {
 	Transactions         []reviewTxn `json:"transactions"`
 }
 
+// incomeOn reports whether income (deposit) processing is enabled.
+func (h *Handler) incomeOn() bool {
+	p := h.getPipe()
+	return p != nil && p.IncomeEnabled()
+}
+
 func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) {
 	fc := h.getFC()
 	if fc == nil {
@@ -2090,8 +2096,12 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 			if end != "" && len(s.Date) >= 10 && s.Date[:10] > end {
 				continue
 			}
+			if s.Type == "transfer" || (s.Type == "deposit" && !h.incomeOn()) {
+				continue
+			}
 			all = append(all, firefly.TransactionRow{
-				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.CounterpartyName(),
+				SourceName: s.SourceName, Type: s.Type,
 				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
 			})
 		}
@@ -2152,7 +2162,11 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	if idsOnly {
 		var ids []string
 		for page := 1; ; page++ {
-			result, err := fc.GetWithdrawalsPage(r.Context(), page, 200, start, end)
+			txf := "withdrawal"
+			if h.incomeOn() {
+				txf = "all"
+			}
+			result, err := fc.GetTransactionsPage(r.Context(), txf, page, 200, start, end)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 				return
@@ -2170,7 +2184,11 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	pageNum := queryInt(q.Get("page"), 1)
 	limit := queryInt(q.Get("limit"), 50)
-	result, err := fc.GetWithdrawalsPage(r.Context(), pageNum, limit, start, end)
+	txf := "withdrawal"
+	if h.incomeOn() {
+		txf = "all"
+	}
+	result, err := fc.GetTransactionsPage(r.Context(), txf, pageNum, limit, start, end)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 		return

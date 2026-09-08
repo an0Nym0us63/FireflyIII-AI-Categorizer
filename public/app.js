@@ -1097,7 +1097,7 @@ function renderTxnTable(rows) {
         return '<tr' + cls + '>'
             + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
-            + '<td class="c-dest"><strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
+            + '<td class="c-dest">' + (r.type === 'deposit' ? '<span class="label label-success" title="Revenu" style="margin-right:4px">\u2191</span>' : '') + '<strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
             + '<td class="c-desc">' + esc(r.description || '') + '</td>'
             + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'

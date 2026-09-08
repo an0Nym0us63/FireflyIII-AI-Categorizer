@@ -59,6 +59,8 @@ type TransactionRow struct {
 	Date            string   `json:"date"`
 	Description     string   `json:"description"`
 	DestinationName string   `json:"destination_name"`
+	SourceName      string   `json:"source_name,omitempty"`
+	Type            string   `json:"type,omitempty"`
 	Amount          string   `json:"amount"`
 	CategoryID      string   `json:"category_id"`
 	CategoryName    string   `json:"category_name"`
