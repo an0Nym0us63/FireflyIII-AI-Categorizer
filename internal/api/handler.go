@@ -1982,7 +1982,7 @@ func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
 			}
 			s := t.Splits[0]
 			pool = append(pool, firefly.TransactionRow{
-				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.CounterpartyName(),
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
 				SourceName: s.SourceName, Type: s.Type,
 				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
 			})
@@ -2118,7 +2118,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			all = append(all, firefly.TransactionRow{
-				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.CounterpartyName(),
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
 				SourceName: s.SourceName, Type: s.Type,
 				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
 			})

@@ -631,6 +631,7 @@ function renderSimilarList() {
         var tags = (s.tags && s.tags.length) ? ' ' + s.tags.map(function (t) { return '<span class="label label-primary" style="font-size:9px;font-weight:normal">' + esc(t) + '</span>'; }).join(' ') : '';
         return '<label style="display:block;font-weight:normal;margin-bottom:2px">'
             + '<input type="checkbox" class="edit-sim-cb" data-id="' + esc(s.id) + '" data-idx="' + i + '" onclick="simCbClick(event,this,' + i + ');updateSimilarCount()"> '
+            + dirBadge(editTxnDirection)
             + esc((s.date || '') + ' · ' + (s.amount ? s.amount.toFixed(2) : '') + ' · ' + (s.description || '').substring(0, 40))
             + ' <span class="text-muted">[' + esc(s.category || '—') + ' / ' + esc(s.destination || '—') + ']</span>' + tags + badge + '</label>';
     }).join(''));
@@ -1042,7 +1043,7 @@ async function loadRandomUntreated() {
     txnFlash('', '');
     $('#txn-select-all-bar').hide();
     $('#txn-select-all').prop('checked', false);
-    $('#txn-tbody').html('<tr><td colspan="8" class="text-center" style="padding:30px">'
+    $('#txn-tbody').html('<tr><td colspan="9" class="text-center" style="padding:30px">'
         + '<i class="fa fa-spinner fa-spin"></i> Tirage de transactions non traitées&hellip;</td></tr>');
     try {
         var res = await fetch('/api/transactions/random?n=12');
@@ -1095,7 +1096,7 @@ async function loadTransactions(page) {
     txnFlash('', '');
     $('#txn-select-all-bar').hide();
     $('#txn-select-all').prop('checked', false);
-    $('#txn-tbody').html('<tr><td colspan="8" class="text-center" style="padding:30px">'
+    $('#txn-tbody').html('<tr><td colspan="9" class="text-center" style="padding:30px">'
         + '<i class="fa fa-spinner fa-spin"></i> Loading&hellip;</td></tr>');
     try {
         var res = await fetch('/api/transactions?' + params);
@@ -1117,7 +1118,7 @@ async function loadTransactions(page) {
 
 function renderTxnTable(rows) {
     if (!rows.length) {
-        $('#txn-tbody').html('<tr><td colspan="8" class="text-center text-muted" style="padding:40px 0">No transactions found for the selected period.</td></tr>');
+        $('#txn-tbody').html('<tr><td colspan="9" class="text-center text-muted" style="padding:40px 0">No transactions found for the selected period.</td></tr>');
         $('#txn-footer').hide(); return;
     }
     $('#txn-footer').show();
@@ -1131,7 +1132,8 @@ function renderTxnTable(rows) {
         return '<tr' + cls + '>'
             + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
-            + '<td class="c-dest">' + dirBadge(r.type) + '<strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
+            + '<td class="c-source" style="white-space:nowrap">' + dirBadge(r.type) + esc(trunc(r.source_name || '\u2014', 22)) + '</td>'
+            + '<td class="c-dest"><strong>' + esc(trunc(r.destination_name || '\u2014', 22)) + '</strong></td>'
             + '<td class="c-desc">' + esc(r.description || '') + '</td>'
             + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
