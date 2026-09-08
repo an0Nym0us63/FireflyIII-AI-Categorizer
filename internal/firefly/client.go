@@ -54,37 +54,31 @@ func (c *Client) GetPreference(ctx context.Context, name string) (interface{}, e
 	return resp.Data.Attributes.Data, nil
 }
 
-// GetExpenseAccounts fetches all expense accounts, paginating through all pages.
-// Used for destination account matching when DESTINATION_MATCH_ENABLED is true.
+// GetExpenseAccounts fetches all expense accounts (paginated). Used for
+// destination matching (outflows) when DESTINATION_MATCH_ENABLED is true.
 func (c *Client) GetExpenseAccounts(ctx context.Context) ([]Account, error) {
-	var accounts []Account
-	for page := 1; ; page++ {
-		u := fmt.Sprintf("%s/api/v1/accounts?type=expense&page=%d", c.baseURL, page)
-		var resp accountsResponse
-		if err := c.get(ctx, u, &resp); err != nil {
-			return nil, fmt.Errorf("get expense accounts page %d: %w", page, err)
-		}
-		for _, item := range resp.Data {
-			accounts = append(accounts, Account{
-				ID:   item.ID,
-				Name: item.Attributes.Name,
-			})
-		}
-		if page >= resp.Meta.Pagination.TotalPages {
-			break
-		}
-	}
-	return accounts, nil
+	return c.accountsByType(ctx, "expense")
 }
 
-// GetAssetAccounts fetches all asset accounts, paginating through all pages.
+// GetRevenueAccounts fetches all revenue accounts (paginated). Used for source
+// matching (inflows / income) — the analogue of expense accounts for outflows.
+func (c *Client) GetRevenueAccounts(ctx context.Context) ([]Account, error) {
+	return c.accountsByType(ctx, "revenue")
+}
+
+// GetAssetAccounts fetches all asset accounts (paginated).
 func (c *Client) GetAssetAccounts(ctx context.Context) ([]Account, error) {
+	return c.accountsByType(ctx, "asset")
+}
+
+// accountsByType fetches all accounts of the given Firefly type, paginating.
+func (c *Client) accountsByType(ctx context.Context, typ string) ([]Account, error) {
 	var accounts []Account
 	for page := 1; ; page++ {
-		u := fmt.Sprintf("%s/api/v1/accounts?type=asset&page=%d", c.baseURL, page)
+		u := fmt.Sprintf("%s/api/v1/accounts?type=%s&page=%d", c.baseURL, typ, page)
 		var resp accountsResponse
 		if err := c.get(ctx, u, &resp); err != nil {
-			return nil, fmt.Errorf("get asset accounts page %d: %w", page, err)
+			return nil, fmt.Errorf("get %s accounts page %d: %w", typ, page, err)
 		}
 		for _, item := range resp.Data {
 			accounts = append(accounts, Account{
@@ -289,8 +283,17 @@ func (c *Client) GetTags(ctx context.Context) ([]string, error) {
 
 // GetCategorizedWithdrawals fetches all categorized withdrawals within the lookback window.
 func (c *Client) GetCategorizedWithdrawals(ctx context.Context, lookbackDays int) ([]Transaction, error) {
+	return c.getCategorized(ctx, "withdrawal", lookbackDays)
+}
+
+// GetCategorizedDeposits fetches all categorized deposits within the lookback window.
+func (c *Client) GetCategorizedDeposits(ctx context.Context, lookbackDays int) ([]Transaction, error) {
+	return c.getCategorized(ctx, "deposit", lookbackDays)
+}
+
+func (c *Client) getCategorized(ctx context.Context, txType string, lookbackDays int) ([]Transaction, error) {
 	start := time.Now().AddDate(0, 0, -lookbackDays).Format("2006-01-02")
-	params := url.Values{"type": {"withdrawal"}, "start": {start}}
+	params := url.Values{"type": {txType}, "start": {start}}
 	return c.fetchTransactions(ctx, params, func(s Split) bool {
 		return s.CategoryName != ""
 	})
@@ -298,7 +301,16 @@ func (c *Client) GetCategorizedWithdrawals(ctx context.Context, lookbackDays int
 
 // GetUncategorizedWithdrawals fetches all withdrawals with no category set.
 func (c *Client) GetUncategorizedWithdrawals(ctx context.Context) ([]Transaction, error) {
-	params := url.Values{"type": {"withdrawal"}}
+	return c.getUncategorized(ctx, "withdrawal")
+}
+
+// GetUncategorizedDeposits fetches all deposits with no category set.
+func (c *Client) GetUncategorizedDeposits(ctx context.Context) ([]Transaction, error) {
+	return c.getUncategorized(ctx, "deposit")
+}
+
+func (c *Client) getUncategorized(ctx context.Context, txType string) ([]Transaction, error) {
+	params := url.Values{"type": {txType}}
 	return c.fetchTransactions(ctx, params, func(s Split) bool {
 		return !hasCategory(s.CategoryID)
 	})
@@ -322,8 +334,12 @@ func (c *Client) SearchTransactionsRaw(ctx context.Context, query string) ([]Tra
 		var out []Transaction
 		for _, item := range resp.Data {
 			txn := toTransaction(item)
-			if len(txn.Splits) > 0 && txn.Splits[0].Type == "withdrawal" {
-				out = append(out, txn)
+			// Keep expenses and incomes (drop transfers). The caller's query
+			// (e.g. type:withdrawal or type:deposit) narrows the direction.
+			if len(txn.Splits) > 0 {
+				if t := txn.Splits[0].Type; t == "withdrawal" || t == "deposit" {
+					out = append(out, txn)
+				}
 			}
 		}
 		return out
@@ -390,7 +406,16 @@ func (c *Client) SearchWithdrawals(ctx context.Context, descContains string) ([]
 
 // GetAllWithdrawals fetches all withdrawals regardless of categorisation status.
 func (c *Client) GetAllWithdrawals(ctx context.Context) ([]Transaction, error) {
-	params := url.Values{"type": {"withdrawal"}}
+	return c.getAll(ctx, "withdrawal")
+}
+
+// GetAllDeposits fetches all deposits regardless of categorisation status.
+func (c *Client) GetAllDeposits(ctx context.Context) ([]Transaction, error) {
+	return c.getAll(ctx, "deposit")
+}
+
+func (c *Client) getAll(ctx context.Context, txType string) ([]Transaction, error) {
+	params := url.Values{"type": {txType}}
 	return c.fetchTransactions(ctx, params, func(_ Split) bool { return true })
 }
 

@@ -78,3 +78,45 @@ type TransactionsPage struct {
 func hasCategory(id string) bool {
 	return id != "" && id != "0"
 }
+
+// Direction distinguishes an expense (outflow) from an income (inflow),
+// relative to the user's asset account. The external counterparty the
+// categorizer resolves is the destination for outflows, the source for inflows.
+type Direction string
+
+const (
+	Outflow Direction = "withdrawal" // expense; counterparty = destination
+	Inflow  Direction = "deposit"    // income;  counterparty = source
+)
+
+// FireflyType returns the Firefly transaction "type" string for this direction.
+func (d Direction) FireflyType() string { return string(d) }
+
+// DirectionOf maps a Firefly transaction type string to a Direction.
+func DirectionOf(txType string) Direction {
+	if txType == "deposit" {
+		return Inflow
+	}
+	return Outflow
+}
+
+// IsInflow reports whether this split is an income (deposit).
+func (s Split) IsInflow() bool { return s.Type == "deposit" }
+
+// CounterpartyName returns the external party of the split: the destination
+// (payee / expense account) for a withdrawal, the source (payer / revenue
+// account) for a deposit. This is the account the categorizer resolves.
+func (s Split) CounterpartyName() string {
+	if s.IsInflow() {
+		return s.SourceName
+	}
+	return s.DestinationName
+}
+
+// CounterpartyID mirrors CounterpartyName for the account ID.
+func (s Split) CounterpartyID() string {
+	if s.IsInflow() {
+		return s.SourceID
+	}
+	return s.DestinationID
+}
