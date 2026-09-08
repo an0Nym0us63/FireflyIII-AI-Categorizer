@@ -307,6 +307,19 @@
                                         </div>
                                         <div class="col-sm-3 col-md-2">
                                             <label
+                                                style="font-size:12px;font-weight:600;display:block">Source</label>
+                                            <input type="text" class="form-control input-sm" id="txn-filter-source"
+                                                placeholder="e.g. Salaire, CAF, (no name)…" onchange="loadTransactions()">
+                                            <div class="checkbox" style="margin:8px 0 0">
+                                                <label style="font-size:12px">
+                                                    <input type="checkbox" id="txn-filter-missing-source"
+                                                        onchange="loadTransactions()">
+                                                    Missing source
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-3 col-md-2">
+                                            <label
                                                 style="font-size:12px;font-weight:600;display:block">Description contient</label>
                                             <input type="text" class="form-control input-sm" id="txn-filter-desc"
                                                 placeholder="ex. spliiit, engie…" onchange="loadTransactions()">
