@@ -379,6 +379,16 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// des revenus (deposits). Repli sur toutes les catégories si pas d'historique.
 	incCats, incTags := vocabFromHistory(p.allIncomeHistory(ctx), categories, clCats)
 
+	// Enrichissement mail pour un revenu : uniquement les détecteurs dont le
+	// scope inclut "deposit" (un détecteur dépense comme Amazon n'ira jamais
+	// chercher de mail/CSV pour un avoir/remboursement).
+	var extraContext string
+	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
+		if body, _, ok, _, _, _ := p.findOrderEmail(det, fireflyDate, amount); ok {
+			extraContext = "Related email (use it to choose category, source and tags):\n" + body
+		}
+	}
+
 	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
 	for i, a := range revAccts {
 		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
@@ -393,6 +403,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		ExpenseAccounts:     clAccounts,
 		DestinationMatching: len(clAccounts) > 0,
 		Notes:               cleanNotes(first.Notes),
+		ExtraContext:        extraContext,
 		TagSuggestion:       p.tagSuggest,
 		TagMax:              p.tagMax,
 	})
@@ -544,7 +555,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 
 	// Opaque merchants configured with a mail detector (PayPal, Amazon,
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
-	if det := p.matchMailDetector(j.Description); det != nil {
+	if det := p.matchMailDetector(j.Description, "withdrawal"); det != nil {
 		skipIfEmpty = true
 		mailBack, mailFwd = det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays)
 		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
@@ -1287,9 +1298,12 @@ func cleanNotes(s string) string {
 
 // matchMailDetector returns the first detector whose keyword appears in the
 // transaction description (case-insensitive), or nil.
-func (p *Pipeline) matchMailDetector(description string) *config.MailDetector {
+func (p *Pipeline) matchMailDetector(description, direction string) *config.MailDetector {
 	d := strings.ToLower(description)
 	for i := range p.mailDetectors {
+		if !p.mailDetectors[i].AppliesTo(direction) {
+			continue
+		}
 		for _, kw := range p.mailDetectors[i].Keywords {
 			kw = strings.ToLower(strings.TrimSpace(kw))
 			if kw != "" && strings.Contains(d, kw) {

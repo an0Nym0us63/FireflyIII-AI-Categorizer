@@ -277,6 +277,11 @@ function renderMailDetectors() {
             + '<span style="display:inline-block">Objet contient : <input type="text" class="input-sm" style="width:200px" value="' + esc(d.subject_contains || '') + '"'
             + ' placeholder="ex: commande expédiée" oninput="mailDetectors[' + i + '].subject_contains=this.value"></span>'
             + '</div></div>'
+            + '<div style="margin-top:6px">S\'applique à : <select class="input-sm" onchange="mailDetectors[' + i + '].direction=this.value">'
+            + '<option value="withdrawal"' + (!d.direction || d.direction === 'withdrawal' ? ' selected' : '') + '>Dépenses</option>'
+            + '<option value="deposit"' + (d.direction === 'deposit' ? ' selected' : '') + '>Revenus</option>'
+            + '<option value="both"' + (d.direction === 'both' ? ' selected' : '') + '>Les deux</option>'
+            + '</select></div>'
             + '<div class="row"><div class="col-sm-12" style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" onclick="removeMailDetector(' + i + ')"><i class="fa fa-trash"></i> Supprimer</button></div></div>'
             + '</div>';
     }).join('');
@@ -294,7 +299,7 @@ function testMailAccount(i) {
         .fail(function (x) { if (st) st.innerHTML = '<span class="text-danger">' + esc(x.responseText || ('' + x.status)) + '</span>'; });
 }
 
-function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: [], replace_destination: false, tag: ''}); renderMailConfig(); }
+function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: [], replace_destination: false, tag: '', direction: 'withdrawal'}); renderMailConfig(); }
 function removeMailDetector(i) { mailDetectors.splice(i, 1); renderMailConfig(); }
 function addDetKeyword(i, v) { v = (v || '').trim().toLowerCase(); if (!v) return; mailDetectors[i].keywords = mailDetectors[i].keywords || []; if (mailDetectors[i].keywords.indexOf(v) < 0) mailDetectors[i].keywords.push(v); renderMailDetectors(); }
 function removeDetKeyword(i, ki) { mailDetectors[i].keywords.splice(ki, 1); renderMailDetectors(); }

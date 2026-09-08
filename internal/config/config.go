@@ -87,6 +87,22 @@ type MailDetector struct {
 	FwdDays            int      `json:"fwd_days"`            // days after the bank date to search (0 = default 2)
 	SubjectContains    string   `json:"subject_contains"`    // only emails whose subject contains this (case-insensitive)
 	Aggregate          bool     `json:"aggregate"`           // group emails by order number and sum amounts
+	Direction          string   `json:"direction"`           // ""/"withdrawal" | "deposit" | "both" — which transaction sense this detector applies to
+}
+
+// AppliesTo reports whether this detector should run for the given direction
+// ("withdrawal" or "deposit"). Empty scope means withdrawal-only (back-compat:
+// existing detectors are expense-oriented, so income is never enriched unless
+// the detector is explicitly scoped to deposit/both).
+func (d MailDetector) AppliesTo(direction string) bool {
+	switch d.Direction {
+	case "both":
+		return true
+	case "deposit":
+		return direction == "deposit"
+	default: // "" or "withdrawal"
+		return direction == "withdrawal"
+	}
 }
 
 // BackDaysOr returns the configured look-back window or the default.
