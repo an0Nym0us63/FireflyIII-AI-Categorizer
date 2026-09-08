@@ -390,14 +390,8 @@
                                                 <i class="fa fa-magic"></i> Actions <span class="caret"></span>
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-right">
-                                                <li><a href="#" onclick="recategorizeSelected('classify');return false">
-                                                        <i class="fa fa-bookmark-o"></i> Set Category &amp; Tags</a></li>
-                                                <li><a href="#"
-                                                        onclick="recategorizeSelected('destination');return false">
-                                                        <i class="fa fa-building-o"></i> Set Destination</a></li>
-                                                <li role="separator" class="divider"></li>
                                                 <li><a href="#" onclick="recategorizeSelected('both');return false">
-                                                        <i class="fa fa-magic"></i> Set Both</a></li>
+                                                        <i class="fa fa-magic"></i> Analyse IA</a></li>
                                                 <li role="separator" class="divider"></li>
                                                 <li><a href="#" onclick="markSelectedTreated();return false">
                                                         <i class="fa fa-check"></i> Marquer comme traité</a></li>
@@ -1202,9 +1196,7 @@
                     <strong>Actions</strong> dropdown to:
                 </p>
                 <ul>
-                    <li><strong>Set Category &amp; Tags</strong> — run the AI classifier for the category (and suggest tags when tag suggestion is enabled).</li>
-                    <li><strong>Set Destination</strong> — run the AI to match or create an expense account.</li>
-                    <li><strong>Set Both</strong> — classify the category and match the destination in one pass.</li>
+                    <li><strong>Analyse IA</strong> — lance le classifieur : catégorie, tiers (destinataire pour une dépense, source pour un revenu) et tags, en une passe.</li>
                 </ul>
                 <p>
                     Use <strong>Select all</strong> to operate on every transaction in the current date range.
