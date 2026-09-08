@@ -88,6 +88,9 @@ type MailDetector struct {
 	SubjectContains    string   `json:"subject_contains"`    // only emails whose subject contains this (case-insensitive)
 	Aggregate          bool     `json:"aggregate"`           // group emails by order number and sum amounts
 	Direction          string   `json:"direction"`           // ""/"withdrawal" | "deposit" | "both" — which transaction sense this detector applies to
+	DefaultCategory    string   `json:"default_category"`    // fallback category when parsing is ignored (no email found)
+	DefaultDestination string   `json:"default_destination"` // fallback counterparty (dest for expense, source for income)
+	DefaultTags        []string `json:"default_tags"`        // fallback tags
 }
 
 // AppliesTo reports whether this detector should run for the given direction

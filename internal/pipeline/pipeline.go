@@ -388,6 +388,34 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		if body, _, ok, _, _, _ := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
 			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
+		} else if det.DefaultCategory != "" || det.DefaultDestination != "" || len(det.DefaultTags) > 0 {
+			out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Email non trouvé — valeurs par défaut du détecteur appliquées."}
+			if det.DefaultCategory != "" {
+				out.Category = det.DefaultCategory
+				for _, c := range categories {
+					if c.Name == det.DefaultCategory {
+						out.CategoryID = c.ID
+						break
+					}
+				}
+			}
+			if det.DefaultDestination != "" {
+				if created, e := p.firefly.CreateRevenueAccount(ctx, det.DefaultDestination); e == nil {
+					out.SourceID = created.ID
+					out.DestConfidence = "CLASSIFIED"
+				}
+			}
+			out.Tags = append(out.Tags, det.DefaultTags...)
+			if t := strings.TrimSpace(det.Tag); t != "" {
+				out.Tags = append(out.Tags, t)
+			}
+			if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
+				p.registry.SetFailed(j.ID, err.Error())
+				return fmt.Errorf("update transaction (defaults): %w", err)
+			}
+			eventlog.Info("mail", "Email non trouvé — défauts du détecteur appliqués (revenu)", transactionID)
+			p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", det.DefaultDestination, "MATCH", out.Tags, nil)
+			return nil
 		}
 	}
 
@@ -547,6 +575,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var extraContext string
 	var amazonUncertain bool
 	var skipIfEmpty bool
+	var matchedDet *config.MailDetector
 	var paymentTag string
 	var forceDestination bool
 	var installmentTag bool
@@ -561,6 +590,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// AliExpress…): find the order-confirmation email and feed it to the LLM.
 	if det := p.matchMailDetector(j.Description, "withdrawal"); det != nil {
 		skipIfEmpty = true
+		matchedDet = det
 		mailBack, mailFwd = det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays)
 		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
@@ -615,6 +645,38 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// Opaque merchant with no order content found → leave the transaction
 	// untouched (don't waste an LLM call on a useless label).
 	if skipIfEmpty && extraContext == "" {
+		if matchedDet != nil && (matchedDet.DefaultCategory != "" || matchedDet.DefaultDestination != "" || len(matchedDet.DefaultTags) > 0) {
+			out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Email non trouvé — valeurs par défaut du détecteur appliquées."}
+			if matchedDet.DefaultCategory != "" {
+				out.Category = matchedDet.DefaultCategory
+				if cats, e := p.getCategories(ctx); e == nil {
+					for _, c := range cats {
+						if c.Name == matchedDet.DefaultCategory {
+							out.CategoryID = c.ID
+							break
+						}
+					}
+				}
+			}
+			destName := matchedDet.DefaultDestination
+			if destName != "" {
+				if created, e := p.firefly.CreateExpenseAccount(ctx, destName); e == nil {
+					out.DestinationID = created.ID
+					out.DestConfidence = "CLASSIFIED"
+				}
+			}
+			out.Tags = append(out.Tags, matchedDet.DefaultTags...)
+			if t := strings.TrimSpace(matchedDet.Tag); t != "" {
+				out.Tags = append(out.Tags, t)
+			}
+			if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
+				p.registry.SetFailed(j.ID, err.Error())
+				return fmt.Errorf("update transaction (defaults): %w", err)
+			}
+			eventlog.Info("mail", "Email non trouvé — défauts du détecteur appliqués", transactionID)
+			p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", destName, "MATCH", out.Tags, nil)
+			return nil
+		}
 		win := ""
 		if !fireflyDate.IsZero() {
 			win = fmt.Sprintf(" [fenêtre %s → %s]",

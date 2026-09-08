@@ -290,6 +290,11 @@ function renderMailDetectors() {
             + '<span style="display:inline-block">Objet contient : <input type="text" class="input-sm" style="width:200px" value="' + esc(d.subject_contains || '') + '"'
             + ' placeholder="ex: commande expédiée" oninput="mailDetectors[' + i + '].subject_contains=this.value"></span>'
             + '</div></div>'
+            + '<div style="margin-top:6px">D\u00e9fauts si email non trouv\u00e9 \u2014 '
+            + 'Cat\u00e9gorie : <input type="text" class="input-sm" style="width:140px" value="' + esc(d.default_category || '') + '" oninput="mailDetectors[' + i + '].default_category=this.value"> \u00b7 '
+            + 'Destination/Source : <input type="text" class="input-sm" style="width:140px" value="' + esc(d.default_destination || '') + '" oninput="mailDetectors[' + i + '].default_destination=this.value"> \u00b7 '
+            + 'Tags : <input type="text" class="input-sm" style="width:200px" placeholder="tag1, tag2" value="' + esc((d.default_tags || []).join(', ')) + '" oninput="setDetTags(' + i + ', this.value)">'
+            + '</div>'
             + '<div style="margin-top:6px">S\'applique à : <select class="input-sm" onchange="mailDetectors[' + i + '].direction=this.value">'
             + '<option value="withdrawal"' + (!d.direction || d.direction === 'withdrawal' ? ' selected' : '') + '>Dépenses</option>'
             + '<option value="deposit"' + (d.direction === 'deposit' ? ' selected' : '') + '>Revenus</option>'
@@ -312,7 +317,8 @@ function testMailAccount(i) {
         .fail(function (x) { if (st) st.innerHTML = '<span class="text-danger">' + esc(x.responseText || ('' + x.status)) + '</span>'; });
 }
 
-function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: [], replace_destination: false, tag: '', direction: 'withdrawal'}); renderMailConfig(); }
+function setDetTags(i, v) { mailDetectors[i].default_tags = (v || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); }
+function addMailDetector() { mailDetectors.push({keywords: [], account_id: '', senders: [], replace_destination: false, tag: '', direction: 'withdrawal', default_tags: []}); renderMailConfig(); }
 function removeMailDetector(i) { mailDetectors.splice(i, 1); renderMailConfig(); }
 function addDetKeyword(i, v) { v = (v || '').trim().toLowerCase(); if (!v) return; mailDetectors[i].keywords = mailDetectors[i].keywords || []; if (mailDetectors[i].keywords.indexOf(v) < 0) mailDetectors[i].keywords.push(v); renderMailDetectors(); }
 function removeDetKeyword(i, ki) { mailDetectors[i].keywords.splice(ki, 1); renderMailDetectors(); }
