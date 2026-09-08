@@ -772,7 +772,8 @@ function fillJobRealValues() {
             var d = txnDetailsCache[id];
             if (!d) return;
             var f = s.getAttribute('data-f');
-            if (f === 'dest') s.innerHTML = d.destination_name ? '<span title="destination réelle">→ ' + esc(d.destination_name) + '</span>' : '';
+            if (f === 'source') s.innerHTML = d.source_name ? '<span title="source réelle">→ ' + esc(d.source_name) + '</span>' : '';
+            else if (f === 'dest') s.innerHTML = d.destination_name ? '<span title="destination réelle">→ ' + esc(d.destination_name) + '</span>' : '';
             else if (f === 'cat') s.innerHTML = d.category_name ? '<span title="catégorie réelle">→ ' + esc(d.category_name) + '</span>' : '';
             else if (f === 'date') s.innerHTML = d.date ? '<span title="date transaction"><i class="fa fa-calendar-o"></i> ' + esc(d.date) + '</span>' : '';
             else if (f === 'tags') s.innerHTML = (d.tags && d.tags.length) ? '<span title="tags réels">→ ' + d.tags.map(esc).join(', ') + '</span>' : '';
@@ -851,7 +852,7 @@ function buildJobRow(j) {
         '<td class="j-chevron" style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
         + (function () {
             var isDep = j.direction === 'deposit';
-            var cpCell = destHtml + srcBadge + realDiv('dest');
+            var cpCell = destHtml + srcBadge + realDiv(isDep ? 'source' : 'dest');
             var assetCell = '<span class="text-muted">' + esc(j.asset_name || '—') + '</span>';
             return '<td class="j-source">' + dirBadge(j.direction) + (isDep ? cpCell : assetCell) + '</td>'
                 + '<td class="j-dest">' + (isDep ? assetCell : cpCell) + '</td>';

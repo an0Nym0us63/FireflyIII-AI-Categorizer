@@ -865,6 +865,7 @@ func (h *Handler) getTransactionDetails(w http.ResponseWriter, r *http.Request) 
 		}
 		out[t.ID] = map[string]any{
 			"destination_name": s.DestinationName,
+			"source_name":      s.SourceName,
 			"category_name":    s.CategoryName,
 			"tags":             classifier.SemanticTags(s.Tags),
 			"date":             date,
