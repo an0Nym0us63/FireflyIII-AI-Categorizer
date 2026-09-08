@@ -829,7 +829,7 @@ function buildJobRow(j) {
 
     // Show AI-assigned destination account when present, otherwise the original payee name.
     var dest = j.destination_account || j.destination_name || '&mdash;';
-    var destHtml = dirBadge(j.direction) + '<strong>' + esc(dest) + '</strong>';
+    var destHtml = '<strong>' + esc(dest) + '</strong>';
     if (j.destination_account && j.destination_action === 'MATCH') {
         destHtml += ' <i class="fa fa-link text-muted" title="Matched to existing account" style="font-size:11px"></i>';
     } else if (j.destination_account && j.destination_action === 'CREATE') {
@@ -849,7 +849,13 @@ function buildJobRow(j) {
 
     tr.innerHTML =
         '<td class="j-chevron" style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
-        + '<td class="j-dest">' + destHtml + srcBadge + realDiv('dest') + '</td>'
+        + (function () {
+            var isDep = j.direction === 'deposit';
+            var cpCell = destHtml + srcBadge + realDiv('dest');
+            var assetCell = '<span class="text-muted">' + esc(j.asset_name || '—') + '</span>';
+            return '<td class="j-source">' + dirBadge(j.direction) + (isDep ? cpCell : assetCell) + '</td>'
+                + '<td class="j-dest">' + (isDep ? assetCell : cpCell) + '</td>';
+        })()
         + '<td class="j-desc">' + esc(j.description || '') + realDiv('date') + '</td>'
         + '<td class="j-amount text-right">' + amount + '</td>'
         + '<td class="j-cat">' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'

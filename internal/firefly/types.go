@@ -116,6 +116,15 @@ func (s Split) CounterpartyName() string {
 	return s.DestinationName
 }
 
+// AssetName returns the user's own account side (asset): the source for a
+// withdrawal, the destination for a deposit.
+func (s Split) AssetName() string {
+	if s.IsInflow() {
+		return s.DestinationName
+	}
+	return s.SourceName
+}
+
 // CounterpartyID mirrors CounterpartyName for the account ID.
 func (s Split) CounterpartyID() string {
 	if s.IsInflow() {

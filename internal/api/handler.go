@@ -348,6 +348,14 @@ func (f *flexString) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// webhookAsset returns the user's own account side for a webhook split.
+func webhookAsset(s webhookSplitData) string {
+	if s.Type == "deposit" {
+		return s.DestinationName
+	}
+	return s.SourceName
+}
+
 type webhookSplitData struct {
 	TransactionJournalID flexString `json:"transaction_journal_id"`
 	Type                 string     `json:"type"`
@@ -470,7 +478,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook", first.Type)
+	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook", first.Type, webhookAsset(first))
 	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
@@ -573,7 +581,7 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		}
 		first := txn.Splits[0]
 		amount := parseAmount(first.Amount)
-		j := h.registry.Create(txn.ID, batchID, first.DestinationName, first.Description, amount, "batch", first.Type)
+		j := h.registry.Create(txn.ID, batchID, first.DestinationName, first.Description, amount, "batch", first.Type, first.AssetName())
 
 		txnID := txn.ID
 		splits := txn.Splits
@@ -1255,7 +1263,7 @@ func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
 	txn := txns[0]
 	first := txn.Splits[0]
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount, "manual", first.Type)
+	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount, "manual", first.Type, first.AssetName())
 	splits := txn.Splits
 	force := r.URL.Query().Get("force") == "1"
 	h.webhookPool.Submit(worker.Task{

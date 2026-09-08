@@ -20,8 +20,9 @@ type Job struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	TransactionID   string   `json:"transaction_id"`
-	Source          string   `json:"source,omitempty"`    // webhook | batch | manual
-	Direction       string   `json:"direction,omitempty"` // withdrawal | deposit
+	Source          string   `json:"source,omitempty"`     // webhook | batch | manual
+	Direction       string   `json:"direction,omitempty"`  // withdrawal | deposit
+	AssetName       string   `json:"asset_name,omitempty"` // user's own account (Compte Courant…)
 	DestinationName string   `json:"destination_name"`
 	Description     string   `json:"description"`
 	Amount          *float64 `json:"amount,omitempty"`

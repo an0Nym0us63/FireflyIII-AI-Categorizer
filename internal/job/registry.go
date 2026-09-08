@@ -84,7 +84,7 @@ func (r *Registry) Clear() {
 	}
 }
 
-func (r *Registry) Create(transactionID, batchID, destinationName, description string, amount *float64, source, direction string) *Job {
+func (r *Registry) Create(transactionID, batchID, destinationName, description string, amount *float64, source, direction, assetName string) *Job {
 	now := time.Now()
 
 	r.mu.Lock()
@@ -96,6 +96,7 @@ func (r *Registry) Create(transactionID, batchID, destinationName, description s
 				j.BatchID = batchID
 				j.Source = source
 				j.Direction = direction
+				j.AssetName = assetName
 				j.Status = StatusQueued
 				j.CreatedAt = now
 				j.UpdatedAt = now
@@ -126,6 +127,7 @@ func (r *Registry) Create(transactionID, batchID, destinationName, description s
 		BatchID:         batchID,
 		Source:          source,
 		Direction:       direction,
+		AssetName:       assetName,
 		Status:          StatusQueued,
 		CreatedAt:       now,
 		UpdatedAt:       now,

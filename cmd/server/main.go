@@ -171,7 +171,7 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 			amount = &v
 		}
 
-		j := reg.Create(txn.ID, "cli-batch", first.DestinationName, first.Description, amount, "batch", first.Type)
+		j := reg.Create(txn.ID, "cli-batch", first.DestinationName, first.Description, amount, "batch", first.Type, first.AssetName())
 		txnID := txn.ID
 		splits := txn.Splits
 
