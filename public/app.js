@@ -852,9 +852,9 @@ function buildJobRow(j) {
         '<td class="j-chevron" style="width:18px;vertical-align:middle"><i class="fa fa-chevron-right text-muted" id="ic-' + j.id + '" style="font-size:10px"></i></td>'
         + (function () {
             var isDep = j.direction === 'deposit';
-            var cpCell = destHtml + srcBadge + realDiv(isDep ? 'source' : 'dest');
+            var cpCell = dirBadge(j.direction) + destHtml + srcBadge + realDiv(isDep ? 'source' : 'dest');
             var assetCell = '<span class="text-muted">' + esc(j.asset_name || '—') + '</span>';
-            return '<td class="j-source">' + dirBadge(j.direction) + (isDep ? cpCell : assetCell) + '</td>'
+            return '<td class="j-source">' + (isDep ? cpCell : assetCell) + '</td>'
                 + '<td class="j-dest">' + (isDep ? assetCell : cpCell) + '</td>';
         })()
         + '<td class="j-desc">' + esc(j.description || '') + realDiv('date') + '</td>'
@@ -1139,8 +1139,8 @@ function renderTxnTable(rows) {
         return '<tr' + cls + '>'
             + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
-            + '<td class="c-source" style="white-space:nowrap">' + dirBadge(r.type) + esc(trunc(r.source_name || '\u2014', 22)) + '</td>'
-            + '<td class="c-dest"><strong>' + esc(trunc(r.destination_name || '\u2014', 22)) + '</strong></td>'
+            + '<td class="c-source" style="white-space:nowrap">' + (r.type === 'deposit' ? dirBadge(r.type) : '') + esc(trunc(r.source_name || '\u2014', 22)) + '</td>'
+            + '<td class="c-dest"><strong>' + (r.type !== 'deposit' ? dirBadge(r.type) : '') + esc(trunc(r.destination_name || '\u2014', 22)) + '</strong></td>'
             + '<td class="c-desc">' + esc(r.description || '') + '</td>'
             + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
