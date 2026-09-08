@@ -695,7 +695,7 @@ func (c *Client) putGroupPreserving(ctx context.Context, id string, applyRules b
 	return c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id), body)
 }
 
-func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName string, tags []string) error {
+func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName, sourceName string, tags []string) error {
 	if tags == nil {
 		tags = []string{}
 	}
@@ -707,6 +707,9 @@ func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split,
 		}
 		if strings.TrimSpace(destinationName) != "" {
 			ch["destination_name"] = destinationName
+		}
+		if strings.TrimSpace(sourceName) != "" {
+			ch["source_name"] = sourceName
 		}
 		changes[s.JournalID] = ch
 	}

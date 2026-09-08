@@ -1921,6 +1921,9 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID, query
 				continue
 			}
 			sp := t.Splits[0]
+			if sp.Type != s.Type {
+				continue
+			}
 			desc := strings.ToLower(sp.Description)
 			ok := true
 			for _, w := range words {
@@ -1939,14 +1942,14 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID, query
 			}
 			out = append(out, SimilarTxn{
 				ID: t.ID, Date: date, Description: sp.Description, Amount: math.Abs(amt),
-				Category: sp.CategoryName, Destination: sp.DestinationName, Tags: classifier.SemanticTags(sp.Tags),
+				Category: sp.CategoryName, Destination: sp.CounterpartyName(), Tags: classifier.SemanticTags(sp.Tags),
 				JournalID: sp.JournalID,
 			})
 		}
 		return out, nil
 	}
 
-	key := classifier.GroupKey(s.DestinationName, s.Description)
+	key := classifier.GroupKey(s.CounterpartyName(), s.Description)
 	if key == "" {
 		return nil, nil
 	}
@@ -1960,7 +1963,10 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID, query
 			continue
 		}
 		sp := t.Splits[0]
-		if classifier.GroupKey(sp.DestinationName, sp.Description) != key {
+		if sp.Type != s.Type {
+			continue
+		}
+		if classifier.GroupKey(sp.CounterpartyName(), sp.Description) != key {
 			continue
 		}
 		amt, _ := strconv.ParseFloat(strings.TrimSpace(sp.Amount), 64)
@@ -1970,7 +1976,7 @@ func (p *Pipeline) SimilarTransactions(ctx context.Context, transactionID, query
 		}
 		out = append(out, SimilarTxn{
 			ID: t.ID, Date: date, Description: sp.Description, Amount: math.Abs(amt),
-			Category: sp.CategoryName, Destination: sp.DestinationName, Tags: classifier.SemanticTags(sp.Tags),
+			Category: sp.CategoryName, Destination: sp.CounterpartyName(), Tags: classifier.SemanticTags(sp.Tags),
 			JournalID: sp.JournalID,
 		})
 	}

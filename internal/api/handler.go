@@ -934,6 +934,7 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		JournalIDs      map[string]string `json:"journal_ids"`
 		CategoryName    string            `json:"category_name"`
 		DestinationName string            `json:"destination_name"`
+		SourceName      string            `json:"source_name"`
 		Tags            []string          `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -976,7 +977,7 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 				}
 				splits = txns[0].Splits
 			}
-			return fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.Tags) == nil
+			return fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.SourceName, req.Tags) == nil
 		}
 		for _, id := range req.IDs {
 			wg.Add(1)
@@ -1040,6 +1041,8 @@ func (h *Handler) getTransaction(w http.ResponseWriter, r *http.Request) {
 		"id":               id,
 		"description":      s.Description,
 		"destination_name": s.DestinationName,
+		"source_name":      s.SourceName,
+		"type":             s.Type,
 		"category_name":    s.CategoryName,
 		"tags":             classifier.SemanticTags(s.Tags),
 		"amount":           s.Amount,
@@ -1058,6 +1061,7 @@ func (h *Handler) editTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CategoryName    string   `json:"category_name"`
 		DestinationName string   `json:"destination_name"`
+		SourceName      string   `json:"source_name"`
 		Tags            []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1069,7 +1073,13 @@ func (h *Handler) editTransaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "transaction not found", http.StatusNotFound)
 		return
 	}
-	if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, req.DestinationName, req.Tags); err != nil {
+	destName, srcName := req.DestinationName, req.SourceName
+	if txns[0].Splits[0].Type == "deposit" {
+		destName = ""
+	} else {
+		srcName = ""
+	}
+	if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, destName, srcName, req.Tags); err != nil {
 		http.Error(w, fmt.Sprintf("failed to edit: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -1128,6 +1138,8 @@ func (h *Handler) getAccounts(w http.ResponseWriter, r *http.Request) {
 	)
 	if acctType == "asset" {
 		accts, err = fc.GetAssetAccounts(r.Context())
+	} else if acctType == "revenue" {
+		accts, err = fc.GetRevenueAccounts(r.Context())
 	} else {
 		accts, err = fc.GetExpenseAccounts(r.Context())
 	}

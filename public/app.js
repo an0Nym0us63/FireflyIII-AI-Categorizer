@@ -399,6 +399,17 @@ function namesOf(arr) {
     return (arr || []).map(function (x) { return typeof x === 'string' ? x : (x.name || x.Name); }).filter(Boolean);
 }
 
+var editTxnDirection = 'withdrawal';
+function loadEditAccounts(isDeposit) {
+    var url = isDeposit ? '/api/accounts?type=revenue' : '/api/accounts';
+    fetch(url).then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
+        .then(function (arr) {
+            document.getElementById('edit-accounts-list').innerHTML = (arr || [])
+                .map(function (x) { return typeof x === 'string' ? x : (x.name || x.Name); })
+                .filter(Boolean).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('');
+            editAccountsList = namesOf(arr);
+        });
+}
 function loadEditLists(force) {
     if (editListsLoaded && !force) return Promise.resolve();
     return Promise.all([
@@ -528,7 +539,13 @@ function openEditModal(txnId) {
                 .replace(/\s*\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\s*$/, '')        // trailing date: 08/11 or 10/11/25
                 .trim();
             $('#edit-similar-query').val(suggest);
-            $('#edit-txn-dest').val(t.destination_name || '');
+            editTxnDirection = t.type || 'withdrawal';
+            var _isDep = editTxnDirection === 'deposit';
+            var _lbl = document.getElementById('edit-dest-label');
+            if (_lbl) _lbl.textContent = _isDep ? 'Source' : 'Destinataire';
+            $('#edit-txn-dest').attr('placeholder', _isDep ? 'source / émetteur — taper pour rechercher / créer' : 'taper pour rechercher / créer');
+            $('#edit-txn-dest').val(_isDep ? (t.source_name || '') : (t.destination_name || ''));
+            loadEditAccounts(_isDep);
             $('#edit-txn-cat').val(t.category_name || '');
             editTxnTags = (t.tags || []).slice();
             renderEditTags();
@@ -626,11 +643,12 @@ function checkAllSimilar(on) {
 
 function saveEditTxn() {
     if (!editTxnId) return;
+    var _cpVal = $('#edit-txn-dest').val().trim();
     var body = {
-        destination_name: $('#edit-txn-dest').val().trim(),
         category_name: $('#edit-txn-cat').val().trim(),
         tags: editTxnTags
     };
+    if (editTxnDirection === 'deposit') { body.source_name = _cpVal; } else { body.destination_name = _cpVal; }
     var extra = [];
     if ($('#edit-apply-similar').is(':checked')) {
         document.querySelectorAll('#edit-similar-list .edit-sim-cb:checked').forEach(function (c) { extra.push(c.getAttribute('data-id')); });
@@ -655,7 +673,7 @@ function saveEditTxn() {
         if (!extra.length) { $('#edit-txn-modal').modal('hide'); finish(); return; }
         fetch('/api/transactions/edit-bulk', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ids: extra, journal_ids: journalIds, category_name: body.category_name, destination_name: body.destination_name, tags: body.tags})
+            body: JSON.stringify({ids: extra, journal_ids: journalIds, category_name: body.category_name, destination_name: body.destination_name || '', source_name: body.source_name || '', tags: body.tags})
         }).then(function (r) { return r.json(); }).then(function (res) {
             if (!res.job_id) { $('#edit-txn-modal').modal('hide'); finish(); return; }
             var total = res.total;
