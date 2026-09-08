@@ -465,7 +465,8 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 					srcAccount, srcAction = "", ""
 				}
 			} else {
-				srcAccount, srcAction = "", ""
+				// Différer la création à la review : garder la source proposée + flag ASSUMED.
+				outcome.DestConfidence = "ASSUMED"
 			}
 		}
 	}
@@ -988,10 +989,10 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			}
 		case "CREATE":
 			if result.Destination.Confidence != "CLASSIFIED" {
-				// CREATE is only attempted when the LLM is confident.
-				slog.Info("destination CREATE skipped — confidence is ASSUMED", "name", result.Destination.Name)
-				destAccount = ""
-				destAction = ""
+				// Ne pas créer un compte peu sûr, mais exposer la proposition pour
+				// review (nom conservé + flag ASSUMED) au lieu de laisser "(no name)".
+				slog.Info("destination CREATE deferred to review — confidence is ASSUMED", "name", result.Destination.Name)
+				outcome.DestConfidence = "ASSUMED"
 				break
 			}
 			created, err := p.firefly.CreateExpenseAccount(ctx, result.Destination.Name)
