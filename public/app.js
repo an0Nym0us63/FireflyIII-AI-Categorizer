@@ -518,6 +518,8 @@ function openEditModal(txnId) {
     editTxnTags = [];
     $('#edit-txn-status').html('');
     $('#edit-txn-desc').text('Chargement…');
+    $('#edit-dir-badge').html('');
+    $('#edit-similar-kind').text('');
     $('#edit-txn-dest').val('');
     $('#edit-txn-cat').val('');
     renderEditTags();
@@ -543,6 +545,10 @@ function openEditModal(txnId) {
             var _isDep = editTxnDirection === 'deposit';
             var _lbl = document.getElementById('edit-dest-label');
             if (_lbl) _lbl.textContent = _isDep ? 'Source' : 'Destinataire';
+            var _dirBadge = document.getElementById('edit-dir-badge');
+            if (_dirBadge) _dirBadge.innerHTML = _isDep ? '<span class="label label-success">\u2191 Revenu</span>' : '<span class="label label-danger">\u2193 Dépense</span>';
+            var _simKind = document.getElementById('edit-similar-kind');
+            if (_simKind) _simKind.textContent = _isDep ? '(revenus)' : '(dépenses)';
             $('#edit-txn-dest').attr('placeholder', _isDep ? 'source / émetteur — taper pour rechercher / créer' : 'taper pour rechercher / créer');
             $('#edit-txn-dest').val(_isDep ? (t.source_name || '') : (t.destination_name || ''));
             loadEditAccounts(_isDep);
