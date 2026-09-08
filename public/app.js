@@ -918,7 +918,9 @@ function buildJobRow(j) {
 function rerunJob(ev, txnId, force) {
     ev.stopPropagation();
     if (!txnId) return;
-    var url = '/api/transactions/' + encodeURIComponent(txnId) + '/rerun' + (force ? '?force=1' : '');
+    var hint = prompt('Ajouter une phrase au prompt IA pour cette analyse ? (laisser vide pour aucune)', '');
+    if (hint === null) return; // annulé
+    var url = '/api/transactions/' + encodeURIComponent(txnId) + '/rerun?' + (force ? 'force=1&' : '') + 'hint=' + encodeURIComponent(hint);
     $.ajax({url: url, method: 'POST'})
         .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
 }

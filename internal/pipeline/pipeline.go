@@ -148,9 +148,10 @@ func (p *Pipeline) IncomeEnabled() bool { return p.incomeEnabled }
 
 // RunOptions controls which parts of the pipeline execute.
 type RunOptions struct {
-	ClassifyCategory bool // if true, run category classification
-	MatchDestination bool // if true, run destination matching
-	ForceAI          bool // if true, skip deterministic auto-match (B) and history examples (A) — pure LLM
+	ClassifyCategory bool   // if true, run category classification
+	MatchDestination bool   // if true, run destination matching
+	ForceAI          bool   // if true, skip deterministic auto-match (B) and history examples (A) — pure LLM
+	Hint             string // optional user instruction appended to the LLM prompt (single re-run)
 }
 
 // accountName returns the name of the account with the given ID, or "".
@@ -295,7 +296,7 @@ func (p *Pipeline) incomeHistory(ctx context.Context, gkey string, txnDate time.
 // RunIncome classifies a single income (deposit): category + tags + source
 // (revenue) account. Fully decoupled from the expense path (never calls Run),
 // so it cannot regress withdrawal handling.
-func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID string, splits []firefly.Split) error {
+func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID string, splits []firefly.Split, hint ...string) error {
 	p.registry.SetInProgress(j.ID)
 	if len(splits) == 0 {
 		p.registry.SetFinished(j.ID, "SKIPPED", "", "no splits", "", "", "", "", "", nil, nil)
@@ -374,6 +375,13 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		}
 		p.registry.SetFinished(j.ID, string(classifier.Classified), histCat, outcome.Reason, "", "", "", accountName(revAccts, histSrcID), "MATCH", outcome.Tags, nil)
 		return nil
+	}
+
+	if len(hint) > 0 && hint[0] != "" {
+		if extraContext != "" {
+			extraContext += "\n"
+		}
+		extraContext += "Instruction supplémentaire de l'utilisateur : " + hint[0]
 	}
 
 	// Ségrégation : n'offrir au LLM que les catégories et tags déjà utilisés sur
@@ -634,6 +642,13 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 
 	// If a mail-detector merchant fell back to CSV (or nothing) because no email
 	// matched, keep a short diagnostic on the job so it can be analysed.
+	if opts.Hint != "" {
+		if extraContext != "" {
+			extraContext += "\n"
+		}
+		extraContext += "Instruction supplémentaire de l'utilisateur : " + opts.Hint
+	}
+
 	var enrichDiag string
 	if skipIfEmpty && enrichSource != "email" {
 		enrichDiag = fmt.Sprintf("email non trouvé: %d candidat(s), %d hit(s)", mailCandidates, mailSearchHits)

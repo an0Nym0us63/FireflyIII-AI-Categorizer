@@ -1309,11 +1309,12 @@ func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
 	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount, "manual", first.Type, first.AssetName())
 	splits := txn.Splits
 	force := r.URL.Query().Get("force") == "1"
+	hint := r.URL.Query().Get("hint")
 	h.webhookPool.Submit(worker.Task{
 		JobID: j.ID,
 		Execute: func(ctx context.Context) error {
 			if len(splits) > 0 && splits[0].Type == "deposit" {
-				return pipe.RunIncome(ctx, j, id, splits)
+				return pipe.RunIncome(ctx, j, id, splits, hint)
 			}
 			if force {
 				// Pure LLM re-analysis: no deterministic auto-match, no history examples.
@@ -1321,9 +1322,14 @@ func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
 					ClassifyCategory: true,
 					MatchDestination: pipe.DestinationMatchEnabled(),
 					ForceAI:          true,
+					Hint:             hint,
 				})
 			}
-			return pipe.Run(ctx, j, id, splits)
+			return pipe.RunWithOptions(ctx, j, id, splits, pipeline.RunOptions{
+				ClassifyCategory: true,
+				MatchDestination: pipe.DestinationMatchEnabled(),
+				Hint:             hint,
+			})
 		},
 	})
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": j.ID})
