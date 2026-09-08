@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/eventlog"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -125,6 +127,8 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/api/categories", h.getCategories)
 	r.Get("/api/accounts", h.getAccounts)
 	r.Get("/api/tags", h.getTags)
+	r.Get("/api/logs", h.getLogs)
+	r.Post("/api/logs/clear", h.clearLogs)
 	r.Get("/api/transactions/{id}", h.getTransaction)
 	r.Get("/api/transactions/{id}/automatch", h.getAutoMatch)
 	r.Get("/api/transactions/{id}/similar", h.getSimilar)
@@ -407,6 +411,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("webhook received", "trigger", payload.Trigger, "response", payload.Response,
 		"txn_id", string(payload.Content.ID), "txns", len(payload.Content.Transactions))
+	eventlog.Info("webhook_received", fmt.Sprintf("Webhook reçu (%s, %d txn)", payload.Trigger, len(payload.Content.Transactions)), string(payload.Content.ID))
 
 	if payload.Trigger != "STORE_TRANSACTION" {
 		slog.Info("webhook skipped: trigger is not STORE_TRANSACTION", "trigger", payload.Trigger)
@@ -436,11 +441,13 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	case "deposit":
 		if p := h.getPipe(); p == nil || !p.IncomeEnabled() {
 			slog.Info("webhook skipped: income disabled", "type", first.Type, "txn_id", payload.Content.ID)
+			eventlog.Warn("webhook_skipped", "Revenu ignoré : traitement des revenus désactivé", string(payload.Content.ID))
 			writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "income processing disabled"})
 			return
 		}
 	default:
 		slog.Info("webhook skipped: unsupported type", "type", first.Type, "txn_id", payload.Content.ID)
+		eventlog.Warn("webhook_skipped", fmt.Sprintf("Type non géré : %s", first.Type), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not supported", first.Type)})
 		return
 	}
@@ -452,11 +459,13 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
 		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
+		eventlog.Info("webhook_skipped", fmt.Sprintf("Catégorie déjà définie (%s)", first.CategoryName), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
 	}
 	if first.Description == "" && cpName == "" {
 		slog.Info("webhook skipped: no description or counterparty", "txn_id", payload.Content.ID)
+		eventlog.Warn("webhook_skipped", "Ni description ni tiers — non classable", string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or counterparty — cannot classify"})
 		return
 	}
@@ -479,6 +488,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	amount := parseAmount(first.Amount)
 	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook", first.Type, webhookAsset(first))
+	eventlog.Info("job_created", fmt.Sprintf("Job créé (%s) : %s", first.Type, first.Description), string(payload.Content.ID))
 	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
@@ -1133,6 +1143,15 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Accounts ---
+
+func (h *Handler) getLogs(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, eventlog.Entries())
+}
+
+func (h *Handler) clearLogs(w http.ResponseWriter, r *http.Request) {
+	eventlog.Clear()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
 
 func (h *Handler) getAccounts(w http.ResponseWriter, r *http.Request) {
 	fc := h.getFC()

@@ -23,10 +23,30 @@ var TAB_META = {
     jobs: {title: 'Jobs', sub: 'Recent classification activity'},
     transactions: {title: 'Transactions', sub: 'Select and re-categorize transactions'},
     review: {title: 'Review', sub: 'Review categories, destinations, and conversions'},
+    journal: {title: 'Journal', sub: 'Webhooks reçus, ignorés et événements récents'},
     help: {title: 'Help', sub: 'Documentation and setup guide'},
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
 
+function loadJournal() {
+    fetch('/api/logs').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
+        .then(function (rows) {
+            var tb = document.getElementById('journal-tbody');
+            if (!tb) return;
+            if (!rows || !rows.length) { tb.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding:30px 0">Aucun événement.</td></tr>'; return; }
+            tb.innerHTML = rows.map(function (e) {
+                var lvl = e.level === 'error' ? 'label-danger' : (e.level === 'warn' ? 'label-warning' : 'label-info');
+                var ts = e.time ? new Date(e.time).toLocaleString() : '';
+                return '<tr><td class="text-muted" style="white-space:nowrap">' + esc(ts) + '</td>'
+                    + '<td><span class="label ' + lvl + '">' + esc(e.level) + '</span></td>'
+                    + '<td>' + esc(e.msg || e.event) + '</td>'
+                    + '<td class="text-muted">' + esc(e.txn_id || '') + '</td></tr>';
+            }).join('');
+        });
+}
+function clearJournal() {
+    fetch('/api/logs/clear', { method: 'POST' }).then(function () { loadJournal(); });
+}
 function switchTab(name) {
     // Collapse the mobile sidebar after navigating (AdminLTE overlay).
     document.body.classList.remove('sidebar-open');
@@ -37,6 +57,7 @@ function switchTab(name) {
     var m = TAB_META[name];
     document.getElementById('page-title').innerHTML = esc(m.title) + ' <small>' + esc(m.sub) + '</small>';
     document.getElementById('breadcrumb-leaf').textContent = m.title;
+    if (name === 'journal') loadJournal();
     if (name === 'settings') loadSettings();
     if (name === 'transactions') populateTxnCatFilter();
     if (name === 'categories') {
