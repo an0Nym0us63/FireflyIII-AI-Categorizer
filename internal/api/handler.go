@@ -353,6 +353,7 @@ type webhookSplitData struct {
 	Type                 string     `json:"type"`
 	Description          string     `json:"description"`
 	DestinationName      string     `json:"destination_name"`
+	SourceName           string     `json:"source_name"`
 	Amount               string     `json:"amount"`
 	CategoryID           string     `json:"category_id"`
 	CategoryName         string     `json:"category_name"`
@@ -421,19 +422,34 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	first := payload.Content.Transactions[0]
-	if first.Type != "withdrawal" {
-		slog.Info("webhook skipped: not a withdrawal", "type", first.Type, "txn_id", payload.Content.ID)
-		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not a withdrawal", first.Type)})
+	switch first.Type {
+	case "withdrawal":
+		// expenses are always processed
+	case "deposit":
+		if p := h.getPipe(); p == nil || !p.IncomeEnabled() {
+			slog.Info("webhook skipped: income disabled", "type", first.Type, "txn_id", payload.Content.ID)
+			writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "income processing disabled"})
+			return
+		}
+	default:
+		slog.Info("webhook skipped: unsupported type", "type", first.Type, "txn_id", payload.Content.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not supported", first.Type)})
 		return
+	}
+	// Counterparty = the external account we resolve: destination for an
+	// expense, source (payer) for an income.
+	cpName := first.DestinationName
+	if first.Type == "deposit" {
+		cpName = first.SourceName
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
 		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
 	}
-	if first.Description == "" && first.DestinationName == "" {
-		slog.Info("webhook skipped: no description or destination", "txn_id", payload.Content.ID)
-		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or destination — cannot classify"})
+	if first.Description == "" && cpName == "" {
+		slog.Info("webhook skipped: no description or counterparty", "txn_id", payload.Content.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or counterparty — cannot classify"})
 		return
 	}
 
@@ -444,6 +460,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 			Type:            t.Type,
 			Description:     t.Description,
 			DestinationName: t.DestinationName,
+			SourceName:      t.SourceName,
 			Amount:          t.Amount,
 			CategoryID:      t.CategoryID,
 			CategoryName:    t.CategoryName,
@@ -453,7 +470,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(string(payload.Content.ID), "", first.DestinationName, first.Description, amount, "webhook")
+	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook")
 	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
@@ -505,8 +522,18 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		txns, err = fc.GetTransactionsByIDs(ctx, req.Filter.TransactionIDs)
 	case req.Force || !req.Filter.UncategorizedOnly:
 		txns, err = fc.GetAllWithdrawals(ctx)
+		if err == nil && pipe.IncomeEnabled() {
+			var dep []firefly.Transaction
+			dep, err = fc.GetAllDeposits(ctx)
+			txns = append(txns, dep...)
+		}
 	default:
 		txns, err = fc.GetUncategorizedWithdrawals(ctx)
+		if err == nil && pipe.IncomeEnabled() {
+			var dep []firefly.Transaction
+			dep, err = fc.GetUncategorizedDeposits(ctx)
+			txns = append(txns, dep...)
+		}
 	}
 
 	// Resolve pipeline run options from the request mode.
@@ -2302,7 +2329,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 
 	h.mu.Lock()
 	h.fc = fc

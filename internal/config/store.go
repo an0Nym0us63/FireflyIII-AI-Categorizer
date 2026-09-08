@@ -28,6 +28,7 @@ type StoredConfig struct {
 	HistoryContextLimit     int            `json:"history_context_limit,omitempty"`
 	HistoryLookbackDays     int            `json:"history_lookback_days,omitempty"`
 	DestinationMatchEnabled *bool          `json:"destination_match_enabled,omitempty"`
+	IncomeEnabled           *bool          `json:"income_enabled,omitempty"`
 	TagSuggestEnabled       *bool          `json:"tag_suggest_enabled,omitempty"`
 	TagSuggestMax           int            `json:"tag_suggest_max,omitempty"`
 	SearchEngine            string         `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)

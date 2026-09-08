@@ -48,6 +48,7 @@ type Pipeline struct {
 	contextN   int
 
 	destinationMatch bool
+	incomeEnabled    bool
 
 	tagSuggest bool
 	tagMax     int
@@ -89,6 +90,7 @@ func New(
 	reg *job.Registry,
 	contextN int,
 	destinationMatch bool,
+	incomeEnabled bool,
 	tagSuggest bool,
 	tagMax int,
 	amz *amazon.Index,
@@ -106,6 +108,7 @@ func New(
 		registry:          reg,
 		contextN:          contextN,
 		destinationMatch:  destinationMatch,
+		incomeEnabled:     incomeEnabled,
 		tagSuggest:        tagSuggest,
 		tagMax:            tagMax,
 		amazon:            amz,
@@ -128,6 +131,9 @@ type memoEntry struct {
 func (p *Pipeline) DestinationMatchEnabled() bool {
 	return p.destinationMatch
 }
+
+// IncomeEnabled reports whether deposits (income) are processed.
+func (p *Pipeline) IncomeEnabled() bool { return p.incomeEnabled }
 
 // RunOptions controls which parts of the pipeline execute.
 type RunOptions struct {

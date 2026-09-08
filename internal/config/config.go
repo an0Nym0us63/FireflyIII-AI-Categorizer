@@ -34,6 +34,7 @@ type Config struct {
 	HistoryContextLimit int
 
 	DestinationMatchEnabled bool
+	IncomeEnabled           bool // process deposits (income) as well as withdrawals
 
 	TagSuggestEnabled bool
 	TagSuggestMax     int
@@ -126,6 +127,7 @@ func Load() (*Config, *Store, error) {
 		HistoryContextLimit:     getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
 		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 365),
 		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
+		IncomeEnabled:           getEnv("INCOME_ENABLED", "false") == "true",
 		TagSuggestEnabled:       getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
 		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),
 		AmazonOrdersFile:        getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
@@ -209,6 +211,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	// We track this via a pointer so the store can signal "was configured".
 	if sc.DestinationMatchEnabled != nil {
 		cfg.DestinationMatchEnabled = *sc.DestinationMatchEnabled
+	}
+	if sc.IncomeEnabled != nil {
+		cfg.IncomeEnabled = *sc.IncomeEnabled
 	}
 	if sc.TagSuggestEnabled != nil {
 		cfg.TagSuggestEnabled = *sc.TagSuggestEnabled
