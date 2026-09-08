@@ -1586,7 +1586,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 		GroupKey: gkey, Amount: amount, AmountRatio: 1.75, MinCount: historyMatchMinCount,
 		CategoryVotes: map[string]int{}, DestVotes: map[string]int{}, TagVotes: map[string]int{},
 	}
-	if p.matchMailDetector(s.Description) != nil {
+	if p.matchMailDetector(s.Description, s.Type) != nil {
 		ex.MailDetector = true
 		ex.Notes = append(ex.Notes, "Ce marchand est géré par un détecteur mail → l'auto-match par historique est désactivé (catégorisation depuis l'email de commande).")
 	}
