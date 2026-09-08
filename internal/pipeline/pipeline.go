@@ -1510,7 +1510,8 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 	if v, perr := strconv.ParseFloat(strings.TrimSpace(s.Amount), 64); perr == nil {
 		amount = math.Abs(v)
 	}
-	gkey := classifier.GroupKey(s.DestinationName, s.Description)
+	isInflow := s.IsInflow()
+	gkey := classifier.GroupKey(s.CounterpartyName(), s.Description)
 	var txnDate time.Time
 	if len(s.Date) >= 10 {
 		txnDate, _ = time.Parse("2006-01-02", s.Date[:10])
@@ -1540,7 +1541,10 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 			continue
 		}
 		sp := t.Splits[0]
-		if classifier.GroupKey(sp.DestinationName, sp.Description) != gkey {
+		if sp.Type != s.Type {
+			continue
+		}
+		if classifier.GroupKey(sp.CounterpartyName(), sp.Description) != gkey {
 			continue
 		}
 		amt, _ := strconv.ParseFloat(strings.TrimSpace(sp.Amount), 64)
@@ -1569,7 +1573,7 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 			reason = "hors fenêtre ±24 mois"
 		case sp.CategoryName == "":
 			reason = "non catégorisée"
-		case classifier.IsGenericAccountName(sp.DestinationName):
+		case classifier.IsGenericAccountName(sp.CounterpartyName()):
 			reason = "compte générique (Cash)"
 		case !amtOK:
 			reason = "montant trop différent (>1.75×)"
@@ -1579,15 +1583,15 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 
 		ex.Entries = append(ex.Entries, AutoMatchEntry{
 			Description: sp.Description, Amount: amt, Category: sp.CategoryName,
-			Destination: sp.DestinationName, Tags: semTags, AmountOK: amtOK,
+			Destination: sp.CounterpartyName(), Tags: semTags, AmountOK: amtOK,
 			Counted: counted, Reason: reason,
 		})
 		if counted {
 			if sp.CategoryName != "" {
 				ex.CategoryVotes[sp.CategoryName]++
 			}
-			if sp.DestinationName != "" {
-				ex.DestVotes[sp.DestinationName]++
+			if cp := sp.CounterpartyName(); cp != "" {
+				ex.DestVotes[cp]++
 			}
 			seen := map[string]bool{}
 			for _, tg := range semTags {
@@ -1598,25 +1602,41 @@ func (p *Pipeline) ExplainAutoMatch(ctx context.Context, transactionID string) (
 				seen[k] = true
 				ex.TagVotes[tg]++
 			}
-			voteHistory = append(voteHistory, classifier.HistoricalEntry{
-				CategoryName: sp.CategoryName, DestinationName: sp.DestinationName,
-				DestinationAccountID: sp.DestinationID, Amount: amt, Tags: semTags, Date: spDate,
-			})
+			ve := classifier.HistoricalEntry{
+				CategoryName: sp.CategoryName, DestinationName: sp.CounterpartyName(),
+				Amount: amt, Tags: semTags, Date: spDate,
+			}
+			if isInflow {
+				ve.SourceAccountID = sp.SourceID
+			} else {
+				ve.DestinationAccountID = sp.DestinationID
+			}
+			voteHistory = append(voteHistory, ve)
 		}
 	}
 
 	cat, _ := weightedCategory(voteHistory, txnDate, amount)
 	catN := len(voteHistory)
 	ex.MatchedCategory, ex.MatchedCategoryCount = cat, catN
-	if destID, _ := weightedDestination(voteHistory, txnDate, amount); destID != "" {
+	var cpID string
+	if isInflow {
+		cpID, _ = weightedSource(voteHistory, txnDate, amount)
+	} else {
+		cpID, _ = weightedDestination(voteHistory, txnDate, amount)
+	}
+	if cpID != "" {
 		for _, e := range voteHistory {
-			if e.DestinationAccountID == destID {
+			id := e.DestinationAccountID
+			if isInflow {
+				id = e.SourceAccountID
+			}
+			if id == cpID {
 				ex.MatchedDestination = e.DestinationName
 				break
 			}
 		}
 		if ex.MatchedDestination == "" {
-			ex.MatchedDestination = destID
+			ex.MatchedDestination = cpID
 		}
 	}
 	ex.MatchedTags = weightedTags(voteHistory, txnDate, amount)
