@@ -2047,6 +2047,8 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	missingCategory := q.Get("missing_category") == "true"
 	missingDestination := q.Get("missing_destination") == "true"
 	destFilter := q.Get("destination")
+	sourceFilter := q.Get("source")
+	missingSource := q.Get("missing_source") == "true"
 	categoryFilter := q.Get("category")
 	descFilter := q.Get("description")
 	statusFilter := q.Get("status")
@@ -2077,6 +2079,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filtersActive := missingCategory || missingDestination || destFilter != "" ||
+		sourceFilter != "" || missingSource ||
 		categoryFilter != "" || descFilter != "" || (statusFilter != "" && statusFilter != "all")
 
 	if filtersActive {
@@ -2084,7 +2087,10 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		// the server does the heavy lifting (indexed, fast). AI status and the
 		// "Cash account" notion are applied client-side on the reduced result.
 		var all []firefly.TransactionRow
-		sq := []string{"type:withdrawal"}
+		sq := []string{}
+		if txf != "all" {
+			sq = append(sq, "type:"+txf)
+		}
 		if start != "" {
 			sq = append(sq, "date_after:"+start)
 		}
@@ -2099,6 +2105,9 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 		if destFilter != "" && destFilter != "(no name)" {
 			sq = append(sq, fmt.Sprintf("destination_account_contains:%q", destFilter))
+		}
+		if sourceFilter != "" && sourceFilter != "(no name)" {
+			sq = append(sq, fmt.Sprintf("source_account_contains:%q", sourceFilter))
 		}
 		if missingCategory {
 			sq = append(sq, "has_no_category:true")
@@ -2140,7 +2149,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 
 		var filtered []firefly.TransactionRow
 		for _, row := range all {
-			if !matchesTxnFilter(row, missingCategory, missingDestination, destFilter, categoryFilter, descFilter) {
+			if !matchesTxnFilter(row, missingCategory, missingDestination, missingSource, destFilter, sourceFilter, categoryFilter, descFilter) {
 				continue
 			}
 			rec, ok := recs[row.ID]
@@ -2257,7 +2266,7 @@ func isCashAccountName(name string) bool {
 }
 
 // matchesTxnFilter checks whether a transaction row matches the active UI filters.
-func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination bool, destFilter, categoryFilter, descFilter string) bool {
+func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestination, missingSource bool, destFilter, sourceFilter, categoryFilter, descFilter string) bool {
 	if descFilter != "" && !strings.Contains(strings.ToLower(row.Description), strings.ToLower(descFilter)) {
 		return false
 	}
@@ -2280,6 +2289,22 @@ func matchesTxnFilter(row firefly.TransactionRow, missingCategory, missingDestin
 				return false
 			}
 		} else if !strings.EqualFold(dn, destFilter) {
+			return false
+		}
+	}
+	if missingSource {
+		sn := strings.TrimSpace(row.SourceName)
+		if sn != "" && !strings.EqualFold(sn, "(no name)") && !isCashAccountName(sn) {
+			return false
+		}
+	}
+	if sourceFilter != "" {
+		sn := strings.TrimSpace(row.SourceName)
+		if sourceFilter == "(no name)" {
+			if sn != "" && !strings.EqualFold(sn, "(no name)") {
+				return false
+			}
+		} else if !strings.Contains(strings.ToLower(sn), strings.ToLower(sourceFilter)) {
 			return false
 		}
 	}
