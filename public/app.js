@@ -28,22 +28,35 @@ var TAB_META = {
     settings: {title: 'Settings', sub: 'Configure AI provider and connection'},
 };
 
+var journalEntries = [];
+var journalType = 'all', journalLevel = 'all', journalSearch = '';
 function loadJournal() {
     fetch('/api/logs').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
-        .then(function (rows) {
-            var tb = document.getElementById('journal-tbody');
-            if (!tb) return;
-            if (!rows || !rows.length) { tb.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding:30px 0">Aucun événement.</td></tr>'; return; }
-            tb.innerHTML = rows.map(function (e) {
-                var lvl = e.level === 'error' ? 'label-danger' : (e.level === 'warn' ? 'label-warning' : 'label-info');
-                var ts = e.time ? new Date(e.time).toLocaleString() : '';
-                return '<tr><td class="text-muted" style="white-space:nowrap">' + esc(ts) + '</td>'
-                    + '<td><span class="label ' + lvl + '">' + esc(e.level) + '</span></td>'
-                    + '<td>' + esc(e.msg || e.event) + '</td>'
-                    + '<td class="text-muted">' + esc(e.txn_id || '') + '</td></tr>';
-            }).join('');
-        });
+        .then(function (rows) { journalEntries = rows || []; renderJournal(); });
 }
+function renderJournal() {
+    var tb = document.getElementById('journal-tbody');
+    if (!tb) return;
+    var rows = journalEntries.filter(function (e) {
+        if (journalType !== 'all' && (e.type || '') !== journalType) return false;
+        if (journalLevel !== 'all' && (e.level || '') !== journalLevel) return false;
+        if (journalSearch && (e.msg || '').toLowerCase().indexOf(journalSearch) < 0 && (e.txn_id || '').indexOf(journalSearch) < 0) return false;
+        return true;
+    });
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding:30px 0">Aucun événement.</td></tr>'; return; }
+    tb.innerHTML = rows.map(function (e) {
+        var lvl = e.level === 'error' ? 'label-danger' : (e.level === 'warn' ? 'label-warning' : 'label-info');
+        var ts = e.time ? new Date(e.time).toLocaleString() : '';
+        return '<tr><td class="text-muted" style="white-space:nowrap">' + esc(ts) + '</td>'
+            + '<td><span class="label label-default">' + esc(e.type || '') + '</span></td>'
+            + '<td><span class="label ' + lvl + '">' + esc(e.level) + '</span></td>'
+            + '<td>' + esc(e.msg || '') + '</td>'
+            + '<td class="text-muted">' + esc(e.txn_id || '') + '</td></tr>';
+    }).join('');
+}
+function setJournalType(v) { journalType = v; renderJournal(); }
+function setJournalLevel(v) { journalLevel = v; renderJournal(); }
+function onJournalSearch(v) { journalSearch = (v || '').toLowerCase().trim(); renderJournal(); }
 function clearJournal() {
     fetch('/api/logs/clear', { method: 'POST' }).then(function () { loadJournal(); });
 }

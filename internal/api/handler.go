@@ -411,7 +411,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("webhook received", "trigger", payload.Trigger, "response", payload.Response,
 		"txn_id", string(payload.Content.ID), "txns", len(payload.Content.Transactions))
-	eventlog.Info("webhook_received", fmt.Sprintf("Webhook reçu (%s, %d txn)", payload.Trigger, len(payload.Content.Transactions)), string(payload.Content.ID))
+	eventlog.Info("webhook", fmt.Sprintf("Webhook reçu (%s, %d txn)", payload.Trigger, len(payload.Content.Transactions)), string(payload.Content.ID))
 
 	if payload.Trigger != "STORE_TRANSACTION" {
 		slog.Info("webhook skipped: trigger is not STORE_TRANSACTION", "trigger", payload.Trigger)
@@ -441,13 +441,13 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	case "deposit":
 		if p := h.getPipe(); p == nil || !p.IncomeEnabled() {
 			slog.Info("webhook skipped: income disabled", "type", first.Type, "txn_id", payload.Content.ID)
-			eventlog.Warn("webhook_skipped", "Revenu ignoré : traitement des revenus désactivé", string(payload.Content.ID))
+			eventlog.Warn("webhook", "Revenu ignoré : traitement des revenus désactivé", string(payload.Content.ID))
 			writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "income processing disabled"})
 			return
 		}
 	default:
 		slog.Info("webhook skipped: unsupported type", "type", first.Type, "txn_id", payload.Content.ID)
-		eventlog.Warn("webhook_skipped", fmt.Sprintf("Type non géré : %s", first.Type), string(payload.Content.ID))
+		eventlog.Warn("webhook", fmt.Sprintf("Type non géré : %s", first.Type), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": fmt.Sprintf("transaction type %q is not supported", first.Type)})
 		return
 	}
@@ -459,13 +459,13 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
 		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
-		eventlog.Info("webhook_skipped", fmt.Sprintf("Catégorie déjà définie (%s)", first.CategoryName), string(payload.Content.ID))
+		eventlog.Info("webhook", fmt.Sprintf("Catégorie déjà définie (%s)", first.CategoryName), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
 		return
 	}
 	if first.Description == "" && cpName == "" {
 		slog.Info("webhook skipped: no description or counterparty", "txn_id", payload.Content.ID)
-		eventlog.Warn("webhook_skipped", "Ni description ni tiers — non classable", string(payload.Content.ID))
+		eventlog.Warn("webhook", "Ni description ni tiers — non classable", string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "no description or counterparty — cannot classify"})
 		return
 	}
@@ -488,16 +488,22 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	amount := parseAmount(first.Amount)
 	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook", first.Type, webhookAsset(first))
-	eventlog.Info("job_created", fmt.Sprintf("Job créé (%s) : %s", first.Type, first.Description), string(payload.Content.ID))
+	eventlog.Info("job", fmt.Sprintf("Job créé (%s) : %s", first.Type, first.Description), string(payload.Content.ID))
 	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
 		JobID: j.ID,
 		Execute: func(ctx context.Context) error {
+			var err error
 			if first.Type == "deposit" {
-				return h.getPipe().RunIncome(ctx, j, transactionID, splits)
+				err = h.getPipe().RunIncome(ctx, j, transactionID, splits)
+			} else {
+				err = h.getPipe().Run(ctx, j, transactionID, splits)
 			}
-			return h.getPipe().Run(ctx, j, transactionID, splits)
+			if err != nil {
+				eventlog.Error("job", "Échec de classification : "+err.Error(), transactionID)
+			}
+			return err
 		},
 	})
 
@@ -557,6 +563,8 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	eventlog.Info("scan", fmt.Sprintf("Scan démarré — %d transaction(s) à traiter", len(txns)), "")
+
 	// Resolve pipeline run options from the request mode.
 	pipeOpts := pipeline.RunOptions{ClassifyCategory: true, MatchDestination: pipe.DestinationMatchEnabled()}
 	switch req.Mode {
@@ -602,10 +610,16 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		h.batchPool.Submit(worker.Task{
 			JobID: j.ID,
 			Execute: func(ctx context.Context) error {
+				var err error
 				if isDeposit {
-					return localPipe.RunIncome(ctx, j, txnID, splits)
+					err = localPipe.RunIncome(ctx, j, txnID, splits)
+				} else {
+					err = localPipe.RunWithOptions(ctx, j, txnID, splits, localOpts)
 				}
-				return localPipe.RunWithOptions(ctx, j, txnID, splits, localOpts)
+				if err != nil {
+					eventlog.Error("job", "Échec de classification : "+err.Error(), txnID)
+				}
+				return err
 			},
 		})
 		enqueued++
@@ -1143,6 +1157,13 @@ func (h *Handler) getCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Accounts ---
+
+func onoffLabel(b bool) string {
+	if b {
+		return "activés"
+	}
+	return "désactivés"
+}
 
 func (h *Handler) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, eventlog.Entries())
@@ -2473,6 +2494,7 @@ func (h *Handler) reloadClients() error {
 	h.mu.Unlock()
 
 	slog.Info("clients reloaded", "provider", cfg.AIProvider, "firefly", cfg.FireflyURL)
+	eventlog.Info("config", fmt.Sprintf("Configuration rechargée — revenus: %s · destination auto: %s · tags: %s", onoffLabel(cfg.IncomeEnabled), onoffLabel(cfg.DestinationMatchEnabled), onoffLabel(cfg.TagSuggestEnabled)), "")
 
 	// Warm the review cache in the background so the first UI load is instant.
 	h.reviewMu.Lock()

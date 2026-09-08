@@ -465,19 +465,51 @@
                                                 class="fa fa-trash"></i> Vider</button>
                                     </div>
                                 </div>
-                                <div class="box-body table-responsive no-padding">
+                                <div class="box-body">
+                                    <div class="row" style="margin-bottom:10px">
+                                        <div class="col-sm-3">
+                                            <label style="font-size:12px;font-weight:600;display:block">Type</label>
+                                            <select class="form-control input-sm" onchange="setJournalType(this.value)">
+                                                <option value="all">Tous</option>
+                                                <option value="webhook">Webhook</option>
+                                                <option value="job">Job</option>
+                                                <option value="scan">Scan</option>
+                                                <option value="mail">Mail</option>
+                                                <option value="config">Config</option>
+                                                <option value="review">Review</option>
+                                                <option value="system">Système</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-sm-3">
+                                            <label style="font-size:12px;font-weight:600;display:block">Criticité</label>
+                                            <select class="form-control input-sm" onchange="setJournalLevel(this.value)">
+                                                <option value="all">Toutes</option>
+                                                <option value="info">Info</option>
+                                                <option value="warn">Avertissement</option>
+                                                <option value="error">Erreur</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label style="font-size:12px;font-weight:600;display:block">Libellé / Txn</label>
+                                            <input type="text" class="form-control input-sm" placeholder="rechercher…"
+                                                oninput="onJournalSearch(this.value)">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="box-body table-responsive no-padding" style="border-top:1px solid #f4f4f4">
                                     <table class="table table-hover">
                                         <thead>
                                             <tr>
                                                 <th style="width:160px">Heure</th>
-                                                <th style="width:80px">Niveau</th>
-                                                <th>Événement</th>
+                                                <th style="width:90px">Type</th>
+                                                <th style="width:90px">Criticité</th>
+                                                <th>Libellé</th>
                                                 <th style="width:90px">Txn</th>
                                             </tr>
                                         </thead>
                                         <tbody id="journal-tbody">
                                             <tr>
-                                                <td colspan="4" class="text-center text-muted" style="padding:30px 0">
+                                                <td colspan="5" class="text-center text-muted" style="padding:30px 0">
                                                     Chargement…</td>
                                             </tr>
                                         </tbody>

@@ -18,6 +18,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/cache"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/classifier"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/config"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/eventlog"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/mailorder"
@@ -386,6 +387,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
 		if body, _, ok, _, _, _ := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
+			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
 		}
 	}
 
@@ -562,6 +564,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			enrichSource = "email"
+			eventlog.Info("mail", "Email de commande trouvé (dépense)", transactionID)
 			slog.Info("order email matched", "id", transactionID, "installment", inst)
 			if det.ReplaceDestination {
 				opts.MatchDestination = true // determine the real merchant from the email
@@ -578,6 +581,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			mailCandidates = cands
 			mailSearchHits = hits
 			mailNote = note
+			eventlog.Warn("mail", "Aucun email de commande trouvé (dépense)", transactionID)
 		}
 	}
 
