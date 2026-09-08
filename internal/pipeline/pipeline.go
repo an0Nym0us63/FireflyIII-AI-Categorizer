@@ -324,6 +324,16 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			p.registry.SetFailed(j.ID, err.Error())
 			return fmt.Errorf("update transaction: %w", err)
 		}
+		if p.aidb != nil {
+			_ = p.aidb.Upsert(aidb.Record{
+				TransactionID:  transactionID,
+				Outcome:        string(classifier.Classified),
+				Category:       histCat,
+				DestConfidence: "CLASSIFIED",
+				Reason:         outcome.Reason,
+				Direction:      "deposit",
+			})
+		}
 		p.registry.SetFinished(j.ID, string(classifier.Classified), histCat, outcome.Reason, "", "", "", accountName(revAccts, histSrcID), "MATCH", outcome.Tags, nil)
 		return nil
 	}
@@ -426,6 +436,18 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
 		return fmt.Errorf("update transaction: %w", err)
+	}
+	if p.aidb != nil {
+		_ = p.aidb.Upsert(aidb.Record{
+			TransactionID:  transactionID,
+			Outcome:        outcome.Outcome,
+			Category:       outcome.Category,
+			DestConfidence: outcome.DestConfidence,
+			Reason:         outcome.Reason,
+			Assumption:     outcome.Assumption,
+			SuggestedTags:  outcome.TagsAssumed,
+			Direction:      "deposit",
+		})
 	}
 	p.registry.SetFinished(j.ID, outcome.Outcome, outcome.Category, outcome.Reason, outcome.Assumption, result.RawPrompt, result.RawResponse, srcAccount, srcAction, outcome.Tags, outcome.TagsAssumed)
 	return nil
