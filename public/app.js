@@ -906,7 +906,7 @@ function buildJobRow(j) {
         + '<td class="j-amount text-right">' + amount + '</td>'
         + '<td class="j-cat">' + (j.category ? '<span class="label label-default">' + esc(j.category) + '</span>' : '<span class="text-muted">&mdash;</span>') + realDiv('cat') + '</td>'
         + '<td class="j-tags">' + jobTagsHtml(j) + realDiv('tags') + '</td>'
-        + '<td class="j-status"><span class="label ' + lbl.cls + '">' + lbl.txt + '</span></td>'
+        + '<td class="j-status"><span class="label ' + lbl.cls + '"' + (lbl.style ? ' style="' + lbl.style + '"' : '') + '>' + lbl.txt + '</span></td>'
         + '<td class="j-time text-right text-muted" style="font-size:12px;white-space:nowrap">' + t + '</td>'
         + '<td class="j-actions text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
@@ -995,7 +995,7 @@ function jobLabel(j) {
     if (j.status === 'queued') return {cls: 'label-default', txt: 'Queued'};
     if (j.status === 'in_progress') return {cls: 'label-info', txt: 'Running'};
     if (j.status === 'failed') return {cls: 'label-danger', txt: 'Failed'};
-    if (j.outcome === 'REVIEWED') return {cls: 'label-primary', txt: 'Reviewed'};
+    if (j.outcome === 'REVIEWED') return {cls: 'label', txt: 'Reviewed', style: 'background-color:#8e44ad'};
     if (j.outcome === 'SKIPPED') return {cls: 'label-default', txt: 'Ignoré'};
     if (j.outcome === 'CLASSIFIED') return {cls: 'label-success', txt: 'Classified'};
     if (j.outcome === 'ASSUMED') return {cls: 'label-warning', txt: 'Assumed'};
