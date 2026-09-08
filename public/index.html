@@ -311,6 +311,14 @@
                                                 placeholder="ex. spliiit, engie…" onchange="loadTransactions()">
                                         </div>
                                         <div class="col-sm-3 col-md-2">
+                                            <label style="font-size:12px;font-weight:600;display:block">Type</label>
+                                            <div class="btn-group btn-group-sm" role="group" style="display:block">
+                                                <button type="button" class="btn btn-sm btn-primary" id="txn-dir-all" onclick="setTxnDir('all')">Les deux</button>
+                                                <button type="button" class="btn btn-sm btn-default" id="txn-dir-withdrawal" onclick="setTxnDir('withdrawal')">Dépenses</button>
+                                                <button type="button" class="btn btn-sm btn-default" id="txn-dir-deposit" onclick="setTxnDir('deposit')">Revenus</button>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-3 col-md-2">
                                             <label style="font-size:12px;font-weight:600;display:block">AI status</label>
                                             <select class="form-control input-sm" id="txn-filter-status"
                                                 onchange="loadTransactions()">

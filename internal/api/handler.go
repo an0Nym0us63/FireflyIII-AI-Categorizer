@@ -1968,6 +1968,9 @@ func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("failed to search transactions: %v", err), http.StatusBadGateway)
 			return
 		}
+		if dep, derr := fc.SearchTransactionsRaw(r.Context(), "type:deposit"); derr == nil {
+			txns = append(txns, dep...)
+		}
 		treated, _ := h.aidb.AllIDs()
 		pool = pool[:0]
 		for _, t := range txns {
@@ -1979,7 +1982,8 @@ func (h *Handler) randomUntreated(w http.ResponseWriter, r *http.Request) {
 			}
 			s := t.Splits[0]
 			pool = append(pool, firefly.TransactionRow{
-				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.DestinationName,
+				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.CounterpartyName(),
+				SourceName: s.SourceName, Type: s.Type,
 				Amount: s.Amount, CategoryID: s.CategoryID, CategoryName: s.CategoryName, Tags: s.Tags,
 			})
 		}
@@ -2038,6 +2042,11 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	descFilter := q.Get("description")
 	statusFilter := q.Get("status")
 	idsOnly := q.Get("ids_only") == "true"
+	direction := q.Get("direction")
+	txf := "all"
+	if direction == "withdrawal" || direction == "deposit" {
+		txf = direction
+	}
 
 	// enrich attaches AI status + pending tag suggestions from the local store.
 	enrich := func(rows []firefly.TransactionRow) {
@@ -2105,6 +2114,9 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 			if s.Type == "transfer" {
 				continue
 			}
+			if txf != "all" && s.Type != txf {
+				continue
+			}
 			all = append(all, firefly.TransactionRow{
 				ID: t.ID, Date: s.Date, Description: s.Description, DestinationName: s.CounterpartyName(),
 				SourceName: s.SourceName, Type: s.Type,
@@ -2168,7 +2180,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 	if idsOnly {
 		var ids []string
 		for page := 1; ; page++ {
-			result, err := fc.GetTransactionsPage(r.Context(), "all", page, 200, start, end)
+			result, err := fc.GetTransactionsPage(r.Context(), txf, page, 200, start, end)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 				return
@@ -2186,7 +2198,7 @@ func (h *Handler) getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	pageNum := queryInt(q.Get("page"), 1)
 	limit := queryInt(q.Get("limit"), 50)
-	result, err := fc.GetTransactionsPage(r.Context(), "all", pageNum, limit, start, end)
+	result, err := fc.GetTransactionsPage(r.Context(), txf, pageNum, limit, start, end)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch transactions: %v", err), http.StatusBadGateway)
 		return

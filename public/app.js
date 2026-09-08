@@ -828,7 +828,7 @@ function buildJobRow(j) {
 
     // Show AI-assigned destination account when present, otherwise the original payee name.
     var dest = j.destination_account || j.destination_name || '&mdash;';
-    var destHtml = (j.direction === 'deposit' ? '<span class="label label-success" title="Revenu" style="margin-right:4px">\u2191</span>' : '') + '<strong>' + esc(dest) + '</strong>';
+    var destHtml = dirBadge(j.direction) + '<strong>' + esc(dest) + '</strong>';
     if (j.destination_account && j.destination_action === 'MATCH') {
         destHtml += ' <i class="fa fa-link text-muted" title="Matched to existing account" style="font-size:11px"></i>';
     } else if (j.destination_account && j.destination_action === 'CREATE') {
@@ -1065,11 +1065,21 @@ async function loadRandomUntreated() {
     }
 }
 
+var txnDir = 'all';
+function setTxnDir(v) {
+    txnDir = v;
+    ['all', 'withdrawal', 'deposit'].forEach(function (k) {
+        var b = document.getElementById('txn-dir-' + k);
+        if (b) b.className = 'btn btn-sm btn-' + (k === v ? 'primary' : 'default');
+    });
+    loadTransactions(1);
+}
 async function loadTransactions(page) {
     if (!page) page = 1;
     txnPage = page;
     var start = $('#txn-start').val(), end = $('#txn-end').val();
     var params = new URLSearchParams({page: page, limit: 50});
+    if (txnDir && txnDir !== 'all') params.set('direction', txnDir);
     if (start) params.set('start', start);
     if (end) params.set('end', end);
     if ($('#txn-filter-missing-cat').prop('checked')) params.set('missing_category', 'true');
@@ -1121,7 +1131,7 @@ function renderTxnTable(rows) {
         return '<tr' + cls + '>'
             + '<td class="c-check"><input type="checkbox" data-id="' + r.id + '" ' + checked + ' onclick="txnCheckboxClick(event,this,\'' + r.id + '\',' + idx + ')"></td>'
             + '<td class="c-date" style="white-space:nowrap">' + esc(date) + '</td>'
-            + '<td class="c-dest">' + (r.type === 'deposit' ? '<span class="label label-success" title="Revenu" style="margin-right:4px">\u2191</span>' : '') + '<strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
+            + '<td class="c-dest">' + dirBadge(r.type) + '<strong>' + esc(trunc(r.destination_name, 32)) + '</strong></td>'
             + '<td class="c-desc">' + esc(r.description || '') + '</td>'
             + '<td class="c-amount text-right">' + (isNaN(parseFloat(r.amount)) ? '&mdash;' : parseFloat(r.amount).toFixed(2)) + '</td>'
             + '<td class="c-cat">' + (r.category_name ? '<span class="label label-default">' + esc(r.category_name) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>'
@@ -1605,9 +1615,13 @@ function setReviewMode(mode) {
     loadReview();
 }
 
+function dirBadge(d) {
+    return d === 'deposit'
+        ? '<span class="label label-success" title="Revenu" style="margin-right:4px">\u2191</span>'
+        : '<span class="label label-danger" title="Dépense" style="margin-right:4px">\u2193</span>';
+}
 function reviewDirBadge(g) {
-    if (g && g.direction === 'deposit') return '<span class="label label-success" title="Revenu">\u2191 Revenu</span> ';
-    return '';
+    return dirBadge(g && g.direction);
 }
 
 function reviewTypeBadge(o) {
