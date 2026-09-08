@@ -338,12 +338,47 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		return nil
 	}
 
+	// Ségrégation revenu/dépense : n'offrir que les catégories et tags déjà
+	// utilisés sur des revenus (deposits), pour ne pas polluer le prompt income
+	// avec le vocabulaire des dépenses. Repli sur toutes les catégories tant qu'il
+	// n'y a pas encore d'historique de revenus (amorçage).
+	incCatSet := map[string]bool{}
+	incTagSet := map[string]bool{}
+	for _, h := range p.allIncomeHistory(ctx) {
+		if h.CategoryName != "" {
+			incCatSet[h.CategoryName] = true
+		}
+		for _, tg := range h.Tags {
+			if tg != "" {
+				incTagSet[tg] = true
+			}
+		}
+	}
+	incCats := clCats
+	if len(incCatSet) > 0 {
+		var filtered []classifier.Category
+		for _, c := range categories {
+			if incCatSet[c.Name] {
+				filtered = append(filtered, classifier.Category{Name: c.Name, Notes: c.Notes})
+			}
+		}
+		if len(filtered) > 0 {
+			incCats = filtered
+		}
+	}
+	var incTags []string
+	for tg := range incTagSet {
+		incTags = append(incTags, tg)
+	}
+	sort.Strings(incTags)
+
 	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
 	for i, a := range revAccts {
 		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
 	}
 	result, err := p.classifier.Classify(ctx, classifier.Request{
-		Categories:          clCats,
+		Categories:          incCats,
+		ExistingTags:        incTags,
 		DestinationName:     first.SourceName,
 		Description:         first.Description,
 		Amount:              j.Amount,
