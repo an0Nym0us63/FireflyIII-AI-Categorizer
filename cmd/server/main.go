@@ -171,13 +171,16 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 			amount = &v
 		}
 
-		j := reg.Create(txn.ID, "cli-batch", first.DestinationName, first.Description, amount, "batch")
+		j := reg.Create(txn.ID, "cli-batch", first.DestinationName, first.Description, amount, "batch", first.Type)
 		txnID := txn.ID
 		splits := txn.Splits
 
 		pool.Submit(worker.Task{
 			JobID: j.ID,
 			Execute: func(ctx context.Context) error {
+				if first.Type == "deposit" {
+					return pipe.RunIncome(ctx, j, txnID, splits)
+				}
 				return pipe.Run(ctx, j, txnID, splits)
 			},
 		})
