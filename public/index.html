@@ -440,6 +440,14 @@
                                             <button type="button" class="btn btn-default" id="rev-tab-reviewed"
                                                 onclick="setReviewMode('reviewed')">Traités</button>
                                         </div>
+                                        <div class="btn-group btn-group-sm" style="margin-right:6px">
+                                            <button type="button" class="btn btn-primary" id="rev-dir-all"
+                                                onclick="setReviewDirFilter('all')">Tout</button>
+                                            <button type="button" class="btn btn-default" id="rev-dir-withdrawal"
+                                                onclick="setReviewDirFilter('withdrawal')">Dépenses</button>
+                                            <button type="button" class="btn btn-default" id="rev-dir-deposit"
+                                                onclick="setReviewDirFilter('deposit')">Revenus</button>
+                                        </div>
                                         <button type="button" class="btn btn-default btn-sm" onclick="loadReview()">
                                             <i class="fa fa-refresh"></i> Refresh
                                         </button>
@@ -736,6 +744,12 @@
                                                     <label>
                                                         <input type="checkbox" id="cfg-destination-match">
                                                         <strong>Set destination account automatically</strong>
+                                                    </label>
+                                                </div>
+                                                <div class="checkbox">
+                                                    <label>
+                                                        <input type="checkbox" id="cfg-income-enabled">
+                                                        <strong>Traiter les revenus (entrées)</strong>
                                                     </label>
                                                 </div>
                                                 <p class="help-block" style="margin-top:2px">

@@ -1432,7 +1432,7 @@ function renderCurrentBatch() {
     pendingAccounts = [];
 
     // Main Review section
-    var filtered = allReviewGroups.filter(reviewMatchesSearch);
+    var filtered = allReviewGroups.filter(reviewMatchesSearch).filter(reviewMatchesDir);
     var pages = Math.max(1, Math.ceil(filtered.length / REVIEW_PAGE_SIZE));
     if (reviewPage > pages) reviewPage = pages;
     var batch = filtered.slice((reviewPage - 1) * REVIEW_PAGE_SIZE, reviewPage * REVIEW_PAGE_SIZE);
@@ -1540,6 +1540,7 @@ function buildSearchIcon(g) {
 // ─── table-based review (per-row validate/reject) ───────────────────────────
 var reviewMode = 'pending'; // 'pending' | 'reviewed'
 var reviewSearch = '';
+var reviewDirFilter = 'all';
 var reviewPage = 1;
 var REVIEW_PAGE_SIZE = 20;
 
@@ -1550,6 +1551,18 @@ function reviewMatchesSearch(g) {
     return hay.indexOf(reviewSearch) >= 0;
 }
 
+function reviewMatchesDir(g) {
+    if (reviewDirFilter === 'all') return true;
+    return (g.direction || 'withdrawal') === reviewDirFilter;
+}
+function setReviewDirFilter(v) {
+    reviewDirFilter = v;
+    ['all', 'withdrawal', 'deposit'].forEach(function (k) {
+        var b = document.getElementById('rev-dir-' + k);
+        if (b) b.className = 'btn btn-' + (k === v ? 'primary' : 'default');
+    });
+    reviewPage = 1; renderCurrentBatch();
+}
 function onReviewSearch(v) { reviewSearch = (v || '').toLowerCase().trim(); reviewPage = 1; renderCurrentBatch(); }
 function reviewGoPage(n) { reviewPage = n; renderCurrentBatch(); }
 
@@ -1566,6 +1579,11 @@ function setReviewMode(mode) {
     $('#rev-tab-pending').toggleClass('btn-primary', mode === 'pending').toggleClass('btn-default', mode !== 'pending');
     $('#rev-tab-reviewed').toggleClass('btn-primary', mode === 'reviewed').toggleClass('btn-default', mode !== 'reviewed');
     loadReview();
+}
+
+function reviewDirBadge(g) {
+    if (g && g.direction === 'deposit') return '<span class="label label-success" title="Revenu">\u2191 Revenu</span> ';
+    return '';
 }
 
 function reviewTypeBadge(o) {
@@ -1641,11 +1659,16 @@ function renderReviewTable(groups) {
 
         var destCell = '<span class="text-muted">—</span>';
         if (g.outcome === 'DEST_ASSUMED') {
-            destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
-                + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:130px">';
+            if (g.direction === 'deposit') {
+                destCell = '<input type="text" class="form-control input-sm" id="rev-src-' + gi + '"'
+                    + ' value="' + esc(g.source_name || '') + '" placeholder="Source / \u00e9metteur" style="min-width:130px">';
+            } else {
+                destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
+                    + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:130px">';
+            }
         }
         return '<tr id="rev-row-' + gi + '">'
-            + '<td style="white-space:nowrap">' + reviewTypeBadge(g.outcome) + '</td>'
+            + '<td style="white-space:nowrap">' + reviewDirBadge(g) + reviewTypeBadge(g.outcome) + '</td>'
             + labelCell + amtCell
             + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:140px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
@@ -1692,13 +1715,22 @@ function confirmReviewRow(gi) {
     if (!categoryId) { alert('Choisis une catégorie.'); return; }
 
     var body = { category_id: categoryId };
-    var destInput = document.getElementById('rev-dest-' + gi);
-    if (destInput) {
-        var name = destInput.value.trim();
-        if (name) {
-            var match = (reviewAccounts || []).find(function (a) { return a.name.toLowerCase() === name.toLowerCase(); });
-            if (match) { body.destination_action = 'MATCH'; body.destination_id = match.id; }
-            else { body.destination_action = 'CREATE'; body.destination_name = name; }
+    if (g.direction === 'deposit') {
+        var srcInput = document.getElementById('rev-src-' + gi);
+        if (srcInput) {
+            var sname = srcInput.value.trim();
+            // Backend CreateRevenueAccount matches-or-creates by name.
+            if (sname) { body.source_action = 'CREATE'; body.source_name = sname; }
+        }
+    } else {
+        var destInput = document.getElementById('rev-dest-' + gi);
+        if (destInput) {
+            var name = destInput.value.trim();
+            if (name) {
+                var match = (reviewAccounts || []).find(function (a) { return a.name.toLowerCase() === name.toLowerCase(); });
+                if (match) { body.destination_action = 'MATCH'; body.destination_id = match.id; }
+                else { body.destination_action = 'CREATE'; body.destination_name = name; }
+            }
         }
     }
 
@@ -2640,6 +2672,7 @@ async function loadSettings() {
         $('#cfg-tag-prefix').val(d.tag_prefix || '');
         $('#cfg-custom-context').val(d.custom_system_context || '');
         $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
+        $('#cfg-income-enabled').prop('checked', !!d.income_enabled);
         $('#cfg-tag-suggest').prop('checked', !!d.tag_suggest_enabled);
         $('#cfg-search-engine').val(d.search_engine || '');
         $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
@@ -2745,6 +2778,7 @@ async function saveSettings() {
     // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)
     payload.custom_system_context = $('#cfg-custom-context').val();
     payload.destination_match_enabled = $('#cfg-destination-match').prop('checked');
+    payload.income_enabled = $('#cfg-income-enabled').prop('checked');
     payload.tag_suggest_enabled = $('#cfg-tag-suggest').prop('checked');
     var se = $('#cfg-search-engine').val();
     if (se !== undefined) payload.search_engine = se;
