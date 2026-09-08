@@ -476,6 +476,9 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	h.webhookPool.Submit(worker.Task{
 		JobID: j.ID,
 		Execute: func(ctx context.Context) error {
+			if first.Type == "deposit" {
+				return h.getPipe().RunIncome(ctx, j, transactionID, splits)
+			}
 			return h.getPipe().Run(ctx, j, transactionID, splits)
 		},
 	})
@@ -577,9 +580,13 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		localPipe := pipe
 
 		localOpts := pipeOpts
+		isDeposit := first.Type == "deposit"
 		h.batchPool.Submit(worker.Task{
 			JobID: j.ID,
 			Execute: func(ctx context.Context) error {
+				if isDeposit {
+					return localPipe.RunIncome(ctx, j, txnID, splits)
+				}
 				return localPipe.RunWithOptions(ctx, j, txnID, splits, localOpts)
 			},
 		})
@@ -1238,6 +1245,9 @@ func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
 	h.webhookPool.Submit(worker.Task{
 		JobID: j.ID,
 		Execute: func(ctx context.Context) error {
+			if len(splits) > 0 && splits[0].Type == "deposit" {
+				return pipe.RunIncome(ctx, j, id, splits)
+			}
 			if force {
 				// Pure LLM re-analysis: no deterministic auto-match, no history examples.
 				return pipe.RunWithOptions(ctx, j, id, splits, pipeline.RunOptions{

@@ -86,6 +86,11 @@ type Pipeline struct {
 	revAcctMu      sync.RWMutex
 	revAcctCache   []firefly.Account
 	revAcctFetched time.Time
+
+	// Short-lived income-history memo (categorized deposits, keyed by source).
+	incHistMu sync.Mutex
+	incHist   []classifier.HistoricalEntry
+	incHistAt time.Time
 }
 
 func New(
@@ -145,6 +150,285 @@ type RunOptions struct {
 	ClassifyCategory bool // if true, run category classification
 	MatchDestination bool // if true, run destination matching
 	ForceAI          bool // if true, skip deterministic auto-match (B) and history examples (A) — pure LLM
+}
+
+// accountName returns the name of the account with the given ID, or "".
+func accountName(accts []firefly.Account, id string) string {
+	for _, a := range accts {
+		if a.ID == id {
+			return a.Name
+		}
+	}
+	return ""
+}
+
+// weightedSource is the income analogue of weightedDestination: it votes on the
+// most likely source (revenue) account from same-payer history.
+func weightedSource(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
+	w := map[string]float64{}
+	for _, h := range history {
+		aw := amountWeight(amount, h.Amount)
+		if h.SourceAccountID == "" || aw == 0 {
+			continue
+		}
+		w[h.SourceAccountID] += recencyWeight(h.Date, txnDate) * aw
+	}
+	return weightedVote(w)
+}
+
+// allIncomeHistory returns (memoized 2 min) every categorized deposit as a
+// HistoricalEntry keyed by source (payer). Source of truth for income matching.
+func (p *Pipeline) allIncomeHistory(ctx context.Context) []classifier.HistoricalEntry {
+	p.incHistMu.Lock()
+	if !p.incHistAt.IsZero() && time.Since(p.incHistAt) < 2*time.Minute {
+		h := p.incHist
+		p.incHistMu.Unlock()
+		return h
+	}
+	p.incHistMu.Unlock()
+
+	txns, err := p.firefly.GetCategorizedDeposits(ctx, 730)
+	if err != nil {
+		p.incHistMu.Lock()
+		stale := p.incHist
+		p.incHistMu.Unlock()
+		return stale
+	}
+	var out []classifier.HistoricalEntry
+	for _, t := range txns {
+		for _, sp := range t.Splits {
+			if sp.CategoryName == "" {
+				continue
+			}
+			var amt float64
+			if v, e := strconv.ParseFloat(sp.Amount, 64); e == nil {
+				amt = math.Abs(v)
+			}
+			var d time.Time
+			if len(sp.Date) >= 10 {
+				if pt, e := time.Parse("2006-01-02", sp.Date[:10]); e == nil {
+					d = pt
+				}
+			}
+			out = append(out, classifier.HistoricalEntry{
+				TransactionID:   t.ID,
+				DestinationName: sp.SourceName,
+				Description:     sp.Description,
+				CategoryName:    sp.CategoryName,
+				GroupKey:        classifier.GroupKey(sp.SourceName, sp.Description),
+				Amount:          amt,
+				SourceAccountID: sp.SourceID,
+				Tags:            classifier.SemanticTags(sp.Tags),
+				Date:            d,
+			})
+		}
+	}
+	p.incHistMu.Lock()
+	p.incHist = out
+	p.incHistAt = time.Now()
+	p.incHistMu.Unlock()
+	return out
+}
+
+// incomeHistory returns same-payer categorized deposits within the match window.
+func (p *Pipeline) incomeHistory(ctx context.Context, gkey string, txnDate time.Time) []classifier.HistoricalEntry {
+	if gkey == "" {
+		return nil
+	}
+	var out []classifier.HistoricalEntry
+	for _, h := range p.allIncomeHistory(ctx) {
+		if h.GroupKey != gkey || h.CategoryName == "" {
+			continue
+		}
+		if !txnDate.IsZero() && !h.Date.IsZero() {
+			d := h.Date.Sub(txnDate)
+			if d < 0 {
+				d = -d
+			}
+			if d.Hours()/24 > autoMatchWindowDays {
+				continue
+			}
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// RunIncome classifies a single income (deposit): category + tags + source
+// (revenue) account. Fully decoupled from the expense path (never calls Run),
+// so it cannot regress withdrawal handling.
+func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID string, splits []firefly.Split) error {
+	p.registry.SetInProgress(j.ID)
+	if len(splits) == 0 {
+		p.registry.SetFinished(j.ID, "SKIPPED", "", "no splits", "", "", "", "", "", nil, nil)
+		return nil
+	}
+	first := splits[0]
+
+	categories, err := p.getCategories(ctx)
+	if err != nil {
+		p.registry.SetFailed(j.ID, err.Error())
+		return fmt.Errorf("get categories: %w", err)
+	}
+	clCats := make([]classifier.Category, len(categories))
+	for i, c := range categories {
+		clCats[i] = classifier.Category{Name: c.Name, Notes: c.Notes}
+	}
+
+	var fireflyDate time.Time
+	if len(first.Date) >= 10 {
+		if t, e := time.Parse("2006-01-02", first.Date[:10]); e == nil {
+			fireflyDate = t
+		}
+	}
+	amount := derefAmount(j.Amount)
+
+	gkey := classifier.GroupKey(first.SourceName, first.Description)
+	history := excludeTransaction(p.incomeHistory(ctx, gkey, fireflyDate), transactionID)
+	histCat, _ := weightedCategory(history, fireflyDate, amount)
+	histSrcID, _ := weightedSource(history, fireflyDate, amount)
+
+	revAccts, err := p.getRevenueAccounts(ctx)
+	if err != nil {
+		slog.Warn("failed to fetch revenue accounts, continuing without source matching", "error", err)
+	}
+	if histSrcID != "" {
+		found := false
+		for _, a := range revAccts {
+			if a.ID == histSrcID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			histSrcID = ""
+		}
+	}
+
+	outcome := firefly.UpdateOutcome{Outcome: string(classifier.Classified)}
+
+	// Short-circuit: confident category + source from history -> skip the LLM.
+	if histCat != "" && histSrcID != "" {
+		for _, c := range categories {
+			if c.Name == histCat {
+				outcome.CategoryID = c.ID
+				break
+			}
+		}
+		outcome.Category = histCat
+		outcome.SourceID = histSrcID
+		outcome.DestConfidence = "CLASSIFIED"
+		outcome.Tags = weightedTags(history, fireflyDate, amount)
+		outcome.Reason = fmt.Sprintf("Revenu auto-categorise depuis %d transaction(s) du meme emetteur.", len(history))
+		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
+			p.registry.SetFailed(j.ID, err.Error())
+			return fmt.Errorf("update transaction: %w", err)
+		}
+		p.registry.SetFinished(j.ID, string(classifier.Classified), histCat, outcome.Reason, "", "", "", accountName(revAccts, histSrcID), "MATCH", outcome.Tags, nil)
+		return nil
+	}
+
+	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
+	for i, a := range revAccts {
+		clAccounts[i] = classifier.AccountCandidate{ID: a.ID, Name: a.Name}
+	}
+	result, err := p.classifier.Classify(ctx, classifier.Request{
+		Categories:          clCats,
+		DestinationName:     first.SourceName,
+		Description:         first.Description,
+		Amount:              j.Amount,
+		History:             history,
+		ExpenseAccounts:     clAccounts,
+		DestinationMatching: len(clAccounts) > 0,
+		Notes:               cleanNotes(first.Notes),
+		TagSuggestion:       p.tagSuggest,
+		TagMax:              p.tagMax,
+	})
+	if err != nil {
+		p.registry.SetFailed(j.ID, err.Error())
+		return fmt.Errorf("classify: %w", err)
+	}
+
+	for _, c := range categories {
+		if c.Name == result.Category {
+			outcome.CategoryID = c.ID
+			break
+		}
+	}
+	outcome.Category = result.Category
+	outcome.Outcome = string(result.Outcome)
+	outcome.Reason = result.Reason
+	outcome.Assumption = result.Assumption
+	if outcome.Category == "" && histCat != "" {
+		for _, c := range categories {
+			if c.Name == histCat {
+				outcome.CategoryID = c.ID
+				break
+			}
+		}
+		outcome.Category = histCat
+		outcome.Outcome = string(classifier.Classified)
+	}
+
+	var srcAccount, srcAction string
+	if result.Destination != nil {
+		srcAccount = result.Destination.Name
+		srcAction = result.Destination.Action
+		switch result.Destination.Action {
+		case "MATCH":
+			for _, a := range revAccts {
+				if strings.EqualFold(a.Name, result.Destination.Name) {
+					outcome.SourceID = a.ID
+					break
+				}
+			}
+			if outcome.SourceID == "" {
+				srcAccount, srcAction = "", ""
+			} else {
+				outcome.DestConfidence = result.Destination.Confidence
+			}
+		case "CREATE":
+			if result.Destination.Confidence == "CLASSIFIED" {
+				if created, cerr := p.firefly.CreateRevenueAccount(ctx, result.Destination.Name); cerr == nil {
+					outcome.SourceID = created.ID
+					outcome.DestConfidence = result.Destination.Confidence
+					p.revAcctMu.Lock()
+					p.revAcctCache = append(p.revAcctCache, created)
+					p.revAcctMu.Unlock()
+				} else {
+					slog.Error("failed to create revenue account", "name", result.Destination.Name, "error", cerr)
+					srcAccount, srcAction = "", ""
+				}
+			} else {
+				srcAccount, srcAction = "", ""
+			}
+		}
+	}
+	if outcome.SourceID == "" && histSrcID != "" {
+		outcome.SourceID = histSrcID
+		outcome.DestConfidence = "CLASSIFIED"
+		srcAccount = accountName(revAccts, histSrcID)
+		srcAction = "MATCH"
+	}
+
+	for _, t := range result.Tags {
+		name := strings.TrimSpace(t.Name)
+		if name == "" {
+			continue
+		}
+		if t.Confidence == "CLASSIFIED" {
+			outcome.Tags = append(outcome.Tags, name)
+		} else {
+			outcome.TagsAssumed = append(outcome.TagsAssumed, name)
+		}
+	}
+
+	if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
+		p.registry.SetFailed(j.ID, err.Error())
+		return fmt.Errorf("update transaction: %w", err)
+	}
+	p.registry.SetFinished(j.ID, outcome.Outcome, outcome.Category, outcome.Reason, outcome.Assumption, result.RawPrompt, result.RawResponse, srcAccount, srcAction, outcome.Tags, outcome.TagsAssumed)
+	return nil
 }
 
 // Run executes the full classification pipeline for a queued job.

@@ -193,9 +193,20 @@ func (c *Client) CreateTransfer(ctx context.Context, p CreateTransferParams) (Tr
 }
 
 // CreateExpenseAccount creates a new expense account via the Firefly III API.
+// CreateExpenseAccount creates (or matches) an expense account by name.
 func (c *Client) CreateExpenseAccount(ctx context.Context, name string) (Account, error) {
+	return c.createAccount(ctx, name, "expense", c.GetExpenseAccounts)
+}
+
+// CreateRevenueAccount creates (or matches) a revenue account by name — the
+// income analogue used for source (payer) resolution.
+func (c *Client) CreateRevenueAccount(ctx context.Context, name string) (Account, error) {
+	return c.createAccount(ctx, name, "revenue", c.GetRevenueAccounts)
+}
+
+func (c *Client) createAccount(ctx context.Context, name, typ string, list func(context.Context) ([]Account, error)) (Account, error) {
 	u := fmt.Sprintf("%s/api/v1/accounts", c.baseURL)
-	body := map[string]string{"name": name, "type": "expense"}
+	body := map[string]string{"name": name, "type": typ}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return Account{}, err
@@ -218,8 +229,8 @@ func (c *Client) CreateExpenseAccount(ctx context.Context, name string) (Account
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
 		// The account probably already exists — fall back to matching it by name
-		// so re-runs and existing merchants resolve instead of failing.
-		if accts, ferr := c.GetExpenseAccounts(ctx); ferr == nil {
+		// so re-runs and existing counterparties resolve instead of failing.
+		if accts, ferr := list(ctx); ferr == nil {
 			for _, a := range accts {
 				if strings.EqualFold(a.Name, name) {
 					return a, nil
