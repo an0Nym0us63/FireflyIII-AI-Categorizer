@@ -470,7 +470,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook")
+	j := h.registry.Create(string(payload.Content.ID), "", cpName, first.Description, amount, "webhook", first.Type)
 	transactionID := string(payload.Content.ID)
 
 	h.webhookPool.Submit(worker.Task{
@@ -573,7 +573,7 @@ func (h *Handler) batchRun(w http.ResponseWriter, r *http.Request) {
 		}
 		first := txn.Splits[0]
 		amount := parseAmount(first.Amount)
-		j := h.registry.Create(txn.ID, batchID, first.DestinationName, first.Description, amount, "batch")
+		j := h.registry.Create(txn.ID, batchID, first.DestinationName, first.Description, amount, "batch", first.Type)
 
 		txnID := txn.ID
 		splits := txn.Splits
@@ -1243,7 +1243,7 @@ func (h *Handler) rerunTransaction(w http.ResponseWriter, r *http.Request) {
 	txn := txns[0]
 	first := txn.Splits[0]
 	amount := parseAmount(first.Amount)
-	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount, "manual")
+	j := h.registry.Create(id, "", first.DestinationName, first.Description, amount, "manual", first.Type)
 	splits := txn.Splits
 	force := r.URL.Query().Get("force") == "1"
 	h.webhookPool.Submit(worker.Task{

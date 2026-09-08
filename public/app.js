@@ -804,7 +804,7 @@ function buildJobRow(j) {
 
     // Show AI-assigned destination account when present, otherwise the original payee name.
     var dest = j.destination_account || j.destination_name || '&mdash;';
-    var destHtml = '<strong>' + esc(dest) + '</strong>';
+    var destHtml = (j.direction === 'deposit' ? '<span class="label label-success" title="Revenu" style="margin-right:4px">\u2191</span>' : '') + '<strong>' + esc(dest) + '</strong>';
     if (j.destination_account && j.destination_action === 'MATCH') {
         destHtml += ' <i class="fa fa-link text-muted" title="Matched to existing account" style="font-size:11px"></i>';
     } else if (j.destination_account && j.destination_action === 'CREATE') {
