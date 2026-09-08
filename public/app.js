@@ -1741,13 +1741,13 @@ function renderReviewTable(groups) {
 
         var srcCell = (g.source_name ? esc(g.source_name) : '<span class="text-muted">—</span>');
         var destCell = (g.destination_name ? esc(g.destination_name) : '<span class="text-muted">—</span>');
-        if (g.outcome === 'DEST_ASSUMED') {
+        if (g.outcome === 'DEST_ASSUMED' || g.counterparty_assumed) {
             if (g.direction === 'deposit') {
                 srcCell = '<input type="text" class="form-control input-sm" id="rev-src-' + gi + '"'
-                    + ' value="' + esc(g.source_name || '') + '" placeholder="Source / \u00e9metteur" style="min-width:130px">';
+                    + ' value="' + esc(g.assumed_name || g.source_name || '') + '" placeholder="Source / \u00e9metteur" style="min-width:130px">';
             } else {
                 destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
-                    + ' list="rev-dest-accounts" value="' + esc(g.destination_name || '') + '" style="min-width:130px">';
+                    + ' list="rev-dest-accounts" value="' + esc(g.assumed_name || g.destination_name || '') + '" style="min-width:130px">';
             }
         }
         return '<tr id="rev-row-' + gi + '">'
