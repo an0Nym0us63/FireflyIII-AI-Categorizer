@@ -884,6 +884,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		CategoryID           string   `json:"category_id,omitempty"`
 		CategoryName         string   `json:"category_name,omitempty"`
 		DestinationID        string   `json:"destination_id,omitempty"`
+		SourceID             string   `json:"source_id,omitempty"`
 		Notes                string   `json:"notes,omitempty"`
 	}
 	type body struct {
@@ -944,6 +945,9 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		}
 		if outcome.DestinationID != "" {
 			su.DestinationID = outcome.DestinationID
+		}
+		if outcome.SourceID != "" {
+			su.SourceID = outcome.SourceID
 		}
 		noteSrc := s.Notes
 		if strings.TrimSpace(noteSrc) == "" {

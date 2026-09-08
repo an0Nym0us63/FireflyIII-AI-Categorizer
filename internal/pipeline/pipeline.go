@@ -81,6 +81,11 @@ type Pipeline struct {
 	acctMu      sync.RWMutex
 	acctCache   []firefly.Account
 	acctFetched time.Time
+
+	// Short-lived revenue-account cache (source candidates for income).
+	revAcctMu      sync.RWMutex
+	revAcctCache   []firefly.Account
+	revAcctFetched time.Time
 }
 
 func New(
@@ -1045,6 +1050,34 @@ func (p *Pipeline) getExpenseAccounts(ctx context.Context) ([]firefly.Account, e
 	p.acctCache = accts
 	p.acctFetched = time.Now()
 	p.acctMu.Unlock()
+	return accts, nil
+}
+
+// getRevenueAccounts returns cached revenue accounts (source candidates for
+// income), re-fetching when the TTL expires. Mirrors getExpenseAccounts.
+func (p *Pipeline) getRevenueAccounts(ctx context.Context) ([]firefly.Account, error) {
+	p.revAcctMu.RLock()
+	if !p.revAcctFetched.IsZero() && time.Since(p.revAcctFetched) < categoryTTL {
+		accts := p.revAcctCache
+		p.revAcctMu.RUnlock()
+		return accts, nil
+	}
+	p.revAcctMu.RUnlock()
+
+	accts, err := p.firefly.GetRevenueAccounts(ctx)
+	if err != nil {
+		p.revAcctMu.RLock()
+		stale := p.revAcctCache
+		p.revAcctMu.RUnlock()
+		if stale != nil {
+			return stale, nil
+		}
+		return nil, err
+	}
+	p.revAcctMu.Lock()
+	p.revAcctCache = accts
+	p.revAcctFetched = time.Now()
+	p.revAcctMu.Unlock()
 	return accts, nil
 }
 

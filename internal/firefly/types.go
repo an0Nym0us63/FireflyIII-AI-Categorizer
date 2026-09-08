@@ -41,7 +41,8 @@ type UpdateOutcome struct {
 	Outcome        string // "CLASSIFIED" | "ASSUMED" | "NEEDS_REVIEW"
 	Category       string
 	CategoryID     string
-	DestinationID  string // non-empty when destination account was matched or created
+	DestinationID  string // non-empty when destination account was matched or created (outflow)
+	SourceID       string // non-empty when source account was matched or created (inflow / income)
 	DestConfidence string // "CLASSIFIED" | "ASSUMED" — destination confidence (independent of Outcome)
 	Reason         string
 	Assumption     string
