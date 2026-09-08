@@ -26,6 +26,7 @@ type Record struct {
 	SuggestedTags  []string // pending semantic tags awaiting validation
 	Reviewed       bool
 	Direction      string // "withdrawal" (default) | "deposit"
+	Counterparty   string // assumed counterparty name (payee/payer) awaiting review
 	UpdatedAt      time.Time
 }
 
@@ -58,7 +59,8 @@ CREATE TABLE IF NOT EXISTS ai_records (
 	suggested_tags  TEXT,
 	reviewed        INTEGER DEFAULT 0,
 	updated_at      TEXT,
-	direction       TEXT DEFAULT 'withdrawal'
+	direction       TEXT DEFAULT 'withdrawal',
+	counterparty    TEXT
 );
 CREATE TABLE IF NOT EXISTS jobs (
 	id         TEXT PRIMARY KEY,
@@ -73,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
 	}
 	// Additive migration: older DBs lack the direction column.
 	_, _ = db.Exec(`ALTER TABLE ai_records ADD COLUMN direction TEXT DEFAULT 'withdrawal'`)
+	_, _ = db.Exec(`ALTER TABLE ai_records ADD COLUMN counterparty TEXT`)
 	return &DB{db: db}, nil
 }
 
@@ -90,14 +93,14 @@ func (d *DB) Upsert(r Record) error {
 	}
 	_, err := d.db.Exec(`
 INSERT INTO ai_records
-	(transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	(transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction, counterparty)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(transaction_id) DO UPDATE SET
 	outcome=excluded.outcome, category=excluded.category, dest_confidence=excluded.dest_confidence,
 	reason=excluded.reason, assumption=excluded.assumption, suggested_tags=excluded.suggested_tags,
-	reviewed=excluded.reviewed, updated_at=excluded.updated_at, direction=excluded.direction`,
+	reviewed=excluded.reviewed, updated_at=excluded.updated_at, direction=excluded.direction, counterparty=excluded.counterparty`,
 		r.TransactionID, r.Outcome, r.Category, r.DestConfidence, r.Reason, r.Assumption,
-		string(tags), boolToInt(r.Reviewed), r.UpdatedAt.UTC().Format(time.RFC3339), dir)
+		string(tags), boolToInt(r.Reviewed), r.UpdatedAt.UTC().Format(time.RFC3339), dir, r.Counterparty)
 	if err != nil {
 		return fmt.Errorf("upsert ai record: %w", err)
 	}
@@ -106,7 +109,7 @@ ON CONFLICT(transaction_id) DO UPDATE SET
 
 // Get returns the record for id, or (nil, nil) when absent.
 func (d *DB) Get(id string) (*Record, error) {
-	row := d.db.QueryRow(`SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction FROM ai_records WHERE transaction_id = ?`, id)
+	row := d.db.QueryRow(`SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction, counterparty FROM ai_records WHERE transaction_id = ?`, id)
 	rec, err := scanRecord(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -128,7 +131,7 @@ func (d *DB) GetMany(ids []string) (map[string]Record, error) {
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := d.db.Query(`SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction FROM ai_records WHERE transaction_id IN (`+placeholders+`)`, args...)
+	rows, err := d.db.Query(`SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction, counterparty FROM ai_records WHERE transaction_id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +170,7 @@ func (d *DB) DeleteByIDs(ids []string) (int, error) {
 // pending tag suggestions.
 func (d *DB) PendingReview() ([]Record, error) {
 	rows, err := d.db.Query(`
-SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction
+SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction, counterparty
 FROM ai_records
 WHERE reviewed = 0 AND (
 	outcome IN ('ASSUMED','NEEDS_REVIEW')
@@ -208,7 +211,7 @@ func (d *DB) ListReviewed(limit int) ([]Record, error) {
 		limit = 200
 	}
 	rows, err := d.db.Query(`
-SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction
+SELECT transaction_id, outcome, category, dest_confidence, reason, assumption, suggested_tags, reviewed, updated_at, direction, counterparty
 FROM ai_records WHERE reviewed = 1 ORDER BY updated_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -252,9 +255,9 @@ type scanner interface {
 
 func scanRecord(s scanner) (*Record, error) {
 	var r Record
-	var outcome, category, destConf, reason, assumption, tagsJSON, updated, direction sql.NullString
+	var outcome, category, destConf, reason, assumption, tagsJSON, updated, direction, counterparty sql.NullString
 	var reviewed sql.NullInt64
-	if err := s.Scan(&r.TransactionID, &outcome, &category, &destConf, &reason, &assumption, &tagsJSON, &reviewed, &updated, &direction); err != nil {
+	if err := s.Scan(&r.TransactionID, &outcome, &category, &destConf, &reason, &assumption, &tagsJSON, &reviewed, &updated, &direction, &counterparty); err != nil {
 		return nil, err
 	}
 	r.Outcome = outcome.String
@@ -270,6 +273,7 @@ func scanRecord(s scanner) (*Record, error) {
 	if r.Direction == "" {
 		r.Direction = "withdrawal"
 	}
+	r.Counterparty = counterparty.String
 	if updated.String != "" {
 		if t, err := time.Parse(time.RFC3339, updated.String); err == nil {
 			r.UpdatedAt = t

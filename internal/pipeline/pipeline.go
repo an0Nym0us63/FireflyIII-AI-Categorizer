@@ -500,6 +500,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			Assumption:     outcome.Assumption,
 			SuggestedTags:  outcome.TagsAssumed,
 			Direction:      "deposit",
+			Counterparty:   srcAccount,
 		})
 	}
 	p.registry.SetFinished(j.ID, outcome.Outcome, outcome.Category, outcome.Reason, outcome.Assumption, result.RawPrompt, result.RawResponse, srcAccount, srcAction, outcome.Tags, outcome.TagsAssumed)
@@ -1066,6 +1067,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			Reason:         outcome.Reason,
 			Assumption:     outcome.Assumption,
 			SuggestedTags:  outcome.TagsAssumed,
+			Counterparty:   destAccount,
 		})
 	}
 

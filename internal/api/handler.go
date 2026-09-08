@@ -1194,7 +1194,9 @@ type reviewGroup struct {
 	Description          string      `json:"description"`
 	DestinationName      string      `json:"destination_name"`
 	SourceName           string      `json:"source_name,omitempty"`
-	Direction            string      `json:"direction,omitempty"` // "withdrawal" | "deposit"
+	Direction            string      `json:"direction,omitempty"`            // "withdrawal" | "deposit"
+	CounterpartyAssumed  bool        `json:"counterparty_assumed,omitempty"` // AI assumed the payee/payer → offer an editor
+	AssumedName          string      `json:"assumed_name,omitempty"`         // AI's proposed counterparty (pre-fill)
 	CategoryName         string      `json:"category_name,omitempty"`
 	CategoryID           string      `json:"category_id,omitempty"`
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
@@ -1414,6 +1416,8 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	catBucket := map[string]string{}   // txn id -> NEEDS_REVIEW / ASSUMED / DEST_ASSUMED
 	suggested := map[string][]string{} // txn id -> pending tag suggestions
 	reasonByID := map[string]string{}  // txn id -> AI reason (context for review)
+	cpAssumed := map[string]bool{}     // txn id -> counterparty (payee/payer) was assumed
+	cpName := map[string]string{}      // txn id -> assumed counterparty name (pre-fill)
 	var ids []string
 	seen := map[string]bool{}
 	addID := func(id string) {
@@ -1425,6 +1429,10 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	for _, r := range records {
 		if r.Reason != "" {
 			reasonByID[r.TransactionID] = r.Reason
+		}
+		if r.DestConfidence == "ASSUMED" {
+			cpAssumed[r.TransactionID] = true
+			cpName[r.TransactionID] = r.Counterparty
 		}
 		switch {
 		case r.Outcome == "NEEDS_REVIEW":
@@ -1483,7 +1491,12 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 	result = append(result, buildReviewGroups("DEST_ASSUMED", destAssumed)...)
 	for _, g := range result {
 		if len(g.Transactions) > 0 {
-			g.Reason = reasonByID[g.Transactions[0].ID]
+			id := g.Transactions[0].ID
+			g.Reason = reasonByID[id]
+			if cpAssumed[id] {
+				g.CounterpartyAssumed = true
+				g.AssumedName = cpName[id]
+			}
 		}
 	}
 
