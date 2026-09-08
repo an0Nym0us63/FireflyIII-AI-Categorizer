@@ -1681,7 +1681,8 @@ function renderReviewTable(groups) {
                 + '<td><span class="label label-info">traité</span></td>'
                 + labelCell + amtCell
                 + '<td>' + (g.category_name ? esc(g.category_name) : '<span class="text-muted">—</span>') + '</td>'
-                + '<td class="text-muted">—</td>'
+                + '<td>' + (g.source_name ? esc(g.source_name) : '<span class="text-muted">—</span>') + '</td>'
+                + '<td>' + (g.destination_name ? esc(g.destination_name) : '<span class="text-muted">—</span>') + '</td>'
                 + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
                 + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="unreviewRow(' + gi + ')" title="Remettre dans la file"><i class="fa fa-undo"></i> Annuler</button> <button class="btn btn-default btn-sm" onclick="openEditModal(\'' + txnId + '\')" title="Éditer"><i class="fa fa-pencil"></i></button></td>'
                 + '</tr>';
@@ -1691,16 +1692,19 @@ function renderReviewTable(groups) {
             return '<tr id="rev-row-' + gi + '">'
                 + '<td><span class="label label-warning">tags ?</span></td>'
                 + labelCell + amtCell
-                + '<td class="text-muted">—</td><td class="text-muted">—</td>'
+                + '<td class="text-muted">—</td>'
+                + '<td>' + (g.source_name ? esc(g.source_name) : '<span class="text-muted">—</span>') + '</td>'
+                + '<td>' + (g.destination_name ? esc(g.destination_name) : '<span class="text-muted">—</span>') + '</td>'
                 + '<td id="rev-tags-' + gi + '">' + reviewSuggestChips(txnId, gi, g.suggested_tags) + '</td>'
                 + '<td style="white-space:nowrap"><button class="btn btn-default btn-sm" onclick="dismissReviewRow(' + gi + ')" title="Ignorer"><i class="fa fa-times"></i></button> <button class="btn btn-default btn-sm" onclick="openEditModal(\'' + txnId + '\')" title="Éditer"><i class="fa fa-pencil"></i></button></td>'
                 + '</tr>';
         }
 
-        var destCell = '<span class="text-muted">—</span>';
+        var srcCell = (g.source_name ? esc(g.source_name) : '<span class="text-muted">—</span>');
+        var destCell = (g.destination_name ? esc(g.destination_name) : '<span class="text-muted">—</span>');
         if (g.outcome === 'DEST_ASSUMED') {
             if (g.direction === 'deposit') {
-                destCell = '<input type="text" class="form-control input-sm" id="rev-src-' + gi + '"'
+                srcCell = '<input type="text" class="form-control input-sm" id="rev-src-' + gi + '"'
                     + ' value="' + esc(g.source_name || '') + '" placeholder="Source / \u00e9metteur" style="min-width:130px">';
             } else {
                 destCell = '<input type="text" class="form-control input-sm" id="rev-dest-' + gi + '"'
@@ -1712,6 +1716,7 @@ function renderReviewTable(groups) {
             + labelCell + amtCell
             + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:140px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
+            + '<td>' + srcCell + '</td>'
             + '<td>' + destCell + '</td>'
             + '<td>' + reviewAppliedTagsHtml(g) + '</td>'
             + '<td style="white-space:nowrap">'
@@ -1725,7 +1730,7 @@ function renderReviewTable(groups) {
         + '<div class="table-responsive"><table class="table table-condensed table-hover" style="margin-bottom:0">'
         + '<thead><tr>'
         + '<th>Type</th><th>Bénéficiaire / Libellé</th><th class="text-right">Montant</th>'
-        + '<th>Catégorie</th><th>Destination</th><th>Tags</th><th>Actions</th>'
+        + '<th>Catégorie</th><th>Source</th><th>Destinataire</th><th>Tags</th><th>Actions</th>'
         + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
