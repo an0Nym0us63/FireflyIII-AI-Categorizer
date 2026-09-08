@@ -716,7 +716,7 @@ func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split,
 // ApplyHumanCategory sets a category on a previously-flagged transaction.
 // It removes any AI outcome tags (needs-review, assumed) and adds a reviewed tag.
 // When destinationID is non-empty, it also sets the destination expense account.
-func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID string) error {
+func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Split, categoryID, destinationID, sourceID string) error {
 	changes := make(map[string]map[string]interface{}, len(splits))
 	for _, s := range splits {
 		// Drop any old AI control tags; review status now lives in the local DB.
@@ -733,6 +733,9 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		}
 		if destinationID != "" {
 			ch["destination_id"] = destinationID
+		}
+		if sourceID != "" {
+			ch["source_id"] = sourceID
 		}
 		changes[s.JournalID] = ch
 	}

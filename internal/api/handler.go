@@ -1151,6 +1151,7 @@ type reviewGroup struct {
 	Description          string      `json:"description"`
 	DestinationName      string      `json:"destination_name"`
 	SourceName           string      `json:"source_name,omitempty"`
+	Direction            string      `json:"direction,omitempty"` // "withdrawal" | "deposit"
 	CategoryName         string      `json:"category_name,omitempty"`
 	CategoryID           string      `json:"category_id,omitempty"`
 	DestinationAccountID string      `json:"destination_account_id,omitempty"`
@@ -1458,6 +1459,8 @@ func (h *Handler) computeReviewGroups(ctx context.Context, fc *firefly.Client) (
 			Outcome:         "TAGS",
 			Description:     s.Description,
 			DestinationName: s.DestinationName,
+			SourceName:      s.SourceName,
+			Direction:       s.Type,
 			CategoryName:    s.CategoryName,
 			SuggestedTags:   tags,
 			AppliedTags:     classifier.SemanticTags(s.Tags),
@@ -1539,6 +1542,7 @@ func buildReviewGroups(outcome string, txns []firefly.Transaction) []*reviewGrou
 				DestinationName:      s.DestinationName,
 				SourceName:           s.SourceName,
 				DestinationAccountID: s.DestinationID,
+				Direction:            s.Type,
 			}
 			if outcome == "ASSUMED" || outcome == "DEST_ASSUMED" {
 				g.CategoryName = s.CategoryName
@@ -1567,6 +1571,9 @@ type categorizeRequest struct {
 	DestinationAction string `json:"destination_action,omitempty"` // "MATCH", "CREATE", or ""
 	DestinationName   string `json:"destination_name,omitempty"`   // for CREATE
 	DestinationID     string `json:"destination_id,omitempty"`     // for MATCH
+	SourceAction      string `json:"source_action,omitempty"`      // income: "MATCH"/"CREATE"/""
+	SourceName        string `json:"source_name,omitempty"`        // income CREATE
+	SourceID          string `json:"source_id,omitempty"`          // income MATCH
 }
 
 func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) {
@@ -1583,8 +1590,8 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// category_id is optional — allowing destination-only updates.
-	if req.CategoryID == "" && req.DestinationAction == "" {
-		http.Error(w, "at least one of category_id or destination_action is required", http.StatusBadRequest)
+	if req.CategoryID == "" && req.DestinationAction == "" && req.SourceAction == "" {
+		http.Error(w, "at least one of category_id, destination_action or source_action is required", http.StatusBadRequest)
 		return
 	}
 
@@ -1602,25 +1609,46 @@ func (h *Handler) categorizeTransaction(w http.ResponseWriter, r *http.Request) 
 		splits = txns[0].Splits
 	}
 
-	destID := ""
-	switch req.DestinationAction {
-	case "MATCH":
-		destID = req.DestinationID
-	case "CREATE":
-		if req.DestinationName == "" {
-			http.Error(w, "destination_name is required for CREATE", http.StatusBadRequest)
-			return
+	destID, srcID := "", ""
+	isDeposit := len(splits) > 0 && splits[0].Type == "deposit"
+	if isDeposit {
+		// Income: resolve the SOURCE (payer / revenue account).
+		switch req.SourceAction {
+		case "MATCH":
+			srcID = req.SourceID
+		case "CREATE":
+			if req.SourceName == "" {
+				http.Error(w, "source_name is required for CREATE", http.StatusBadRequest)
+				return
+			}
+			created, err := fc.CreateRevenueAccount(r.Context(), req.SourceName)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to create source account: %v", err), http.StatusBadGateway)
+				return
+			}
+			srcID = created.ID
+			slog.Info("review: created revenue account", "name", created.Name, "id", created.ID)
 		}
-		created, err := fc.CreateExpenseAccount(r.Context(), req.DestinationName)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to create destination account: %v", err), http.StatusBadGateway)
-			return
+	} else {
+		switch req.DestinationAction {
+		case "MATCH":
+			destID = req.DestinationID
+		case "CREATE":
+			if req.DestinationName == "" {
+				http.Error(w, "destination_name is required for CREATE", http.StatusBadRequest)
+				return
+			}
+			created, err := fc.CreateExpenseAccount(r.Context(), req.DestinationName)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to create destination account: %v", err), http.StatusBadGateway)
+				return
+			}
+			destID = created.ID
+			slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
 		}
-		destID = created.ID
-		slog.Info("review: created expense account", "name", created.Name, "id", created.ID)
 	}
 
-	if err := fc.ApplyHumanCategory(r.Context(), id, splits, req.CategoryID, destID); err != nil {
+	if err := fc.ApplyHumanCategory(r.Context(), id, splits, req.CategoryID, destID, srcID); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update transaction: %v", err), http.StatusBadGateway)
 		return
 	}
