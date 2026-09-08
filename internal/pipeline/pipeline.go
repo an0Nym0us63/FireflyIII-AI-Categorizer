@@ -162,6 +162,43 @@ func accountName(accts []firefly.Account, id string) string {
 	return ""
 }
 
+// vocabFromHistory returns the categories (filtered from allCats by name) and
+// tags that appear in the given history — the direction-specific vocabulary to
+// offer the LLM. Falls back to allCats when the history yields no category
+// (bootstrap: nothing classified in that direction yet).
+func vocabFromHistory(hist []classifier.HistoricalEntry, categories []firefly.Category, allCats []classifier.Category) ([]classifier.Category, []string) {
+	catSet := map[string]bool{}
+	tagSet := map[string]bool{}
+	for _, h := range hist {
+		if h.CategoryName != "" {
+			catSet[h.CategoryName] = true
+		}
+		for _, tg := range h.Tags {
+			if tg != "" {
+				tagSet[tg] = true
+			}
+		}
+	}
+	cats := allCats
+	if len(catSet) > 0 {
+		var filtered []classifier.Category
+		for _, c := range categories {
+			if catSet[c.Name] {
+				filtered = append(filtered, classifier.Category{Name: c.Name, Notes: c.Notes})
+			}
+		}
+		if len(filtered) > 0 {
+			cats = filtered
+		}
+	}
+	var tags []string
+	for tg := range tagSet {
+		tags = append(tags, tg)
+	}
+	sort.Strings(tags)
+	return cats, tags
+}
+
 // weightedSource is the income analogue of weightedDestination: it votes on the
 // most likely source (revenue) account from same-payer history.
 func weightedSource(history []classifier.HistoricalEntry, txnDate time.Time, amount float64) (string, float64) {
@@ -338,39 +375,9 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		return nil
 	}
 
-	// Ségrégation revenu/dépense : n'offrir que les catégories et tags déjà
-	// utilisés sur des revenus (deposits), pour ne pas polluer le prompt income
-	// avec le vocabulaire des dépenses. Repli sur toutes les catégories tant qu'il
-	// n'y a pas encore d'historique de revenus (amorçage).
-	incCatSet := map[string]bool{}
-	incTagSet := map[string]bool{}
-	for _, h := range p.allIncomeHistory(ctx) {
-		if h.CategoryName != "" {
-			incCatSet[h.CategoryName] = true
-		}
-		for _, tg := range h.Tags {
-			if tg != "" {
-				incTagSet[tg] = true
-			}
-		}
-	}
-	incCats := clCats
-	if len(incCatSet) > 0 {
-		var filtered []classifier.Category
-		for _, c := range categories {
-			if incCatSet[c.Name] {
-				filtered = append(filtered, classifier.Category{Name: c.Name, Notes: c.Notes})
-			}
-		}
-		if len(filtered) > 0 {
-			incCats = filtered
-		}
-	}
-	var incTags []string
-	for tg := range incTagSet {
-		incTags = append(incTags, tg)
-	}
-	sort.Strings(incTags)
+	// Ségrégation : n'offrir au LLM que les catégories et tags déjà utilisés sur
+	// des revenus (deposits). Repli sur toutes les catégories si pas d'historique.
+	incCats, incTags := vocabFromHistory(p.allIncomeHistory(ctx), categories, clCats)
 
 	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
 	for i, a := range revAccts {
@@ -796,8 +803,17 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		promptDestName = ""
 	}
 
+	// Ségrégation : n'offrir que les catégories/tags déjà utilisés sur des
+	// dépenses (withdrawals), dérivés du cache d'historique (aucun fetch en plus).
+	expCats, expTags := clCats, existingTags
+	if p.cache != nil {
+		expCats, expTags = vocabFromHistory(p.cache.AllEntries(ctx), categories, clCats)
+		if len(expTags) == 0 {
+			expTags = existingTags
+		}
+	}
 	result, err := p.classifier.Classify(ctx, classifier.Request{
-		Categories:          clCats,
+		Categories:          expCats,
 		DestinationName:     promptDestName,
 		Description:         j.Description,
 		Amount:              j.Amount,
@@ -805,7 +821,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		ExpenseAccounts:     clAccounts,
 		DestinationMatching: opts.MatchDestination,
 		CategoryOnly:        opts.ClassifyCategory && !opts.MatchDestination,
-		ExistingTags:        existingTags,
+		ExistingTags:        expTags,
 		TagSuggestion:       tagSuggest,
 		TagMax:              p.tagMax,
 		ExtraContext:        extraContext,

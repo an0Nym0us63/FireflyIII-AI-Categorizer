@@ -56,6 +56,19 @@ func (c *Cache) GetHistory(ctx context.Context, groupKey string, limit int) []cl
 	return matches
 }
 
+// AllEntries returns a copy of all cached categorized-withdrawal history
+// (refreshing if stale). Used to derive expense-side category/tag vocabulary.
+func (c *Cache) AllEntries(ctx context.Context) []classifier.HistoricalEntry {
+	if err := c.ensureFresh(ctx); err != nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]classifier.HistoricalEntry, len(c.entries))
+	copy(out, c.entries)
+	return out
+}
+
 // Append adds a freshly classified entry without waiting for TTL expiry.
 // This ensures later jobs in the same batch benefit from earlier results.
 // Append adds or replaces the history entry for a transaction (dedup by ID), so
