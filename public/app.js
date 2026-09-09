@@ -783,9 +783,30 @@ function scheduleJobRender() {
     jobRenderTimer = setTimeout(function () { jobRenderTimer = null; renderJobTable(); }, 250);
 }
 
+var jobStatusFilter = 'all';
+function jobMatchesStatus(j) {
+    switch (jobStatusFilter) {
+        case 'running': return j.status === 'in_progress';
+        case 'failed': return j.status === 'failed';
+        case 'classified': return j.outcome === 'CLASSIFIED';
+        case 'assumed': return j.outcome === 'ASSUMED';
+        case 'review': return j.outcome === 'NEEDS_REVIEW';
+        default: return true;
+    }
+}
+function setJobFilter(v) {
+    jobStatusFilter = (jobStatusFilter === v && v !== 'all') ? 'all' : v;
+    jobPage = 1;
+    ['all', 'running', 'classified', 'assumed', 'review', 'failed'].forEach(function (k) {
+        var b = document.getElementById('statbox-' + k);
+        if (b) b.style.boxShadow = (jobStatusFilter === k && k !== 'all') ? 'inset 0 0 0 3px rgba(255,255,255,.85)' : '';
+    });
+    renderJobTable();
+}
 function renderJobTable() {
     var tbody = document.getElementById('job-tbody');
     var all = Object.values(jobs).filter(function (j) { return jobMatchesSearch(j, jobSearch); })
+        .filter(function (j) { return jobMatchesStatus(j); })
         .filter(function (j) { return !jobSource || (j.source || '') === jobSource; })
         .sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at); });
     var total = all.length;
@@ -1546,6 +1567,8 @@ async function loadReview(silent) {
 }
 
 function renderCurrentBatch() {
+    reviewSelected.clear();
+    updateReviewSelCount();
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
 
@@ -1799,7 +1822,7 @@ function renderReviewTable(groups) {
             }
         }
         return '<tr id="rev-row-' + gi + '">'
-            + '<td style="white-space:nowrap">' + reviewDirBadge(g) + reviewTypeBadge(g.outcome) + '</td>'
+            + '<td style="white-space:nowrap"><input type="checkbox" class="rev-cb" style="margin-right:6px" onclick="toggleReviewSel(event,' + gi + ')"> ' + reviewDirBadge(g) + reviewTypeBadge(g.outcome) + '</td>'
             + labelCell + amtCell
             + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:140px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
@@ -1839,6 +1862,29 @@ function removeReviewRow(gi) {
     }
 }
 
+var reviewSelected = new Set();
+function toggleReviewSel(ev, gi) {
+    ev.stopPropagation();
+    if (ev.target.checked) reviewSelected.add(gi); else reviewSelected.delete(gi);
+    updateReviewSelCount();
+}
+function updateReviewSelCount() {
+    var b = document.getElementById('rev-bulk-validate');
+    if (b) b.textContent = 'Valider la sélection (' + reviewSelected.size + ')';
+}
+function bulkValidateReview() {
+    var toDo = Array.from(reviewSelected).filter(function (gi) {
+        var g = reviewGroupMap[gi];
+        var catSel = document.getElementById('rev-cat-' + gi);
+        var cat = catSel ? catSel.value : (g && g.category_id);
+        return g && cat;
+    });
+    if (!toDo.length) { alert('Aucune ligne sélectionnée avec une catégorie.'); return; }
+    if (!confirm('Valider ' + toDo.length + ' ligne(s) ?')) return;
+    toDo.forEach(function (gi) { confirmReviewRow(gi); });
+    reviewSelected.clear();
+    updateReviewSelCount();
+}
 function confirmReviewRow(gi) {
     var g = reviewGroupMap[gi];
     if (!g) return;

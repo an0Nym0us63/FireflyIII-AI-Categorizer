@@ -140,7 +140,7 @@
 
                     <div class="row hidden-xs">
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box bg-aqua-gradient">
+                            <div class="info-box bg-aqua-gradient" id="statbox-all" onclick="setJobFilter('all')" style="cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-tasks"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Total</span>
@@ -149,7 +149,7 @@
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box bg-blue-gradient">
+                            <div class="info-box bg-blue-gradient" id="statbox-running" onclick="setJobFilter('running')" style="cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-spinner"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Running</span>
@@ -158,7 +158,7 @@
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box bg-green-gradient">
+                            <div class="info-box bg-green-gradient" id="statbox-classified" onclick="setJobFilter('classified')" style="cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-check"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Classified</span>
@@ -167,7 +167,7 @@
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box bg-teal-gradient">
+                            <div class="info-box bg-teal-gradient" id="statbox-assumed" onclick="setJobFilter('assumed')" style="cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-question-circle"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Assumed</span>
@@ -176,7 +176,7 @@
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box" style="background:linear-gradient(to right,#e8722f,#f0914f)">
+                            <div class="info-box" id="statbox-review" onclick="setJobFilter('review')" style="background:linear-gradient(to right,#e8722f,#f0914f);cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-flag-o"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text" style="color:#fff">Review</span>
@@ -185,7 +185,7 @@
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-4 col-xs-6">
-                            <div class="info-box bg-maroon" style="background:#c0392b">
+                            <div class="info-box bg-maroon" id="statbox-failed" onclick="setJobFilter('failed')" style="background:#c0392b;cursor:pointer">
                                 <span class="info-box-icon"><i class="fa fa-times-circle"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Failed</span>
@@ -540,6 +540,9 @@
                                             <button type="button" class="btn btn-default" id="rev-dir-deposit"
                                                 onclick="setReviewDirFilter('deposit')">Revenus</button>
                                         </div>
+                                        <button type="button" class="btn btn-success btn-sm" id="rev-bulk-validate" onclick="bulkValidateReview()">
+                                            <i class="fa fa-check-square-o"></i> Valider la sélection (0)
+                                        </button>
                                         <button type="button" class="btn btn-default btn-sm" onclick="loadReview()">
                                             <i class="fa fa-refresh"></i> Refresh
                                         </button>
