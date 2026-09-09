@@ -22,6 +22,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/mailorder"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/paypal"
 )
 
 const categoryTTL = 5 * time.Minute
@@ -55,6 +56,7 @@ type Pipeline struct {
 	tagMax     int
 
 	amazon *amazon.Index
+	paypal *paypal.Index
 
 	aidb *aidb.DB
 
@@ -105,6 +107,7 @@ func New(
 	tagSuggest bool,
 	tagMax int,
 	amz *amazon.Index,
+	pp *paypal.Index,
 	adb *aidb.DB,
 	mailAccounts []config.MailAccount,
 	mailDetectors []config.MailDetector,
@@ -123,6 +126,7 @@ func New(
 		tagSuggest:        tagSuggest,
 		tagMax:            tagMax,
 		amazon:            amz,
+		paypal:            pp,
 		aidb:              adb,
 		mailAccounts:      mailAccounts,
 		mailDetectors:     mailDetectors,
@@ -375,6 +379,18 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		}
 		p.registry.SetFinished(j.ID, string(classifier.Classified), histCat, outcome.Reason, "", "", "", accountName(revAccts, histSrcID), "MATCH", outcome.Tags, nil)
 		return nil
+	}
+
+	// PayPal : retrouver le vrai payeur (source) derrière une opération PayPal.
+	if extraContext == "" && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
+		if merchant, items, _, ok := p.paypal.Lookup(amount, fireflyDate); ok && merchant != "" {
+			txt := "Real counterparty (payer) behind this PayPal transaction: " + merchant
+			if len(items) > 0 {
+				txt += "\nDetails: " + strings.Join(items, " | ")
+			}
+			extraContext = txt
+			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
+		}
 	}
 
 	// Ségrégation : n'offrir au LLM que les catégories et tags déjà utilisés sur
@@ -645,6 +661,23 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			enrichSource = "csv"
 			amazonUncertain = !certain
 			slog.Info("amazon order matched", "id", transactionID, "items", len(products), "certain", certain)
+		}
+	}
+
+	// PayPal: recover the real merchant (and item details) behind an opaque
+	// "PAYPAL *…" transaction, matched by amount+date in the PayPal CSV export.
+	if extraContext == "" && p.paypal.Loaded() && isPayPal(j.Description, j.DestinationName) {
+		if merchant, items, certain, ok := p.paypal.Lookup(derefAmount(j.Amount), fireflyDate); ok && merchant != "" {
+			txt := "Real merchant behind this PayPal payment: " + merchant
+			if len(items) > 0 {
+				txt += "\nDetails: " + strings.Join(items, " | ")
+			}
+			extraContext = txt
+			enrichSource = "csv"
+			amazonUncertain = !certain
+			opts.MatchDestination = true // resolve the real merchant as destination
+			eventlog.Info("mail", "Marchand PayPal retrouvé via CSV : "+merchant, transactionID)
+			slog.Info("paypal merchant matched", "id", transactionID, "merchant", merchant, "certain", certain)
 		}
 	}
 
@@ -1438,6 +1471,13 @@ func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amou
 func isAmazon(description, destinationName string) bool {
 	s := strings.ToLower(description + " " + destinationName)
 	return strings.Contains(s, "amazon") || strings.Contains(s, "amzn")
+}
+
+// isPayPal reports whether a transaction went through PayPal, from its
+// description or destination name (PAYPAL, PAYLI, PP*…).
+func isPayPal(description, destinationName string) bool {
+	s := strings.ToLower(description + " " + destinationName)
+	return strings.Contains(s, "paypal") || strings.Contains(s, "payli") || strings.Contains(s, "pp*") || strings.Contains(s, "pp *")
 }
 
 func derefAmount(a *float64) float64 {

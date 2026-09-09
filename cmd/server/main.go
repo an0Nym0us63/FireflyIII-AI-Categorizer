@@ -21,6 +21,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/config"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/paypal"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/pipeline"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/worker"
 )
@@ -147,7 +148,7 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 
 	fc := firefly.New(cfg.FireflyURL, cfg.FireflyToken, cfg.TagPrefix)
 	ca := cache.New(fc, cfg.HistoryCacheTTL, cfg.HistoryLookbackDays)
-	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), adb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
+	pipe := pipeline.New(fc, cl, ca, reg, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), paypal.Load(cfg.PayPalCsvFile), adb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 
 	ctx := context.Background()
 

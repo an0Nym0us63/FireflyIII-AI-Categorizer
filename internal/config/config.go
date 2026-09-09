@@ -41,6 +41,7 @@ type Config struct {
 	TagSuggestMax     int
 
 	AmazonOrdersFile string
+	PayPalCsvFile    string
 
 	MailAccounts  []MailAccount
 	MailDetectors []MailDetector
@@ -153,6 +154,7 @@ func Load() (*Config, *Store, error) {
 		TagSuggestEnabled:         getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
 		TagSuggestMax:             getEnvInt("TAG_SUGGEST_MAX", 3),
 		AmazonOrdersFile:          getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
+		PayPalCsvFile:             getEnv("PAYPAL_CSV_FILE", "/data/paypal"),
 		GeminiThinking:            getEnv("GEMINI_THINKING", "low"),
 		AIDBFile:                  getEnv("AI_DB_FILE", "/data/ai.db"),
 		WorkerConcurrency:         getEnvInt("WORKER_CONCURRENCY", 1),

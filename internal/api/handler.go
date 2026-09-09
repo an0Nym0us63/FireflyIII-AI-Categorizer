@@ -28,6 +28,7 @@ import (
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/firefly"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/job"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/mailorder"
+	"github.com/openaccountants/firefly-iii-ai-categorize/internal/paypal"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/pipeline"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/version"
 	"github.com/openaccountants/firefly-iii-ai-categorize/internal/worker"
@@ -2531,7 +2532,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), paypal.Load(cfg.PayPalCsvFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 
 	h.mu.Lock()
 	h.fc = fc
