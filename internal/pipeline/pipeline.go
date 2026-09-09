@@ -1518,17 +1518,14 @@ func mergeTag(tags []string, add string) []string {
 	return append(tags, add)
 }
 
-// applyDetectorTags adds the detector's payment tag and default tags to the
-// outcome, on ANY path (email, CSV, or normal classification).
+// applyDetectorTags adds the detector's "tag à ajouter" (det.Tag) to the outcome
+// on ANY path (email, CSV, or normal classification). Default tags are NOT added
+// here — they remain fallback-only (applied only when parsing yields nothing).
 func applyDetectorTags(tags []string, det *config.MailDetector) []string {
 	if det == nil {
 		return tags
 	}
-	tags = mergeTag(tags, det.Tag)
-	for _, t := range det.DefaultTags {
-		tags = mergeTag(tags, t)
-	}
-	return tags
+	return mergeTag(tags, det.Tag)
 }
 
 // isPayPal reports whether a transaction went through PayPal, from its
