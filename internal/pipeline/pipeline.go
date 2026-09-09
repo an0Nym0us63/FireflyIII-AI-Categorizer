@@ -381,18 +381,6 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		return nil
 	}
 
-	// PayPal : retrouver le vrai payeur (source) derrière une opération PayPal.
-	if extraContext == "" && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
-		if merchant, items, _, ok := p.paypal.Lookup(amount, fireflyDate); ok && merchant != "" {
-			txt := "Real counterparty (payer) behind this PayPal transaction: " + merchant
-			if len(items) > 0 {
-				txt += "\nDetails: " + strings.Join(items, " | ")
-			}
-			extraContext = txt
-			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
-		}
-	}
-
 	// Ségrégation : n'offrir au LLM que les catégories et tags déjà utilisés sur
 	// des revenus (deposits). Repli sur toutes les catégories si pas d'historique.
 	incCats, incTags := vocabFromHistory(p.allIncomeHistory(ctx), categories, clCats)
@@ -443,6 +431,18 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			extraContext += "\n"
 		}
 		extraContext += "Instruction supplémentaire de l'utilisateur : " + hint[0]
+	}
+
+	// PayPal : retrouver le vrai payeur (source) derrière une opération PayPal.
+	if extraContext == "" && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
+		if merchant, items, _, ok := p.paypal.Lookup(amount, fireflyDate); ok && merchant != "" {
+			txt := "Real counterparty (payer) behind this PayPal transaction: " + merchant
+			if len(items) > 0 {
+				txt += "\nDetails: " + strings.Join(items, " | ")
+			}
+			extraContext = txt
+			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
+		}
 	}
 
 	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
