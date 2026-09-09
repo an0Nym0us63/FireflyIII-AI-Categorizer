@@ -1343,6 +1343,20 @@ async function markSelectedTreated() {
     } catch (e) { alert('Échec: ' + e.message); }
 }
 
+async function markSelectedUntreated() {
+    var ids = Array.from(selectedTxns);
+    if (!ids.length) return;
+    if (!confirm('Marquer ' + ids.length + ' transaction(s) comme NON traité(s) ?')) return;
+    try {
+        var res = await fetch('/api/transactions/mark-untreated', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: ids})
+        });
+        if (!res.ok) throw new Error(await res.text());
+        clearSelection();
+        loadTransactions(txnPage);
+    } catch (e) { alert('Échec: ' + e.message); }
+}
+
 function toggleSelectAll(master) {
     var pageIds = [];
     $('#txn-tbody input[type=checkbox]').each(function () {
