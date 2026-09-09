@@ -1042,17 +1042,13 @@ func (h *Handler) editBulk(w http.ResponseWriter, r *http.Request) {
 		applyOne := func(id string) bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			var splits []firefly.Split
+			// Specific split targeted (journal_ids): change only it, siblings
+			// preserved (needs the re-fetch inside putGroupPreserving).
 			if jid := req.JournalIDs[id]; jid != "" {
-				splits = []firefly.Split{{JournalID: jid}}
-			} else {
-				txns, err := fc.GetTransactionsByIDs(ctx, []string{id})
-				if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
-					return false
-				}
-				splits = txns[0].Splits
+				return fc.EditTransaction(ctx, id, []firefly.Split{{JournalID: jid}}, req.CategoryName, req.DestinationName, req.SourceName, req.Tags) == nil
 			}
-			return fc.EditTransaction(ctx, id, splits, req.CategoryName, req.DestinationName, req.SourceName, req.Tags) == nil
+			// Whole transaction: fetch the group only once (no redundant pre-fetch).
+			return fc.EditTransactionAll(ctx, id, req.CategoryName, req.DestinationName, req.SourceName, req.Tags) == nil
 		}
 		for _, id := range req.IDs {
 			wg.Add(1)
@@ -1143,18 +1139,10 @@ func (h *Handler) editTransaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	txns, err := fc.GetTransactionsByIDs(r.Context(), []string{id})
-	if err != nil || len(txns) == 0 || len(txns[0].Splits) == 0 {
-		http.Error(w, "transaction not found", http.StatusNotFound)
-		return
-	}
-	destName, srcName := req.DestinationName, req.SourceName
-	if txns[0].Splits[0].Type == "deposit" {
-		destName = ""
-	} else {
-		srcName = ""
-	}
-	if err := fc.EditTransaction(r.Context(), id, txns[0].Splits, req.CategoryName, destName, srcName, req.Tags); err != nil {
+	// The front sends only the relevant counterparty (source_name for income,
+	// destination_name for expense), so we pass both and EditTransactionAll
+	// applies whichever is set — fetching the group only once.
+	if err := fc.EditTransactionAll(r.Context(), id, req.CategoryName, req.DestinationName, req.SourceName, req.Tags); err != nil {
 		http.Error(w, fmt.Sprintf("failed to edit: %v", err), http.StatusBadGateway)
 		return
 	}

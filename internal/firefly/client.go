@@ -675,6 +675,13 @@ func (c *Client) putGroupPreserving(ctx context.Context, id string, applyRules b
 	if err != nil {
 		return err
 	}
+	return c.putGroupWithIDs(ctx, id, ids, applyRules, changes)
+}
+
+// putGroupWithIDs builds and sends the group PUT from already-known split IDs,
+// avoiding a redundant fetch. Targets carry their changes; siblings are echoed
+// by transaction_journal_id only (untouched, not deleted).
+func (c *Client) putGroupWithIDs(ctx context.Context, id string, ids []string, applyRules bool, changes map[string]map[string]interface{}) error {
 	// Never PUT an empty transactions array: it would wipe the group.
 	if len(ids) == 0 {
 		return fmt.Errorf("transaction %s has no splits to update", id)
@@ -693,6 +700,66 @@ func (c *Client) putGroupPreserving(ctx context.Context, id string, applyRules b
 		"transactions":  txs,
 	}
 	return c.put(ctx, fmt.Sprintf("%s/api/v1/transactions/%s", c.baseURL, id), body)
+}
+
+// EditTransactionAll applies the same category/counterparty/tags to EVERY split
+// of the group, fetching the group only ONCE (no caller pre-fetch needed).
+func (c *Client) EditTransactionAll(ctx context.Context, id, categoryName, destinationName, sourceName string, tags []string) error {
+	if tags == nil {
+		tags = []string{}
+	}
+	ids, err := c.fetchGroupSplitIDs(ctx, id)
+	if err != nil {
+		return err
+	}
+	ch := map[string]interface{}{"tags": tags}
+	if strings.TrimSpace(categoryName) != "" {
+		ch["category_name"] = categoryName
+	}
+	if strings.TrimSpace(destinationName) != "" {
+		ch["destination_name"] = destinationName
+	}
+	if strings.TrimSpace(sourceName) != "" {
+		ch["source_name"] = sourceName
+	}
+	changes := make(map[string]map[string]interface{}, len(ids))
+	for _, jid := range ids {
+		changes[jid] = ch
+	}
+	return c.putGroupWithIDs(ctx, id, ids, false, changes)
+}
+
+// ApplyHumanCategoryAll applies a reviewed category + counterparty to every split
+// of the group, fetching it only ONCE (also strips old AI control tags).
+func (c *Client) ApplyHumanCategoryAll(ctx context.Context, id, categoryID, destinationID, sourceID string) error {
+	txns, err := c.GetTransactionsByIDs(ctx, []string{id})
+	if err != nil {
+		return err
+	}
+	if len(txns) == 0 || len(txns[0].Splits) == 0 {
+		return fmt.Errorf("transaction %s has no splits", id)
+	}
+	changes := make(map[string]map[string]interface{})
+	ids := make([]string, 0, len(txns[0].Splits))
+	for _, s := range txns[0].Splits {
+		ids = append(ids, s.JournalID)
+		tags := make([]string, 0, len(s.Tags))
+		for _, t := range s.Tags {
+			if c.isControlTag(t) {
+				continue
+			}
+			tags = append(tags, t)
+		}
+		ch := map[string]interface{}{"tags": tags, "category_id": categoryID}
+		if destinationID != "" {
+			ch["destination_id"] = destinationID
+		}
+		if sourceID != "" {
+			ch["source_id"] = sourceID
+		}
+		changes[s.JournalID] = ch
+	}
+	return c.putGroupWithIDs(ctx, id, ids, false, changes)
 }
 
 func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName, sourceName string, tags []string) error {
