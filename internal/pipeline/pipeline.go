@@ -412,7 +412,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 
 	// PayPal : retrouver le vrai payeur (source) derri\u00e8re une op\u00e9ration PayPal,
 	// essay\u00e9 quand l'email n'a rien donn\u00e9 (et hors erreur IMAP).
-	if extraContext == "" && !mailErrored && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
+	if extraContext == "" && !mailErrored && p.paypal.Loaded() && (matchedDet != nil || isPayPal(first.Description, first.SourceName)) {
 		eventlog.Info("mail", "Recherche CSV PayPal (revenu)\u2026", transactionID)
 		if merchant, items, _, ok := p.paypal.Lookup(amount, fireflyDate); ok && merchant != "" {
 			txt := "Real counterparty (payer) behind this PayPal transaction: " + merchant
@@ -671,6 +671,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		skipIfEmpty = true
 		matchedDet = det
 		mailBack, mailFwd = det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays)
+		eventlog.Info("mail", "Recherche email (dépense)\u2026", transactionID)
 		if body, inst, ok, cands, hits, note, ferr := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			enrichSource = "email"
@@ -703,6 +704,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// For Amazon purchases, match the bank transaction to an order in the
 	// order-history export and feed the product names to the LLM.
 	if extraContext == "" && p.amazon.Loaded() && amazonTxn {
+		eventlog.Info("mail", "Recherche CSV Amazon\u2026", transactionID)
 		labelDate := amazon.ParseLabelDate(j.Description, fireflyDate)
 		card := ""
 		if m := reCardLast4.FindStringSubmatch(j.Description); m != nil {
@@ -712,13 +714,17 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			extraContext = "Amazon order contents (matched by date): " + strings.Join(products, "; ")
 			enrichSource = "csv"
 			amazonUncertain = !certain
+			eventlog.Info("mail", fmt.Sprintf("CSV Amazon : %d article(s)", len(products)), transactionID)
 			slog.Info("amazon order matched", "id", transactionID, "items", len(products), "certain", certain)
+		} else {
+			eventlog.Warn("mail", "Aucune correspondance CSV Amazon", transactionID)
 		}
 	}
 
 	// PayPal: recover the real merchant (and item details) behind an opaque
 	// "PAYPAL *…" transaction, matched by amount+date in the PayPal CSV export.
-	if extraContext == "" && p.paypal.Loaded() && isPayPal(j.Description, j.DestinationName) {
+	if extraContext == "" && p.paypal.Loaded() && (matchedDet != nil || isPayPal(j.Description, j.DestinationName)) {
+		eventlog.Info("mail", "Recherche CSV PayPal (dépense)\u2026", transactionID)
 		if merchant, items, certain, ok := p.paypal.Lookup(derefAmount(j.Amount), fireflyDate); ok && merchant != "" {
 			txt := "Real merchant behind this PayPal payment: " + merchant
 			if len(items) > 0 {
@@ -730,6 +736,8 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			opts.MatchDestination = true // resolve the real merchant as destination
 			eventlog.Info("mail", "Marchand PayPal retrouvé via CSV : "+merchant, transactionID)
 			slog.Info("paypal merchant matched", "id", transactionID, "merchant", merchant, "certain", certain)
+		} else {
+			eventlog.Warn("mail", "Aucune correspondance CSV PayPal (dépense)", transactionID)
 		}
 	}
 
