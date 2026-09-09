@@ -328,6 +328,8 @@ function removeDetSender(i, si) { mailDetectors[i].senders.splice(si, 1); render
 // ─── Force / tag rules ─────────────────────────────────────────────────────
 var forceDestinations = [];
 var forceCategories = [];
+var placeholderCategories = [];
+function forceArr(kind) { return kind === 'dest' ? forceDestinations : (kind === 'placeholder' ? placeholderCategories : forceCategories); }
 var tagRules = [];
 
 function renderForceLists() {
@@ -341,16 +343,18 @@ function renderForceLists() {
     var c = document.getElementById('force-categories');
     if (d) d.innerHTML = chips(forceDestinations, 'dest') || '<span class="text-muted" style="font-size:12px">aucune</span>';
     if (c) c.innerHTML = chips(forceCategories, 'cat') || '<span class="text-muted" style="font-size:12px">aucune</span>';
+    var ph = document.getElementById('placeholder-categories');
+    if (ph) ph.innerHTML = chips(placeholderCategories, 'placeholder') || '<span class="text-muted" style="font-size:12px">aucune</span>';
 }
 function addForceItem(kind, v) {
     v = (v || '').trim();
     if (!v) return;
-    var arr = kind === 'dest' ? forceDestinations : forceCategories;
+    var arr = forceArr(kind);
     if (arr.indexOf(v) < 0) arr.push(v);
     renderForceLists();
 }
 function removeForceItem(kind, i) {
-    (kind === 'dest' ? forceDestinations : forceCategories).splice(i, 1);
+    forceArr(kind).splice(i, 1);
     renderForceLists();
 }
 
@@ -2767,6 +2771,7 @@ async function loadSettings() {
         renderMailConfig();
         forceDestinations = (d.force_destinations || []).slice();
         forceCategories = (d.force_categories || []).slice();
+        placeholderCategories = (d.placeholder_categories || []).slice();
         tagRules = (d.tag_rules || []).map(function (r) { return {from: r.from, to: r.to}; });
         renderForceLists();
         renderTagRules();
@@ -2872,6 +2877,7 @@ async function saveSettings() {
     payload.mail_detectors = mailDetectors;
     payload.force_destinations = forceDestinations;
     payload.force_categories = forceCategories;
+    payload.placeholder_categories = placeholderCategories;
     payload.tag_rules = tagRules.filter(function (r) { return (r.from || '').trim() !== ''; });
     } else if (p === 'deepseek') {
         var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();

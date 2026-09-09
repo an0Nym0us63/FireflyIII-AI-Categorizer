@@ -399,6 +399,22 @@ func foldAccents(s string) string {
 	return repl.Replace(s)
 }
 
+// isPlaceholderCategory reports whether a category is a placeholder to be
+// treated as empty (normal flow: automatch then AI), not as "already set".
+func (h *Handler) isPlaceholderCategory(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	nf := foldAccents(name)
+	for _, c := range h.effectiveConfig().PlaceholderCategories {
+		if foldAccents(c) == nf {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *Handler) isForcedCategory(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -473,7 +489,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	if first.Type == "deposit" {
 		cpName = first.SourceName
 	}
-	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) {
+	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) && !h.isPlaceholderCategory(first.CategoryName) {
 		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
 		eventlog.Info("webhook", fmt.Sprintf("Catégorie déjà définie (%s)", first.CategoryName), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
@@ -673,11 +689,12 @@ type configResponse struct {
 	GeminiThinking  string `json:"gemini_thinking"`
 	GeminiGrounding bool   `json:"gemini_grounding"`
 
-	MailAccounts      []config.MailAccount  `json:"mail_accounts"`
-	MailDetectors     []config.MailDetector `json:"mail_detectors"`
-	ForceDestinations []string              `json:"force_destinations"`
-	ForceCategories   []string              `json:"force_categories"`
-	TagRules          []config.TagRule      `json:"tag_rules"`
+	MailAccounts          []config.MailAccount  `json:"mail_accounts"`
+	MailDetectors         []config.MailDetector `json:"mail_detectors"`
+	ForceDestinations     []string              `json:"force_destinations"`
+	ForceCategories       []string              `json:"force_categories"`
+	PlaceholderCategories []string              `json:"placeholder_categories"`
+	TagRules              []config.TagRule      `json:"tag_rules"`
 
 	HistoryContextLimit int `json:"history_context_limit"`
 	HistoryLookbackDays int `json:"history_lookback_days"`
@@ -711,11 +728,12 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		GeminiThinking:  cfg.GeminiThinking,
 		GeminiGrounding: cfg.GeminiGrounding,
 
-		MailAccounts:      maskMailAccounts(cfg.MailAccounts),
-		MailDetectors:     cfg.MailDetectors,
-		ForceDestinations: cfg.ForceDestinations,
-		ForceCategories:   cfg.ForceCategories,
-		TagRules:          cfg.TagRules,
+		MailAccounts:          maskMailAccounts(cfg.MailAccounts),
+		MailDetectors:         cfg.MailDetectors,
+		ForceDestinations:     cfg.ForceDestinations,
+		ForceCategories:       cfg.ForceCategories,
+		PlaceholderCategories: cfg.PlaceholderCategories,
+		TagRules:              cfg.TagRules,
 
 		HistoryContextLimit: cfg.HistoryContextLimit,
 		HistoryLookbackDays: cfg.HistoryLookbackDays,
@@ -750,11 +768,12 @@ type configUpdateRequest struct {
 	GeminiThinking  *string `json:"gemini_thinking"`
 	GeminiGrounding *bool   `json:"gemini_grounding"`
 
-	MailAccounts      *[]config.MailAccount  `json:"mail_accounts"`
-	MailDetectors     *[]config.MailDetector `json:"mail_detectors"`
-	ForceDestinations *[]string              `json:"force_destinations"`
-	ForceCategories   *[]string              `json:"force_categories"`
-	TagRules          *[]config.TagRule      `json:"tag_rules"`
+	MailAccounts          *[]config.MailAccount  `json:"mail_accounts"`
+	MailDetectors         *[]config.MailDetector `json:"mail_detectors"`
+	ForceDestinations     *[]string              `json:"force_destinations"`
+	ForceCategories       *[]string              `json:"force_categories"`
+	PlaceholderCategories *[]string              `json:"placeholder_categories"`
+	TagRules              *[]config.TagRule      `json:"tag_rules"`
 
 	HistoryContextLimit *int `json:"history_context_limit"`
 	HistoryLookbackDays *int `json:"history_lookback_days"`
@@ -2609,6 +2628,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.ForceCategories != nil {
 		existing.ForceCategories = *req.ForceCategories
+	}
+	if req.PlaceholderCategories != nil {
+		existing.PlaceholderCategories = *req.PlaceholderCategories
 	}
 	if req.TagRules != nil {
 		existing.TagRules = *req.TagRules

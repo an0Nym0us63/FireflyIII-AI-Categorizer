@@ -44,9 +44,10 @@ type Config struct {
 	MailAccounts  []MailAccount
 	MailDetectors []MailDetector
 
-	ForceDestinations []string  // if a txn's current destination is here, force re-pick
-	ForceCategories   []string  // if a txn's current category is here, force re-categorize
-	TagRules          []TagRule // tags to strip (optionally replace) from transactions
+	ForceDestinations     []string  // if a txn's current destination is here, force re-pick
+	ForceCategories       []string  // if a txn's current category is here, force re-categorize
+	PlaceholderCategories []string  // treated as empty (normal flow: automatch then AI), not skipped
+	TagRules              []TagRule // tags to strip (optionally replace) from transactions
 
 	GeminiThinking  string
 	GeminiGrounding bool
@@ -258,6 +259,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.ForceCategories != nil {
 		cfg.ForceCategories = sc.ForceCategories
+	}
+	if sc.PlaceholderCategories != nil {
+		cfg.PlaceholderCategories = sc.PlaceholderCategories
 	}
 	if sc.TagRules != nil {
 		cfg.TagRules = sc.TagRules

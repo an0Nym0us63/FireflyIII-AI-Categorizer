@@ -38,6 +38,7 @@ type StoredConfig struct {
 	MailDetectors           []MailDetector `json:"mail_detectors,omitempty"`
 	ForceDestinations       []string       `json:"force_destinations,omitempty"`
 	ForceCategories         []string       `json:"force_categories,omitempty"`
+	PlaceholderCategories   []string       `json:"placeholder_categories,omitempty"`
 	TagRules                []TagRule      `json:"tag_rules,omitempty"`
 	WorkerConcurrency       int            `json:"worker_concurrency,omitempty"`
 	BatchConcurrency        int            `json:"batch_concurrency,omitempty"`
