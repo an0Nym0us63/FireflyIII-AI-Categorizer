@@ -915,7 +915,8 @@ function buildJobRow(j) {
         + '<td class="j-actions text-right"><button class="btn btn-xs btn-default" title="Pourquoi ce match ?" onclick="event.stopPropagation();openAutoMatch(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-search"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Éditer" onclick="event.stopPropagation();openEditModal(\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-pencil"></i></button> '
         + '<button class="btn btn-xs btn-default" title="Relancer l\'analyse" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-refresh"></i></button> '
-        + '<button class="btn btn-xs btn-default" title="Réanalyser en IA pure (sans auto-match ni exemples passés)" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\',true)"><i class="fa fa-bolt"></i></button></td>';
+        + '<button class="btn btn-xs btn-default" title="Réanalyser en IA pure (sans auto-match ni exemples passés)" onclick="rerunJob(event,\'' + esc(j.transaction_id || '') + '\',true)"><i class="fa fa-bolt"></i></button> '
+        + '<button class="btn btn-xs btn-default" title="Marquer comme non traité (remettre en review)" onclick="markJobUntreated(event,\'' + esc(j.transaction_id || '') + '\')"><i class="fa fa-undo"></i></button></td>';
     return tr;
 }
 
@@ -927,6 +928,14 @@ function rerunJob(ev, txnId, force) {
     var url = '/api/transactions/' + encodeURIComponent(txnId) + '/rerun?' + (force ? 'force=1&' : '') + 'hint=' + encodeURIComponent(hint);
     $.ajax({url: url, method: 'POST'})
         .fail(function (x) { alert('Échec: ' + (x.responseText || x.status)); });
+}
+
+function markJobUntreated(ev, txnId) {
+    ev.stopPropagation();
+    if (!txnId) return;
+    fetch('/api/transactions/mark-untreated', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: [txnId]})})
+        .then(function (r) { if (!r.ok) throw new Error(r.status); var b = ev.target.closest('button'); if (b) b.className = 'btn btn-xs btn-success'; })
+        .catch(function (e) { alert('Échec: ' + e.message); });
 }
 
 function purgeJobs() {
