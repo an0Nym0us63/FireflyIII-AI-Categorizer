@@ -95,6 +95,7 @@ Destination account rules:
 - When an existing expense account clearly matches the payee, use MATCH with the exact account name from the list.
 - When you are confident the payee represents a new expense account not in the list, use CREATE with a reasonable, concise account name (e.g. "Amazon", "Netflix", "EDF", "SNCF", "Leclerc"). Prefer the canonical business name.
 - Never force a poor match: if no listed account clearly corresponds to the payee, prefer CREATE over picking an unrelated existing account.
+- CRITICAL — payment intermediaries: when the description, notes, or the provided context/email reveal the REAL merchant or payer behind a payment intermediary (PayPal, PayLib, Lydia, Sumup, Stripe, Qonto, "VIR", "VIREMENT EN VOTRE FAVEUR", etc.), you MUST set the account to that real merchant/payer (MATCH the existing one, or CREATE it), and NEVER the intermediary itself. Example: a PayPal refund from LIDL SNC → account "Lidl" (not "Paypal"); a "PAYPAL *NETFLIX" charge → account "Netflix". The intermediary name is only a fallback when the real party truly cannot be determined.
 - Only set destination to null when the destination_name is truly ambiguous (e.g. generic names like "CB", "PAIEMENT CB", "VIR", "RETRAIT", or empty).
 
 Rules:
