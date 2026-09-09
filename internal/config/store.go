@@ -30,6 +30,7 @@ type StoredConfig struct {
 	DestinationMatchEnabled   *bool          `json:"destination_match_enabled,omitempty"`
 	IncomeEnabled             *bool          `json:"income_enabled,omitempty"`
 	WebhookProcessCategorized *bool          `json:"webhook_process_categorized,omitempty"`
+	MailGraceMinutes          int            `json:"mail_grace_minutes,omitempty"`
 	TagSuggestEnabled         *bool          `json:"tag_suggest_enabled,omitempty"`
 	TagSuggestMax             int            `json:"tag_suggest_max,omitempty"`
 	SearchEngine              string         `json:"search_engine,omitempty"` // "google", "duckduckgo", or "" (disabled)

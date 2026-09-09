@@ -523,7 +523,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	eventlog.Info("job", fmt.Sprintf("Job créé (%s) : %s", first.Type, first.Description), string(payload.Content.ID))
 	transactionID := string(payload.Content.ID)
 
-	h.webhookPool.Submit(worker.Task{
+	task := worker.Task{
 		JobID: j.ID,
 		Execute: func(ctx context.Context) error {
 			var err error
@@ -537,7 +537,20 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			return err
 		},
-	})
+	}
+	// Grace delay: if a mail detector matches, wait a few minutes so the order
+	// confirmation email has time to arrive before we classify (else we'd apply
+	// the detector defaults prematurely).
+	if grace := h.effectiveConfig().MailGraceMinutes; grace > 0 {
+		if p := h.getPipe(); p != nil && p.MailDetectorMatches(first.Description, first.Type) {
+			eventlog.Info("mail", fmt.Sprintf("Traitement différé de %d min (attente de l'email)", grace), transactionID)
+			time.AfterFunc(time.Duration(grace)*time.Minute, func() { h.webhookPool.Submit(task) })
+		} else {
+			h.webhookPool.Submit(task)
+		}
+	} else {
+		h.webhookPool.Submit(task)
+	}
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": j.ID})
 }
@@ -683,6 +696,7 @@ type configResponse struct {
 	DestinationMatchEnabled   bool `json:"destination_match_enabled"`
 	IncomeEnabled             bool `json:"income_enabled"`
 	WebhookProcessCategorized bool `json:"webhook_process_categorized"`
+	MailGraceMinutes          int  `json:"mail_grace_minutes"`
 
 	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
 
@@ -723,6 +737,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		DestinationMatchEnabled:   cfg.DestinationMatchEnabled,
 		IncomeEnabled:             cfg.IncomeEnabled,
 		WebhookProcessCategorized: cfg.WebhookProcessCategorized,
+		MailGraceMinutes:          cfg.MailGraceMinutes,
 
 		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
@@ -764,6 +779,7 @@ type configUpdateRequest struct {
 	DestinationMatchEnabled   *bool `json:"destination_match_enabled"`
 	IncomeEnabled             *bool `json:"income_enabled"`
 	WebhookProcessCategorized *bool `json:"webhook_process_categorized"`
+	MailGraceMinutes          *int  `json:"mail_grace_minutes"`
 
 	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
@@ -2610,6 +2626,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.WebhookProcessCategorized != nil {
 		existing.WebhookProcessCategorized = req.WebhookProcessCategorized
+	}
+	if req.MailGraceMinutes != nil && *req.MailGraceMinutes >= 0 {
+		existing.MailGraceMinutes = *req.MailGraceMinutes
 	}
 	if req.TagSuggestEnabled != nil {
 		existing.TagSuggestEnabled = req.TagSuggestEnabled
