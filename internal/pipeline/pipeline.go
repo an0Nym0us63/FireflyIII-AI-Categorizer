@@ -388,8 +388,12 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// Enrichissement mail pour un revenu : uniquement les détecteurs dont le
 	// scope inclut "deposit" (un détecteur dépense comme Amazon n'ira jamais
 	// chercher de mail/CSV pour un avoir/remboursement).
+	var paymentTag, forcedSource string
 	var extraContext string
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
+		if t := strings.TrimSpace(det.Tag); t != "" {
+			paymentTag = t
+		}
 		if body, _, ok, _, _, _, ferr := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
 			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
@@ -441,6 +445,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 				txt += "\nDetails: " + strings.Join(items, " | ")
 			}
 			extraContext = txt
+			forcedSource = merchant
 			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
 		}
 	}
@@ -543,6 +548,29 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		}
 	}
 
+	// Source identifiée par le CSV PayPal : elle fait autorité → on écrase la
+	// source "Paypal" laissée par le LLM.
+	if forcedSource != "" {
+		if created, e := p.firefly.CreateRevenueAccount(ctx, forcedSource); e == nil {
+			outcome.SourceID = created.ID
+			outcome.DestConfidence = "CLASSIFIED"
+			srcAccount = forcedSource
+			srcAction = "MATCH"
+		}
+	}
+	// Tag du détecteur (ex. "Paypal").
+	if paymentTag != "" {
+		found := false
+		for _, t := range outcome.Tags {
+			if strings.EqualFold(t, paymentTag) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			outcome.Tags = append(outcome.Tags, paymentTag)
+		}
+	}
 	if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
 		return fmt.Errorf("update transaction: %w", err)
