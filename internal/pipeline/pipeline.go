@@ -453,6 +453,9 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			p.registry.SetFailed(j.ID, err.Error())
 			return fmt.Errorf("update transaction (defaults): %w", err)
 		}
+		if p.aidb != nil {
+			_ = p.aidb.Upsert(aidb.Record{TransactionID: transactionID, Outcome: string(classifier.Classified), Category: out.Category, DestConfidence: "CLASSIFIED", Reason: out.Reason, Direction: "deposit", Reviewed: true})
+		}
 		eventlog.Info("mail", "Ni email ni CSV \u2014 d\u00e9fauts du d\u00e9tecteur appliqu\u00e9s (revenu)", transactionID)
 		p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", matchedDet.DefaultDestination, "MATCH", out.Tags, nil)
 		return nil
@@ -770,6 +773,9 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
 				p.registry.SetFailed(j.ID, err.Error())
 				return fmt.Errorf("update transaction (defaults): %w", err)
+			}
+			if p.aidb != nil {
+				_ = p.aidb.Upsert(aidb.Record{TransactionID: transactionID, Outcome: string(classifier.Classified), Category: out.Category, DestConfidence: "CLASSIFIED", Reason: out.Reason, Direction: "withdrawal", Reviewed: true})
 			}
 			eventlog.Info("mail", "Email non trouvé — défauts du détecteur appliqués", transactionID)
 			p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", destName, "MATCH", out.Tags, nil)
