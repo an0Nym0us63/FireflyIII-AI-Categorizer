@@ -388,15 +388,12 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// Enrichissement mail pour un revenu : uniquement les détecteurs dont le
 	// scope inclut "deposit" (un détecteur dépense comme Amazon n'ira jamais
 	// chercher de mail/CSV pour un avoir/remboursement).
-	var paymentTag, forcedSource, enrichSource string
+	var forcedSource, enrichSource string
 	var extraContext string
 	var matchedDet *config.MailDetector
 	var mailErrored bool
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
 		matchedDet = det
-		if t := strings.TrimSpace(det.Tag); t != "" {
-			paymentTag = t
-		}
 		eventlog.Info("mail", "Recherche email (revenu)\u2026", transactionID)
 		if body, _, ok, _, _, _, ferr := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
@@ -576,19 +573,8 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			srcAction = "MATCH"
 		}
 	}
-	// Tag du détecteur (ex. "Paypal").
-	if paymentTag != "" {
-		found := false
-		for _, t := range outcome.Tags {
-			if strings.EqualFold(t, paymentTag) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			outcome.Tags = append(outcome.Tags, paymentTag)
-		}
-	}
+	// Tags du détecteur (tag de paiement + tags par défaut) — sur tout chemin.
+	outcome.Tags = applyDetectorTags(outcome.Tags, matchedDet)
 	switch enrichSource {
 	case "email":
 		outcome.Reason = "[via email] " + outcome.Reason
@@ -655,7 +641,6 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var skipIfEmpty bool
 	var matchedDet *config.MailDetector
 	var mailErrored bool
-	var paymentTag string
 	var forceDestination bool
 	var installmentTag bool
 	var enrichSource string // "email" | "csv"
@@ -681,9 +666,6 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				opts.MatchDestination = true // determine the real merchant from the email
 				forceDestination = true
 				mailMerchant = mailorder.ExtractMerchant(body)
-			}
-			if t := strings.TrimSpace(det.Tag); t != "" {
-				paymentTag = t
 			}
 			if inst {
 				installmentTag = true
@@ -1083,19 +1065,8 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		}
 	}
 
-	// Payment-method tag from the mail detector (e.g. "paypal").
-	if paymentTag != "" {
-		has := false
-		for _, t := range outcome.Tags {
-			if strings.EqualFold(t, paymentTag) {
-				has = true
-				break
-			}
-		}
-		if !has {
-			outcome.Tags = append(outcome.Tags, paymentTag)
-		}
-	}
+	// Tags du détecteur (tag de paiement + tags par défaut) — sur tout chemin.
+	outcome.Tags = applyDetectorTags(outcome.Tags, matchedDet)
 	// 4-installment payment.
 	if installmentTag {
 		has := false
@@ -1531,6 +1502,33 @@ func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amou
 func isAmazon(description, destinationName string) bool {
 	s := strings.ToLower(description + " " + destinationName)
 	return strings.Contains(s, "amazon") || strings.Contains(s, "amzn")
+}
+
+// mergeTag adds a tag to the list if not already present (case-insensitive).
+func mergeTag(tags []string, add string) []string {
+	add = strings.TrimSpace(add)
+	if add == "" {
+		return tags
+	}
+	for _, t := range tags {
+		if strings.EqualFold(t, add) {
+			return tags
+		}
+	}
+	return append(tags, add)
+}
+
+// applyDetectorTags adds the detector's payment tag and default tags to the
+// outcome, on ANY path (email, CSV, or normal classification).
+func applyDetectorTags(tags []string, det *config.MailDetector) []string {
+	if det == nil {
+		return tags
+	}
+	tags = mergeTag(tags, det.Tag)
+	for _, t := range det.DefaultTags {
+		tags = mergeTag(tags, t)
+	}
+	return tags
 }
 
 // isPayPal reports whether a transaction went through PayPal, from its
