@@ -489,7 +489,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	if first.Type == "deposit" {
 		cpName = first.SourceName
 	}
-	if first.CategoryID != "" && first.CategoryID != "0" && !h.isForcedCategory(first.CategoryName) && !h.isPlaceholderCategory(first.CategoryName) {
+	if first.CategoryID != "" && first.CategoryID != "0" && !h.effectiveConfig().WebhookProcessCategorized && !h.isForcedCategory(first.CategoryName) && !h.isPlaceholderCategory(first.CategoryName) {
 		slog.Info("webhook skipped: category already set", "category", first.CategoryName, "category_id", first.CategoryID, "txn_id", payload.Content.ID)
 		eventlog.Info("webhook", fmt.Sprintf("Catégorie déjà définie (%s)", first.CategoryName), string(payload.Content.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"skipped": true, "reason": "category already set"})
@@ -680,8 +680,9 @@ type configResponse struct {
 	CustomSystemContext string `json:"custom_system_context"`
 	Configured          bool   `json:"configured"`
 
-	DestinationMatchEnabled bool `json:"destination_match_enabled"`
-	IncomeEnabled           bool `json:"income_enabled"`
+	DestinationMatchEnabled   bool `json:"destination_match_enabled"`
+	IncomeEnabled             bool `json:"income_enabled"`
+	WebhookProcessCategorized bool `json:"webhook_process_categorized"`
 
 	TagSuggestEnabled bool `json:"tag_suggest_enabled"`
 
@@ -719,8 +720,9 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		CustomSystemContext: cfg.CustomSystemContext,
 		Configured:          cfg.IsConfigured(),
 
-		DestinationMatchEnabled: cfg.DestinationMatchEnabled,
-		IncomeEnabled:           cfg.IncomeEnabled,
+		DestinationMatchEnabled:   cfg.DestinationMatchEnabled,
+		IncomeEnabled:             cfg.IncomeEnabled,
+		WebhookProcessCategorized: cfg.WebhookProcessCategorized,
 
 		TagSuggestEnabled: cfg.TagSuggestEnabled,
 
@@ -759,8 +761,9 @@ type configUpdateRequest struct {
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
 
-	DestinationMatchEnabled *bool `json:"destination_match_enabled"`
-	IncomeEnabled           *bool `json:"income_enabled"`
+	DestinationMatchEnabled   *bool `json:"destination_match_enabled"`
+	IncomeEnabled             *bool `json:"income_enabled"`
+	WebhookProcessCategorized *bool `json:"webhook_process_categorized"`
 
 	TagSuggestEnabled *bool `json:"tag_suggest_enabled"`
 
@@ -2604,6 +2607,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.IncomeEnabled != nil {
 		existing.IncomeEnabled = req.IncomeEnabled
+	}
+	if req.WebhookProcessCategorized != nil {
+		existing.WebhookProcessCategorized = req.WebhookProcessCategorized
 	}
 	if req.TagSuggestEnabled != nil {
 		existing.TagSuggestEnabled = req.TagSuggestEnabled

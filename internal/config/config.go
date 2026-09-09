@@ -33,8 +33,9 @@ type Config struct {
 	HistoryLookbackDays int
 	HistoryContextLimit int
 
-	DestinationMatchEnabled bool
-	IncomeEnabled           bool // process deposits (income) as well as withdrawals
+	DestinationMatchEnabled   bool
+	IncomeEnabled             bool // process deposits (income) as well as withdrawals
+	WebhookProcessCategorized bool // if true, the webhook processes a txn even when it already has a category
 
 	TagSuggestEnabled bool
 	TagSuggestMax     int
@@ -131,31 +132,32 @@ func (d MailDetector) FwdDaysOr(def int) int {
 // allow first-time configuration via the UI.
 func Load() (*Config, *Store, error) {
 	cfg := &Config{
-		Port:                    getEnv("PORT", "3000"),
-		EnableUI:                getEnv("ENABLE_UI", "true") != "false",
-		AIProvider:              getEnv("AI_PROVIDER", "openai"),
-		FireflyURL:              getEnv("FIREFLY_URL", ""),
-		FireflyToken:            getEnv("FIREFLY_PERSONAL_TOKEN", ""),
-		OpenAIKey:               getEnv("OPENAI_API_KEY", ""),
-		OpenAIModel:             getEnv("OPENAI_MODEL", "gpt-4o-mini"),
-		OpenAIBaseURL:           getEnv("OPENAI_BASE_URL", ""),
-		GeminiKey:               getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:             getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
-		DeepseekKey:             getEnv("DEEPSEEK_API_KEY", ""),
-		DeepseekModel:           getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
-		TagPrefix:               getEnv("TAG_PREFIX", "ai"),
-		HistoryContextLimit:     getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
-		HistoryLookbackDays:     getEnvInt("HISTORY_LOOKBACK_DAYS", 365),
-		DestinationMatchEnabled: getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
-		IncomeEnabled:           getEnv("INCOME_ENABLED", "false") == "true",
-		TagSuggestEnabled:       getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
-		TagSuggestMax:           getEnvInt("TAG_SUGGEST_MAX", 3),
-		AmazonOrdersFile:        getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
-		GeminiThinking:          getEnv("GEMINI_THINKING", "low"),
-		AIDBFile:                getEnv("AI_DB_FILE", "/data/ai.db"),
-		WorkerConcurrency:       getEnvInt("WORKER_CONCURRENCY", 1),
-		BatchConcurrency:        getEnvInt("BATCH_CONCURRENCY", 3),
-		BulkConcurrency:         getEnvInt("BULK_CONCURRENCY", 4),
+		Port:                      getEnv("PORT", "3000"),
+		EnableUI:                  getEnv("ENABLE_UI", "true") != "false",
+		AIProvider:                getEnv("AI_PROVIDER", "openai"),
+		FireflyURL:                getEnv("FIREFLY_URL", ""),
+		FireflyToken:              getEnv("FIREFLY_PERSONAL_TOKEN", ""),
+		OpenAIKey:                 getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:               getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAIBaseURL:             getEnv("OPENAI_BASE_URL", ""),
+		GeminiKey:                 getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:               getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+		DeepseekKey:               getEnv("DEEPSEEK_API_KEY", ""),
+		DeepseekModel:             getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
+		TagPrefix:                 getEnv("TAG_PREFIX", "ai"),
+		HistoryContextLimit:       getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
+		HistoryLookbackDays:       getEnvInt("HISTORY_LOOKBACK_DAYS", 365),
+		DestinationMatchEnabled:   getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
+		IncomeEnabled:             getEnv("INCOME_ENABLED", "false") == "true",
+		WebhookProcessCategorized: getEnv("WEBHOOK_PROCESS_CATEGORIZED", "false") == "true",
+		TagSuggestEnabled:         getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
+		TagSuggestMax:             getEnvInt("TAG_SUGGEST_MAX", 3),
+		AmazonOrdersFile:          getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
+		GeminiThinking:            getEnv("GEMINI_THINKING", "low"),
+		AIDBFile:                  getEnv("AI_DB_FILE", "/data/ai.db"),
+		WorkerConcurrency:         getEnvInt("WORKER_CONCURRENCY", 1),
+		BatchConcurrency:          getEnvInt("BATCH_CONCURRENCY", 3),
+		BulkConcurrency:           getEnvInt("BULK_CONCURRENCY", 4),
 	}
 
 	ttlStr := getEnv("HISTORY_CACHE_TTL", "10m")
@@ -234,6 +236,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.IncomeEnabled != nil {
 		cfg.IncomeEnabled = *sc.IncomeEnabled
+	}
+	if sc.WebhookProcessCategorized != nil {
+		cfg.WebhookProcessCategorized = *sc.WebhookProcessCategorized
 	}
 	if sc.TagSuggestEnabled != nil {
 		cfg.TagSuggestEnabled = *sc.TagSuggestEnabled
