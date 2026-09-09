@@ -1382,12 +1382,6 @@ func cleanNotes(s string) string {
 
 // matchMailDetector returns the first detector whose keyword appears in the
 // transaction description (case-insensitive), or nil.
-// MailDetectorMatches reports whether the description matches a mail detector
-// applicable to the given direction ("withdrawal"/"deposit").
-func (p *Pipeline) MailDetectorMatches(description, direction string) bool {
-	return p.matchMailDetector(description, direction) != nil
-}
-
 func (p *Pipeline) matchMailDetector(description, direction string) *config.MailDetector {
 	d := strings.ToLower(description)
 	for i := range p.mailDetectors {

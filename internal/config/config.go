@@ -36,7 +36,6 @@ type Config struct {
 	DestinationMatchEnabled   bool
 	IncomeEnabled             bool // process deposits (income) as well as withdrawals
 	WebhookProcessCategorized bool // if true, the webhook processes a txn even when it already has a category
-	MailGraceMinutes          int  // delay (min) before processing a webhook txn matching a mail detector (let the email arrive)
 
 	TagSuggestEnabled bool
 	TagSuggestMax     int
@@ -151,7 +150,6 @@ func Load() (*Config, *Store, error) {
 		DestinationMatchEnabled:   getEnv("DESTINATION_MATCH_ENABLED", "false") == "true",
 		IncomeEnabled:             getEnv("INCOME_ENABLED", "false") == "true",
 		WebhookProcessCategorized: getEnv("WEBHOOK_PROCESS_CATEGORIZED", "false") == "true",
-		MailGraceMinutes:          getEnvInt("MAIL_GRACE_MINUTES", 0),
 		TagSuggestEnabled:         getEnv("TAG_SUGGEST_ENABLED", "false") == "true",
 		TagSuggestMax:             getEnvInt("TAG_SUGGEST_MAX", 3),
 		AmazonOrdersFile:          getEnv("AMAZON_ORDERS_FILE", "/data/amazon_orders.csv"),
@@ -241,9 +239,6 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.WebhookProcessCategorized != nil {
 		cfg.WebhookProcessCategorized = *sc.WebhookProcessCategorized
-	}
-	if sc.MailGraceMinutes > 0 {
-		cfg.MailGraceMinutes = sc.MailGraceMinutes
 	}
 	if sc.TagSuggestEnabled != nil {
 		cfg.TagSuggestEnabled = *sc.TagSuggestEnabled

@@ -2784,7 +2784,6 @@ async function loadSettings() {
         $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
         $('#cfg-income-enabled').prop('checked', !!d.income_enabled);
         $('#cfg-webhook-process-categorized').prop('checked', !!d.webhook_process_categorized);
-        $('#cfg-mail-grace').val(d.mail_grace_minutes || 0);
         $('#cfg-tag-suggest').prop('checked', !!d.tag_suggest_enabled);
         $('#cfg-search-engine').val(d.search_engine || '');
         $('#cfg-history-context-limit').val(d.history_context_limit > 0 ? d.history_context_limit : '');
@@ -2893,7 +2892,6 @@ async function saveSettings() {
     payload.destination_match_enabled = $('#cfg-destination-match').prop('checked');
     payload.income_enabled = $('#cfg-income-enabled').prop('checked');
     payload.webhook_process_categorized = $('#cfg-webhook-process-categorized').prop('checked');
-    payload.mail_grace_minutes = parseInt($('#cfg-mail-grace').val(), 10) || 0;
     payload.tag_suggest_enabled = $('#cfg-tag-suggest').prop('checked');
     var se = $('#cfg-search-engine').val();
     if (se !== undefined) payload.search_engine = se;
