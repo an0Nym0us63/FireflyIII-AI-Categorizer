@@ -384,13 +384,29 @@ type webhookPayload struct {
 
 // isForcedCategory reports whether a category name is in the force-recategorize
 // list (placeholders like "A catégoriser" that shouldn't count as "already set").
+// foldAccents lowercases and strips common French/Latin accents so category
+// matching is case- and accent-insensitive ("À catégoriser" == "a categoriser").
+func foldAccents(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	repl := strings.NewReplacer(
+		"à", "a", "á", "a", "â", "a", "ä", "a", "ã", "a",
+		"è", "e", "é", "e", "ê", "e", "ë", "e",
+		"ì", "i", "í", "i", "î", "i", "ï", "i",
+		"ò", "o", "ó", "o", "ô", "o", "ö", "o", "õ", "o",
+		"ù", "u", "ú", "u", "û", "u", "ü", "u",
+		"ç", "c", "ñ", "n",
+	)
+	return repl.Replace(s)
+}
+
 func (h *Handler) isForcedCategory(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
 	}
+	nf := foldAccents(name)
 	for _, c := range h.effectiveConfig().ForceCategories {
-		if strings.EqualFold(strings.TrimSpace(c), name) {
+		if foldAccents(c) == nf {
 			return true
 		}
 	}
