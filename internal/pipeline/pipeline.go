@@ -388,7 +388,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// Enrichissement mail pour un revenu : uniquement les détecteurs dont le
 	// scope inclut "deposit" (un détecteur dépense comme Amazon n'ira jamais
 	// chercher de mail/CSV pour un avoir/remboursement).
-	var paymentTag, forcedSource string
+	var paymentTag, forcedSource, enrichSource string
 	var extraContext string
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
 		if t := strings.TrimSpace(det.Tag); t != "" {
@@ -396,6 +396,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		}
 		if body, _, ok, _, _, _, ferr := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
+			enrichSource = "email"
 			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
 		} else if ferr != nil {
 			eventlog.Warn("mail", "Recherche email en échec (revenu) — pas de défaut appliqué", transactionID)
@@ -446,6 +447,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			}
 			extraContext = txt
 			forcedSource = merchant
+			enrichSource = "csv"
 			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
 		}
 	}
@@ -570,6 +572,12 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		if !found {
 			outcome.Tags = append(outcome.Tags, paymentTag)
 		}
+	}
+	switch enrichSource {
+	case "email":
+		outcome.Reason = "[via email] " + outcome.Reason
+	case "csv":
+		outcome.Reason = "[via CSV] " + outcome.Reason
 	}
 	if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, outcome); err != nil {
 		p.registry.SetFailed(j.ID, err.Error())
