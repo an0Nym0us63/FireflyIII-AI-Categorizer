@@ -729,39 +729,6 @@ func (c *Client) EditTransactionAll(ctx context.Context, id, categoryName, desti
 	return c.putGroupWithIDs(ctx, id, ids, false, changes)
 }
 
-// ApplyHumanCategoryAll applies a reviewed category + counterparty to every split
-// of the group, fetching it only ONCE (also strips old AI control tags).
-func (c *Client) ApplyHumanCategoryAll(ctx context.Context, id, categoryID, destinationID, sourceID string) error {
-	txns, err := c.GetTransactionsByIDs(ctx, []string{id})
-	if err != nil {
-		return err
-	}
-	if len(txns) == 0 || len(txns[0].Splits) == 0 {
-		return fmt.Errorf("transaction %s has no splits", id)
-	}
-	changes := make(map[string]map[string]interface{})
-	ids := make([]string, 0, len(txns[0].Splits))
-	for _, s := range txns[0].Splits {
-		ids = append(ids, s.JournalID)
-		tags := make([]string, 0, len(s.Tags))
-		for _, t := range s.Tags {
-			if c.isControlTag(t) {
-				continue
-			}
-			tags = append(tags, t)
-		}
-		ch := map[string]interface{}{"tags": tags, "category_id": categoryID}
-		if destinationID != "" {
-			ch["destination_id"] = destinationID
-		}
-		if sourceID != "" {
-			ch["source_id"] = sourceID
-		}
-		changes[s.JournalID] = ch
-	}
-	return c.putGroupWithIDs(ctx, id, ids, false, changes)
-}
-
 func (c *Client) EditTransaction(ctx context.Context, id string, splits []Split, categoryName, destinationName, sourceName string, tags []string) error {
 	if tags == nil {
 		tags = []string{}
@@ -809,7 +776,13 @@ func (c *Client) ApplyHumanCategory(ctx context.Context, id string, splits []Spl
 		}
 		changes[s.JournalID] = ch
 	}
-	return c.putGroupPreserving(ctx, id, true, changes)
+	// Splits already known (cached at review time or freshly fetched by the
+	// caller) → apply directly, no redundant re-fetch.
+	ids := make([]string, 0, len(splits))
+	for _, s := range splits {
+		ids = append(ids, s.JournalID)
+	}
+	return c.putGroupWithIDs(ctx, id, ids, true, changes)
 }
 
 // ResolveSuggestedTags applies or rejects previously suggested tags on a
