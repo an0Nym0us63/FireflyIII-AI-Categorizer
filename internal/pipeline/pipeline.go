@@ -390,56 +390,30 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// chercher de mail/CSV pour un avoir/remboursement).
 	var paymentTag, forcedSource, enrichSource string
 	var extraContext string
+	var matchedDet *config.MailDetector
+	var mailErrored bool
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
+		matchedDet = det
 		if t := strings.TrimSpace(det.Tag); t != "" {
 			paymentTag = t
 		}
+		eventlog.Info("mail", "Recherche email (revenu)\u2026", transactionID)
 		if body, _, ok, _, _, _, ferr := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
 			enrichSource = "email"
-			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
+			eventlog.Info("mail", "Email trouv\u00e9 (revenu)", transactionID)
 		} else if ferr != nil {
-			eventlog.Warn("mail", "Recherche email en échec (revenu) — pas de défaut appliqué", transactionID)
-		} else if det.DefaultCategory != "" || det.DefaultDestination != "" || len(det.DefaultTags) > 0 {
-			out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Email non trouvé — valeurs par défaut du détecteur appliquées."}
-			if det.DefaultCategory != "" {
-				out.Category = det.DefaultCategory
-				for _, c := range categories {
-					if c.Name == det.DefaultCategory {
-						out.CategoryID = c.ID
-						break
-					}
-				}
-			}
-			if det.DefaultDestination != "" {
-				if created, e := p.firefly.CreateRevenueAccount(ctx, det.DefaultDestination); e == nil {
-					out.SourceID = created.ID
-					out.DestConfidence = "CLASSIFIED"
-				}
-			}
-			out.Tags = append(out.Tags, det.DefaultTags...)
-			if t := strings.TrimSpace(det.Tag); t != "" {
-				out.Tags = append(out.Tags, t)
-			}
-			if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
-				p.registry.SetFailed(j.ID, err.Error())
-				return fmt.Errorf("update transaction (defaults): %w", err)
-			}
-			eventlog.Info("mail", "Email non trouvé — défauts du détecteur appliqués (revenu)", transactionID)
-			p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", det.DefaultDestination, "MATCH", out.Tags, nil)
-			return nil
+			mailErrored = true
+			eventlog.Warn("mail", "Recherche email en \u00e9chec (revenu) \u2014 pas de d\u00e9faut appliqu\u00e9", transactionID)
+		} else {
+			eventlog.Warn("mail", "Aucun email trouv\u00e9 (revenu) \u2014 essai du CSV", transactionID)
 		}
 	}
 
-	if len(hint) > 0 && hint[0] != "" {
-		if extraContext != "" {
-			extraContext += "\n"
-		}
-		extraContext += "Instruction supplémentaire de l'utilisateur : " + hint[0]
-	}
-
-	// PayPal : retrouver le vrai payeur (source) derrière une opération PayPal.
-	if extraContext == "" && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
+	// PayPal : retrouver le vrai payeur (source) derri\u00e8re une op\u00e9ration PayPal,
+	// essay\u00e9 quand l'email n'a rien donn\u00e9 (et hors erreur IMAP).
+	if extraContext == "" && !mailErrored && p.paypal.Loaded() && isPayPal(first.Description, first.SourceName) {
+		eventlog.Info("mail", "Recherche CSV PayPal (revenu)\u2026", transactionID)
 		if merchant, items, _, ok := p.paypal.Lookup(amount, fireflyDate); ok && merchant != "" {
 			txt := "Real counterparty (payer) behind this PayPal transaction: " + merchant
 			if len(items) > 0 {
@@ -448,8 +422,50 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 			extraContext = txt
 			forcedSource = merchant
 			enrichSource = "csv"
-			eventlog.Info("mail", "Source PayPal retrouvée via CSV : "+merchant, transactionID)
+			eventlog.Info("mail", "Source PayPal retrouv\u00e9e via CSV : "+merchant, transactionID)
+		} else {
+			eventlog.Warn("mail", "Aucune correspondance CSV PayPal (revenu)", transactionID)
 		}
+	}
+
+	// D\u00e9fauts du d\u00e9tecteur : en dernier recours, si ni email ni CSV n'ont rien
+	// donn\u00e9 (et hors erreur IMAP).
+	if extraContext == "" && forcedSource == "" && !mailErrored && matchedDet != nil &&
+		(matchedDet.DefaultCategory != "" || matchedDet.DefaultDestination != "" || len(matchedDet.DefaultTags) > 0) {
+		out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Ni email ni CSV \u2014 valeurs par d\u00e9faut du d\u00e9tecteur appliqu\u00e9es."}
+		if matchedDet.DefaultCategory != "" {
+			out.Category = matchedDet.DefaultCategory
+			for _, c := range categories {
+				if c.Name == matchedDet.DefaultCategory {
+					out.CategoryID = c.ID
+					break
+				}
+			}
+		}
+		if matchedDet.DefaultDestination != "" {
+			if created, e := p.firefly.CreateRevenueAccount(ctx, matchedDet.DefaultDestination); e == nil {
+				out.SourceID = created.ID
+				out.DestConfidence = "CLASSIFIED"
+			}
+		}
+		out.Tags = append(out.Tags, matchedDet.DefaultTags...)
+		if t := strings.TrimSpace(matchedDet.Tag); t != "" {
+			out.Tags = append(out.Tags, t)
+		}
+		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
+			p.registry.SetFailed(j.ID, err.Error())
+			return fmt.Errorf("update transaction (defaults): %w", err)
+		}
+		eventlog.Info("mail", "Ni email ni CSV \u2014 d\u00e9fauts du d\u00e9tecteur appliqu\u00e9s (revenu)", transactionID)
+		p.registry.SetFinished(j.ID, string(classifier.Classified), out.Category, out.Reason, "", "", "", matchedDet.DefaultDestination, "MATCH", out.Tags, nil)
+		return nil
+	}
+
+	if len(hint) > 0 && hint[0] != "" {
+		if extraContext != "" {
+			extraContext += "\n"
+		}
+		extraContext += "Instruction suppl\u00e9mentaire de l'utilisateur : " + hint[0]
 	}
 
 	clAccounts := make([]classifier.AccountCandidate, len(revAccts))
