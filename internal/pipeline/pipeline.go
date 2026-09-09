@@ -386,9 +386,11 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 	// chercher de mail/CSV pour un avoir/remboursement).
 	var extraContext string
 	if det := p.matchMailDetector(first.Description, "deposit"); det != nil {
-		if body, _, ok, _, _, _ := p.findOrderEmail(det, fireflyDate, amount); ok {
+		if body, _, ok, _, _, _, ferr := p.findOrderEmail(det, fireflyDate, amount); ok {
 			extraContext = "Related email (use it to choose category, source and tags):\n" + body
 			eventlog.Info("mail", "Email trouvé (revenu)", transactionID)
+		} else if ferr != nil {
+			eventlog.Warn("mail", "Recherche email en échec (revenu) — pas de défaut appliqué", transactionID)
 		} else if det.DefaultCategory != "" || det.DefaultDestination != "" || len(det.DefaultTags) > 0 {
 			out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Email non trouvé — valeurs par défaut du détecteur appliquées."}
 			if det.DefaultCategory != "" {
@@ -584,6 +586,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	var amazonUncertain bool
 	var skipIfEmpty bool
 	var matchedDet *config.MailDetector
+	var mailErrored bool
 	var paymentTag string
 	var forceDestination bool
 	var installmentTag bool
@@ -600,7 +603,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 		skipIfEmpty = true
 		matchedDet = det
 		mailBack, mailFwd = det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays)
-		if body, inst, ok, cands, hits, note := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
+		if body, inst, ok, cands, hits, note, ferr := p.findOrderEmail(det, fireflyDate, derefAmount(j.Amount)); ok {
 			extraContext = "Order confirmation email (use it to choose category, destination and tags):\n" + body
 			enrichSource = "email"
 			eventlog.Info("mail", "Email de commande trouvé (dépense)", transactionID)
@@ -620,7 +623,12 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 			mailCandidates = cands
 			mailSearchHits = hits
 			mailNote = note
-			eventlog.Warn("mail", "Aucun email de commande trouvé (dépense)", transactionID)
+			if ferr != nil {
+				mailErrored = true
+				eventlog.Warn("mail", "Recherche email en échec — pas de défaut appliqué (à re-traiter)", transactionID)
+			} else {
+				eventlog.Warn("mail", "Aucun email de commande trouvé (dépense)", transactionID)
+			}
 		}
 	}
 
@@ -660,7 +668,7 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 	// Opaque merchant with no order content found → leave the transaction
 	// untouched (don't waste an LLM call on a useless label).
 	if skipIfEmpty && extraContext == "" {
-		if matchedDet != nil && (matchedDet.DefaultCategory != "" || matchedDet.DefaultDestination != "" || len(matchedDet.DefaultTags) > 0) {
+		if matchedDet != nil && !mailErrored && (matchedDet.DefaultCategory != "" || matchedDet.DefaultDestination != "" || len(matchedDet.DefaultTags) > 0) {
 			out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), Reason: "Email non trouvé — valeurs par défaut du détecteur appliquées."}
 			if matchedDet.DefaultCategory != "" {
 				out.Category = matchedDet.DefaultCategory
@@ -1410,19 +1418,19 @@ func (p *Pipeline) accountByID(id string) *config.MailAccount {
 // findOrderEmail searches the detector's mailbox for the order email near date.
 // Returns the body, whether it's a 4x installment, whether found, and how many
 // candidate emails (sender+date) were seen (for diagnostics).
-func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool, bool, int, int, string) {
+func (p *Pipeline) findOrderEmail(det *config.MailDetector, date time.Time, amount float64) (string, bool, bool, int, int, string, error) {
 	acc := p.accountByID(det.AccountID)
 	if acc == nil || acc.IMAPHost == "" || acc.IMAPUser == "" || date.IsZero() {
-		return "", false, false, 0, 0, ""
+		return "", false, false, 0, 0, "", nil
 	}
 	res, err := mailorder.FindOrderEmail(mailorder.Account{
 		Host: acc.IMAPHost, Port: acc.IMAPPort, User: acc.IMAPUser, Password: acc.IMAPPassword,
 	}, det.Senders, date, amount, det.BackDaysOr(mailBackDays), det.FwdDaysOr(mailFwdDays), det.SubjectContains, det.Aggregate)
 	if err != nil {
 		slog.Warn("order email search failed", "error", err)
-		return "", false, false, 0, 0, err.Error()
+		return "", false, false, 0, 0, err.Error(), err
 	}
-	return res.Text, res.Installment, res.Found, res.Candidates, res.SearchHits, res.Note
+	return res.Text, res.Installment, res.Found, res.Candidates, res.SearchHits, res.Note, nil
 }
 
 // isAmazon reports whether a transaction is an Amazon purchase, from its
