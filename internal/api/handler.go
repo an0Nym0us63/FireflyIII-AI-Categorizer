@@ -363,6 +363,7 @@ func webhookAsset(s webhookSplitData) string {
 type webhookSplitData struct {
 	TransactionJournalID flexString `json:"transaction_journal_id"`
 	Type                 string     `json:"type"`
+	Date                 string     `json:"date"`
 	Description          string     `json:"description"`
 	DestinationName      string     `json:"destination_name"`
 	SourceName           string     `json:"source_name"`
@@ -507,6 +508,7 @@ func (h *Handler) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		splits[i] = firefly.Split{
 			JournalID:       string(t.TransactionJournalID),
 			Type:            t.Type,
+			Date:            t.Date,
 			Description:     t.Description,
 			DestinationName: t.DestinationName,
 			SourceName:      t.SourceName,
