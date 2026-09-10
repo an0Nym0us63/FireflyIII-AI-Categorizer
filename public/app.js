@@ -1568,6 +1568,9 @@ async function loadReview(silent) {
 
 function renderCurrentBatch() {
     reviewSelected.clear();
+    lastReviewClicked = null;
+    var _selAll = document.getElementById('rev-select-all');
+    if (_selAll) _selAll.checked = false;
     updateReviewSelCount();
     var body = document.getElementById('review-body');
     var actionBar = document.getElementById('review-action-bar');
@@ -1822,7 +1825,7 @@ function renderReviewTable(groups) {
             }
         }
         return '<tr id="rev-row-' + gi + '">'
-            + '<td style="white-space:nowrap"><input type="checkbox" class="rev-cb" style="margin-right:6px" onclick="toggleReviewSel(event,' + gi + ')"> ' + reviewDirBadge(g) + reviewTypeBadge(g.outcome) + '</td>'
+            + '<td style="white-space:nowrap"><input type="checkbox" class="rev-cb" data-gi="' + gi + '" style="margin-right:6px" onclick="toggleReviewSel(event,' + gi + ')"> ' + reviewDirBadge(g) + reviewTypeBadge(g.outcome) + '</td>'
             + labelCell + amtCell
             + '<td><select class="form-control input-sm" id="rev-cat-' + gi + '" style="min-width:140px">'
             + reviewCatOptions(g.category_id || '') + '</select></td>'
@@ -1863,10 +1866,34 @@ function removeReviewRow(gi) {
 }
 
 var reviewSelected = new Set();
+var lastReviewClicked = null;
+function reviewCbOrder() {
+    return Array.prototype.map.call(document.querySelectorAll('.rev-cb'), function (cb) { return parseInt(cb.getAttribute('data-gi'), 10); });
+}
+function syncReviewCheckboxes() {
+    document.querySelectorAll('.rev-cb').forEach(function (cb) {
+        cb.checked = reviewSelected.has(parseInt(cb.getAttribute('data-gi'), 10));
+    });
+    updateReviewSelCount();
+}
 function toggleReviewSel(ev, gi) {
     ev.stopPropagation();
-    if (ev.target.checked) reviewSelected.add(gi); else reviewSelected.delete(gi);
-    updateReviewSelCount();
+    if (ev.shiftKey && lastReviewClicked !== null) {
+        var order = reviewCbOrder();
+        var a = order.indexOf(lastReviewClicked), b = order.indexOf(gi);
+        if (a > -1 && b > -1) {
+            var lo = Math.min(a, b), hi = Math.max(a, b), sel = ev.target.checked;
+            for (var i = lo; i <= hi; i++) { if (sel) reviewSelected.add(order[i]); else reviewSelected.delete(order[i]); }
+        }
+    } else {
+        if (ev.target.checked) reviewSelected.add(gi); else reviewSelected.delete(gi);
+    }
+    lastReviewClicked = gi;
+    syncReviewCheckboxes();
+}
+function toggleAllReview(master) {
+    reviewCbOrder().forEach(function (gi) { if (master.checked) reviewSelected.add(gi); else reviewSelected.delete(gi); });
+    syncReviewCheckboxes();
 }
 function updateReviewSelCount() {
     var b = document.getElementById('rev-bulk-validate');
