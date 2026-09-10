@@ -525,7 +525,25 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 				}
 			}
 			if outcome.SourceID == "" {
-				srcAccount, srcAction = "", ""
+				// MATCH named a source absent from the list → create-or-match if
+				// confident (CreateRevenueAccount matches an existing name or
+				// creates it); otherwise defer to review.
+				if result.Destination.Confidence == "CLASSIFIED" {
+					if created, cerr := p.firefly.CreateRevenueAccount(ctx, result.Destination.Name); cerr == nil {
+						outcome.SourceID = created.ID
+						outcome.DestConfidence = "CLASSIFIED"
+						srcAccount = created.Name
+						srcAction = "CREATE"
+						p.revAcctMu.Lock()
+						p.revAcctCache = append(p.revAcctCache, created)
+						p.revAcctMu.Unlock()
+					} else {
+						slog.Error("source MATCH fallback create failed", "name", result.Destination.Name, "error", cerr)
+						outcome.DestConfidence = "ASSUMED"
+					}
+				} else {
+					outcome.DestConfidence = "ASSUMED"
+				}
 			} else {
 				outcome.DestConfidence = result.Destination.Confidence
 			}
@@ -1136,9 +1154,24 @@ func (p *Pipeline) RunWithOptions(ctx context.Context, j *job.Job, transactionID
 				}
 			}
 			if outcome.DestinationID == "" {
-				slog.Warn("destination MATCH failed to find account", "name", result.Destination.Name)
-				destAccount = ""
-				destAction = ""
+				// MATCH named an account absent from the list (stale cache or the
+				// LLM over-confidently claimed it exists). Confident → create-or-
+				// match it (CreateExpenseAccount matches an existing name or creates
+				// it); otherwise defer to review with the proposed name.
+				if result.Destination.Confidence == "CLASSIFIED" {
+					if created, cerr := p.firefly.CreateExpenseAccount(ctx, result.Destination.Name); cerr == nil {
+						outcome.DestinationID = created.ID
+						outcome.DestConfidence = "CLASSIFIED"
+						destAccount = created.Name
+						destAction = "CREATE"
+					} else {
+						slog.Error("destination MATCH fallback create failed", "name", result.Destination.Name, "error", cerr)
+						outcome.DestConfidence = "ASSUMED"
+					}
+				} else {
+					slog.Warn("destination MATCH failed to find account", "name", result.Destination.Name)
+					outcome.DestConfidence = "ASSUMED"
+				}
 			} else {
 				outcome.DestConfidence = result.Destination.Confidence
 			}
