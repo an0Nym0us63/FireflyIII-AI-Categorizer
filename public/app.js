@@ -305,7 +305,34 @@ function renderMailDetectors() {
     }).join('');
 }
 
-function renderMailConfig() { renderMailAccounts(); renderMailDetectors(); }
+var salaryPeople = [];
+function renderSalaryPeople() {
+    var box = document.getElementById('salary-people');
+    if (!box) return;
+    if (!salaryPeople.length) { box.innerHTML = '<p class="text-muted" style="font-size:12px">Aucune personne. Un revenu dont le libellé contient un mot-clé sera classé en catégorie « Salaire », avec la source et le tag « Salaire &lt;Nom&gt; ».</p>'; return; }
+    box.innerHTML = salaryPeople.map(function (p, i) {
+        var srcs = (p.sources || []).map(function (s, j) {
+            return '<div class="row" style="margin:4px 0">'
+                + '<div class="col-sm-4"><input type="text" class="form-control input-sm" placeholder="Mot-clé dans le libellé (ex. Greenkapt)" value="' + esc(s.keyword || '') + '" oninput="salaryPeople[' + i + '].sources[' + j + '].keyword=this.value"></div>'
+                + '<div class="col-sm-4"><input type="text" class="form-control input-sm" placeholder="Source à mettre (société)" value="' + esc(s.source_name || '') + '" oninput="salaryPeople[' + i + '].sources[' + j + '].source_name=this.value"></div>'
+                + '<div class="col-sm-2"><input type="number" min="1" max="31" class="form-control input-sm" placeholder="Jour limite" value="' + (s.day_limit || '') + '" oninput="salaryPeople[' + i + '].sources[' + j + '].day_limit=parseInt(this.value,10)||0"></div>'
+                + '<div class="col-sm-2"><button type="button" class="btn btn-danger btn-sm" onclick="removeSalarySource(' + i + ',' + j + ')"><i class="fa fa-trash"></i></button></div>'
+                + '</div>';
+        }).join('');
+        return '<div style="border:1px solid #444;border-radius:4px;padding:10px;margin-bottom:10px">'
+            + '<div class="form-inline" style="margin-bottom:6px"><strong>Personne :</strong> <input type="text" class="form-control input-sm" style="width:200px;margin-left:6px" placeholder="Nom (ex. Ludovic)" value="' + esc(p.name || '') + '" oninput="salaryPeople[' + i + '].name=this.value"> '
+            + '<button type="button" class="btn btn-danger btn-sm pull-right" onclick="removeSalaryPerson(' + i + ')"><i class="fa fa-trash"></i> Supprimer la personne</button></div>'
+            + '<div class="text-muted" style="font-size:11px;margin-bottom:4px">Catégorie « Salaire » + tag « Salaire ' + esc(p.name || '?') + ' » appliqués automatiquement. Jour limite : si reçu après ce jour, comptabilisé au 1er du mois suivant.</div>'
+            + srcs
+            + '<button type="button" class="btn btn-default btn-xs" onclick="addSalarySource(' + i + ')"><i class="fa fa-plus"></i> Ajouter une source</button>'
+            + '</div>';
+    }).join('');
+}
+function addSalaryPerson() { salaryPeople.push({name: '', sources: [{keyword: '', source_name: '', day_limit: 0}]}); renderSalaryPeople(); }
+function removeSalaryPerson(i) { salaryPeople.splice(i, 1); renderSalaryPeople(); }
+function addSalarySource(i) { salaryPeople[i].sources = salaryPeople[i].sources || []; salaryPeople[i].sources.push({keyword: '', source_name: '', day_limit: 0}); renderSalaryPeople(); }
+function removeSalarySource(i, j) { salaryPeople[i].sources.splice(j, 1); renderSalaryPeople(); }
+function renderMailConfig() { renderMailAccounts(); renderMailDetectors(); renderSalaryPeople(); }
 
 function addMailAccount() { mailAccounts.push({name: '', imap_host: '', imap_port: 993, imap_user: '', imap_password: ''}); renderMailConfig(); }
 function removeMailAccount(i) { mailAccounts.splice(i, 1); renderMailConfig(); }
@@ -2864,6 +2891,7 @@ async function loadSettings() {
         $('#cfg-gemini-grounding').prop('checked', !!d.gemini_grounding);
         mailAccounts = (d.mail_accounts || []).map(function (m) { return Object.assign({}, m); });
         mailDetectors = (d.mail_detectors || []).map(function (m) { return Object.assign({}, m, {keywords: (m.keywords || []).slice(), senders: (m.senders || []).slice()}); });
+        salaryPeople = (d.salary_people || []).map(function (p) { return {name: p.name || '', sources: (p.sources || []).map(function (s) { return Object.assign({}, s); })}; });
         renderMailConfig();
         forceDestinations = (d.force_destinations || []).slice();
         forceCategories = (d.force_categories || []).slice();
@@ -2972,6 +3000,7 @@ async function saveSettings() {
     payload.gemini_grounding = $('#cfg-gemini-grounding').is(':checked');
     payload.mail_accounts = mailAccounts;
     payload.mail_detectors = mailDetectors;
+    payload.salary_people = salaryPeople;
     payload.force_destinations = forceDestinations;
     payload.force_categories = forceCategories;
     payload.placeholder_categories = placeholderCategories;
