@@ -45,6 +45,7 @@ type Config struct {
 
 	MailAccounts  []MailAccount
 	MailDetectors []MailDetector
+	SalaryPeople  []SalaryPerson
 
 	ForceDestinations     []string  // if a txn's current destination is here, force re-pick
 	ForceCategories       []string  // if a txn's current category is here, force re-categorize
@@ -69,6 +70,19 @@ type TagRule struct {
 }
 
 // MailAccount describes an IMAP mailbox to search for order emails.
+// SalarySource maps a description keyword to a salary company + timing rule.
+type SalarySource struct {
+	Keyword    string `json:"keyword"`     // searched in the description (case-insensitive)
+	SourceName string `json:"source_name"` // company / revenue account to set as the source
+	DayLimit   int    `json:"day_limit"`   // if the txn day-of-month > DayLimit, book it on the 1st of next month
+}
+
+// SalaryPerson declares a person and the salary sources identifying their pay.
+type SalaryPerson struct {
+	Name    string         `json:"name"`
+	Sources []SalarySource `json:"sources"`
+}
+
 type MailAccount struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -269,6 +283,9 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.PlaceholderCategories != nil {
 		cfg.PlaceholderCategories = sc.PlaceholderCategories
+	}
+	if sc.SalaryPeople != nil {
+		cfg.SalaryPeople = sc.SalaryPeople
 	}
 	if sc.TagRules != nil {
 		cfg.TagRules = sc.TagRules

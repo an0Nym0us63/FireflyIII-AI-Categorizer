@@ -696,6 +696,7 @@ type configResponse struct {
 
 	MailAccounts          []config.MailAccount  `json:"mail_accounts"`
 	MailDetectors         []config.MailDetector `json:"mail_detectors"`
+	SalaryPeople          []config.SalaryPerson `json:"salary_people"`
 	ForceDestinations     []string              `json:"force_destinations"`
 	ForceCategories       []string              `json:"force_categories"`
 	PlaceholderCategories []string              `json:"placeholder_categories"`
@@ -736,6 +737,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 
 		MailAccounts:          maskMailAccounts(cfg.MailAccounts),
 		MailDetectors:         cfg.MailDetectors,
+		SalaryPeople:          cfg.SalaryPeople,
 		ForceDestinations:     cfg.ForceDestinations,
 		ForceCategories:       cfg.ForceCategories,
 		PlaceholderCategories: cfg.PlaceholderCategories,
@@ -777,6 +779,7 @@ type configUpdateRequest struct {
 
 	MailAccounts          *[]config.MailAccount  `json:"mail_accounts"`
 	MailDetectors         *[]config.MailDetector `json:"mail_detectors"`
+	SalaryPeople          *[]config.SalaryPerson `json:"salary_people"`
 	ForceDestinations     *[]string              `json:"force_destinations"`
 	ForceCategories       *[]string              `json:"force_categories"`
 	PlaceholderCategories *[]string              `json:"placeholder_categories"`
@@ -2537,7 +2540,7 @@ func (h *Handler) reloadClients() error {
 		return fmt.Errorf("classifier init: %w", err)
 	}
 
-	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), paypal.Load(cfg.PayPalCsvFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
+	pipe := pipeline.New(fc, cl, ca, h.registry, cfg.HistoryContextLimit, cfg.DestinationMatchEnabled, cfg.IncomeEnabled, cfg.TagSuggestEnabled, cfg.TagSuggestMax, amazon.Load(cfg.AmazonOrdersFile), paypal.Load(cfg.PayPalCsvFile), h.aidb, cfg.MailAccounts, cfg.MailDetectors, cfg.SalaryPeople, cfg.ForceDestinations, cfg.ForceCategories, cfg.TagRules)
 
 	h.mu.Lock()
 	h.fc = fc
@@ -2636,6 +2639,9 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.MailDetectors != nil {
 		existing.MailDetectors = mergeMailDetectors(*req.MailDetectors)
+	}
+	if req.SalaryPeople != nil {
+		existing.SalaryPeople = *req.SalaryPeople
 	}
 	if req.ForceDestinations != nil {
 		existing.ForceDestinations = *req.ForceDestinations

@@ -62,6 +62,7 @@ type Pipeline struct {
 
 	mailAccounts  []config.MailAccount
 	mailDetectors []config.MailDetector
+	salaryPeople  []config.SalaryPerson
 
 	forceDestinations []string
 	forceCategories   []string
@@ -111,6 +112,7 @@ func New(
 	adb *aidb.DB,
 	mailAccounts []config.MailAccount,
 	mailDetectors []config.MailDetector,
+	salaryPeople []config.SalaryPerson,
 	forceDestinations []string,
 	forceCategories []string,
 	tagRules []config.TagRule,
@@ -130,6 +132,7 @@ func New(
 		aidb:              adb,
 		mailAccounts:      mailAccounts,
 		mailDetectors:     mailDetectors,
+		salaryPeople:      salaryPeople,
 		forceDestinations: forceDestinations,
 		forceCategories:   forceCategories,
 		tagRules:          tagRules,
@@ -325,6 +328,40 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		}
 	}
 	amount := derefAmount(j.Amount)
+
+	// Salaire : classification déterministe pour les salaires déclarés.
+	if person, src, ok := p.matchSalary(first.Description); ok {
+		out := firefly.UpdateOutcome{Outcome: string(classifier.Classified), DestConfidence: "CLASSIFIED", Category: "Salaire"}
+		for _, c := range categories {
+			if strings.EqualFold(c.Name, "Salaire") {
+				out.CategoryID = c.ID
+				break
+			}
+		}
+		if src.SourceName != "" {
+			if created, e := p.firefly.CreateRevenueAccount(ctx, src.SourceName); e == nil {
+				out.SourceID = created.ID
+			}
+		}
+		out.Tags = []string{"Salaire " + person.Name}
+		if src.DayLimit > 0 && !fireflyDate.IsZero() && fireflyDate.Day() > src.DayLimit {
+			nm := firstOfNextMonth(fireflyDate)
+			out.Date = nm.Format("2006-01-02")
+			out.Reason = fmt.Sprintf("Salaire %s (%s) — reçu le %d (> jour limite %d) → comptabilisé au %s.", person.Name, src.SourceName, fireflyDate.Day(), src.DayLimit, out.Date)
+		} else {
+			out.Reason = fmt.Sprintf("Salaire %s (%s).", person.Name, src.SourceName)
+		}
+		if err := p.firefly.UpdateTransaction(ctx, transactionID, splits, out); err != nil {
+			p.registry.SetFailed(j.ID, err.Error())
+			return fmt.Errorf("update transaction (salary): %w", err)
+		}
+		if p.aidb != nil {
+			_ = p.aidb.Upsert(aidb.Record{TransactionID: transactionID, Outcome: string(classifier.Classified), Category: "Salaire", DestConfidence: "CLASSIFIED", Reason: out.Reason, Direction: "deposit", Reviewed: true})
+		}
+		eventlog.Info("job", "Salaire "+person.Name+" appliqué (source "+src.SourceName+")", transactionID)
+		p.registry.SetFinished(j.ID, string(classifier.Classified), "Salaire", out.Reason, "", "", "", src.SourceName, "MATCH", out.Tags, nil)
+		return nil
+	}
 
 	gkey := classifier.GroupKey(first.SourceName, first.Description)
 	history := excludeTransaction(p.incomeHistory(ctx, gkey, fireflyDate), transactionID)
@@ -1493,6 +1530,25 @@ func cleanNotes(s string) string {
 
 // matchMailDetector returns the first detector whose keyword appears in the
 // transaction description (case-insensitive), or nil.
+// matchSalary returns the declared person + salary source whose keyword appears
+// in the description (case-insensitive), if any.
+func (p *Pipeline) matchSalary(description string) (config.SalaryPerson, config.SalarySource, bool) {
+	d := strings.ToLower(description)
+	for _, person := range p.salaryPeople {
+		for _, src := range person.Sources {
+			kw := strings.ToLower(strings.TrimSpace(src.Keyword))
+			if kw != "" && strings.Contains(d, kw) {
+				return person, src, true
+			}
+		}
+	}
+	return config.SalaryPerson{}, config.SalarySource{}, false
+}
+
+func firstOfNextMonth(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
+}
+
 func (p *Pipeline) matchMailDetector(description, direction string) *config.MailDetector {
 	d := strings.ToLower(description)
 	for i := range p.mailDetectors {

@@ -954,6 +954,7 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		CategoryName         string   `json:"category_name,omitempty"`
 		DestinationID        string   `json:"destination_id,omitempty"`
 		SourceID             string   `json:"source_id,omitempty"`
+		Date                 string   `json:"date,omitempty"`
 		Notes                string   `json:"notes,omitempty"`
 	}
 	type body struct {
@@ -1004,6 +1005,9 @@ func (c *Client) UpdateTransaction(ctx context.Context, id string, splits []Spli
 		}
 
 		su := splitUpdate{TransactionJournalID: s.JournalID, Tags: tags}
+		if outcome.Date != "" {
+			su.Date = outcome.Date
+		}
 		if outcome.Outcome != "NEEDS_REVIEW" {
 			if outcome.CategoryID != "" {
 				su.CategoryID = outcome.CategoryID

@@ -40,6 +40,7 @@ type StoredConfig struct {
 	ForceDestinations         []string       `json:"force_destinations,omitempty"`
 	ForceCategories           []string       `json:"force_categories,omitempty"`
 	PlaceholderCategories     []string       `json:"placeholder_categories,omitempty"`
+	SalaryPeople              []SalaryPerson `json:"salary_people,omitempty"`
 	TagRules                  []TagRule      `json:"tag_rules,omitempty"`
 	WorkerConcurrency         int            `json:"worker_concurrency,omitempty"`
 	BatchConcurrency          int            `json:"batch_concurrency,omitempty"`
