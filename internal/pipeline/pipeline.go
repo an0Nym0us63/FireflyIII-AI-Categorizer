@@ -347,6 +347,7 @@ func (p *Pipeline) RunIncome(ctx context.Context, j *job.Job, transactionID stri
 		if src.DayLimit > 0 && !fireflyDate.IsZero() && fireflyDate.Day() > src.DayLimit {
 			nm := firstOfNextMonth(fireflyDate)
 			out.Date = nm.Format("2006-01-02")
+			out.PaymentDate = first.Date // date d'opération originale conservée en date de paiement
 			out.Reason = fmt.Sprintf("Salaire %s (%s) — reçu le %d (> jour limite %d) → comptabilisé au %s.", person.Name, src.SourceName, fireflyDate.Day(), src.DayLimit, out.Date)
 		} else {
 			out.Reason = fmt.Sprintf("Salaire %s (%s).", person.Name, src.SourceName)

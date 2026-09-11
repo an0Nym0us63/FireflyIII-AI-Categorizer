@@ -45,6 +45,7 @@ type UpdateOutcome struct {
 	SourceID       string // non-empty when source account was matched or created (inflow / income)
 	DestConfidence string // "CLASSIFIED" | "ASSUMED" — destination confidence (independent of Outcome)
 	Date           string // optional: override the transaction date (YYYY-MM-DD), e.g. salary booked next month
+	PaymentDate    string // optional: original operation date kept as payment_date when Date is shifted
 	Reason         string
 	Assumption     string
 
