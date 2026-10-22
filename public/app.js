@@ -2903,6 +2903,11 @@ async function loadSettings() {
         $('#cfg-deepseek-key').val('');
         $('#deepseek-key-hint').toggle(!!d.deepseek_key_set);
         $('#cfg-deepseek-model').val(d.deepseek_model || '');
+        $('#cfg-anthropic-key').val('');
+        $('#anthropic-key-hint').toggle(!!d.anthropic_key_set);
+        $('#cfg-anthropic-model').val(d.anthropic_model || '');
+        $('#cfg-anthropic-effort').val(d.anthropic_effort || 'low');
+        $('#cfg-anthropic-web-search').prop('checked', !!d.anthropic_web_search);
         $('#cfg-tag-prefix').val(d.tag_prefix || '');
         $('#cfg-custom-context').val(d.custom_system_context || '');
         $('#cfg-destination-match').prop('checked', !!d.destination_match_enabled);
@@ -2937,6 +2942,7 @@ function onProviderChange() {
     $('#section-openai').toggle(p === 'openai');
     $('#section-gemini').toggle(p === 'gemini');
     $('#section-deepseek').toggle(p === 'deepseek');
+    $('#section-anthropic').toggle(p === 'anthropic');
 }
 
 async function testConnection() {
@@ -2997,7 +3003,18 @@ async function saveSettings() {
         if (k) payload.gemini_api_key = k;
         if (m) payload.gemini_model = m;
         payload.gemini_thinking = $('#cfg-gemini-thinking').val();
-    payload.gemini_grounding = $('#cfg-gemini-grounding').is(':checked');
+        payload.gemini_grounding = $('#cfg-gemini-grounding').is(':checked');
+    } else if (p === 'deepseek') {
+        var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
+        if (k) payload.deepseek_api_key = k;
+        if (m) payload.deepseek_model = m;
+    } else if (p === 'anthropic') {
+        var k = $('#cfg-anthropic-key').val(), m = $('#cfg-anthropic-model').val().trim();
+        if (k) payload.anthropic_api_key = k;
+        if (m) payload.anthropic_model = m;
+        payload.anthropic_effort = $('#cfg-anthropic-effort').val();
+        payload.anthropic_web_search = $('#cfg-anthropic-web-search').is(':checked');
+    }
     payload.mail_accounts = mailAccounts;
     payload.mail_detectors = mailDetectors;
     payload.salary_people = salaryPeople;
@@ -3005,11 +3022,6 @@ async function saveSettings() {
     payload.force_categories = forceCategories;
     payload.placeholder_categories = placeholderCategories;
     payload.tag_rules = tagRules.filter(function (r) { return (r.from || '').trim() !== ''; });
-    } else if (p === 'deepseek') {
-        var k = $('#cfg-deepseek-key').val(), m = $('#cfg-deepseek-model').val().trim();
-        if (k) payload.deepseek_api_key = k;
-        if (m) payload.deepseek_model = m;
-    }
     var tag = $('#cfg-tag-prefix').val().trim();
     if (tag) payload.tag_prefix = tag;
     // Always send custom_system_context (null vs "" distinction: null = don't change, "" = clear)

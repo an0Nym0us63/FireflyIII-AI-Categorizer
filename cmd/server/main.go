@@ -138,6 +138,10 @@ func runBatch(cfg *config.Config, reg *job.Registry, pool *worker.Pool, adb *aid
 		GeminiGrounding: cfg.GeminiGrounding,
 		DeepseekKey:     cfg.DeepseekKey,
 		DeepseekModel:   cfg.DeepseekModel,
+		AnthropicKey:       cfg.AnthropicKey,
+		AnthropicModel:     cfg.AnthropicModel,
+		AnthropicEffort:    cfg.AnthropicEffort,
+		AnthropicWebSearch: cfg.AnthropicWebSearch,
 		CustomContext:   cfg.CustomSystemContext,
 	})
 	if err != nil {

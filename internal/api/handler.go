@@ -680,6 +680,10 @@ type configResponse struct {
 	GeminiModel         string `json:"gemini_model"`
 	DeepseekKeySet      bool   `json:"deepseek_key_set"`
 	DeepseekModel       string `json:"deepseek_model"`
+	AnthropicKeySet     bool   `json:"anthropic_key_set"`
+	AnthropicModel      string `json:"anthropic_model"`
+	AnthropicEffort     string `json:"anthropic_effort"`
+	AnthropicWebSearch  bool   `json:"anthropic_web_search"`
 	TagPrefix           string `json:"tag_prefix"`
 	CustomSystemContext string `json:"custom_system_context"`
 	Configured          bool   `json:"configured"`
@@ -721,6 +725,10 @@ func (h *Handler) getConfig(w http.ResponseWriter, _ *http.Request) {
 		GeminiModel:         cfg.GeminiModel,
 		DeepseekKeySet:      cfg.DeepseekKey != "",
 		DeepseekModel:       cfg.DeepseekModel,
+		AnthropicKeySet:     cfg.AnthropicKey != "",
+		AnthropicModel:      cfg.AnthropicModel,
+		AnthropicEffort:     cfg.AnthropicEffort,
+		AnthropicWebSearch:  cfg.AnthropicWebSearch,
 		TagPrefix:           cfg.TagPrefix,
 		CustomSystemContext: cfg.CustomSystemContext,
 		Configured:          cfg.IsConfigured(),
@@ -764,6 +772,10 @@ type configUpdateRequest struct {
 	GeminiModel         *string `json:"gemini_model"`
 	DeepseekKey         *string `json:"deepseek_api_key"`
 	DeepseekModel       *string `json:"deepseek_model"`
+	AnthropicKey        *string `json:"anthropic_api_key"`
+	AnthropicModel      *string `json:"anthropic_model"`
+	AnthropicEffort     *string `json:"anthropic_effort"`
+	AnthropicWebSearch  *bool   `json:"anthropic_web_search"`
 	TagPrefix           *string `json:"tag_prefix"`
 	CustomSystemContext *string `json:"custom_system_context"`
 
@@ -2528,6 +2540,10 @@ func (h *Handler) reloadClients() error {
 		GeminiGrounding: cfg.GeminiGrounding,
 		DeepseekKey:     cfg.DeepseekKey,
 		DeepseekModel:   cfg.DeepseekModel,
+		AnthropicKey:       cfg.AnthropicKey,
+		AnthropicModel:     cfg.AnthropicModel,
+		AnthropicEffort:    cfg.AnthropicEffort,
+		AnthropicWebSearch: cfg.AnthropicWebSearch,
 		CustomContext:   cfg.CustomSystemContext,
 	})
 	if err != nil {
@@ -2606,6 +2622,18 @@ func mergeConfigUpdate(existing config.StoredConfig, req configUpdateRequest) co
 	}
 	if req.DeepseekModel != nil {
 		existing.DeepseekModel = *req.DeepseekModel
+	}
+	if req.AnthropicKey != nil && *req.AnthropicKey != "" {
+		existing.AnthropicKey = *req.AnthropicKey
+	}
+	if req.AnthropicModel != nil {
+		existing.AnthropicModel = *req.AnthropicModel
+	}
+	if req.AnthropicEffort != nil {
+		existing.AnthropicEffort = *req.AnthropicEffort
+	}
+	if req.AnthropicWebSearch != nil {
+		existing.AnthropicWebSearch = req.AnthropicWebSearch
 	}
 	if req.TagPrefix != nil {
 		existing.TagPrefix = *req.TagPrefix

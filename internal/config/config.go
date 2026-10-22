@@ -14,7 +14,7 @@ type Config struct {
 	FireflyURL   string
 	FireflyToken string
 
-	AIProvider string // "openai" | "gemini" | "deepseek"
+	AIProvider string // "openai" | "gemini" | "deepseek" | "anthropic"
 
 	OpenAIKey     string
 	OpenAIModel   string
@@ -25,6 +25,11 @@ type Config struct {
 
 	DeepseekKey   string
 	DeepseekModel string
+
+	AnthropicKey       string
+	AnthropicModel     string
+	AnthropicEffort    string
+	AnthropicWebSearch bool
 
 	TagPrefix           string
 	CustomSystemContext string
@@ -159,6 +164,10 @@ func Load() (*Config, *Store, error) {
 		GeminiModel:               getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
 		DeepseekKey:               getEnv("DEEPSEEK_API_KEY", ""),
 		DeepseekModel:             getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
+		AnthropicKey:              getEnv("ANTHROPIC_API_KEY", ""),
+		AnthropicModel:            getEnv("ANTHROPIC_MODEL", "claude-haiku-5-5"),
+		AnthropicEffort:           getEnv("ANTHROPIC_EFFORT", "low"),
+		AnthropicWebSearch:        getEnv("ANTHROPIC_WEB_SEARCH", "false") == "true",
 		TagPrefix:                 getEnv("TAG_PREFIX", "ai"),
 		HistoryContextLimit:       getEnvInt("HISTORY_CONTEXT_LIMIT", 5),
 		HistoryLookbackDays:       getEnvInt("HISTORY_LOOKBACK_DAYS", 365),
@@ -224,6 +233,18 @@ func ApplyStored(cfg *Config, sc StoredConfig) {
 	}
 	if sc.DeepseekModel != "" {
 		cfg.DeepseekModel = sc.DeepseekModel
+	}
+	if sc.AnthropicKey != "" {
+		cfg.AnthropicKey = sc.AnthropicKey
+	}
+	if sc.AnthropicModel != "" {
+		cfg.AnthropicModel = sc.AnthropicModel
+	}
+	if sc.AnthropicEffort != "" {
+		cfg.AnthropicEffort = sc.AnthropicEffort
+	}
+	if sc.AnthropicWebSearch != nil {
+		cfg.AnthropicWebSearch = *sc.AnthropicWebSearch
 	}
 	if sc.TagPrefix != "" {
 		cfg.TagPrefix = sc.TagPrefix
@@ -310,6 +331,8 @@ func (c *Config) IsConfigured() bool {
 		return c.GeminiKey != ""
 	case "deepseek":
 		return c.DeepseekKey != ""
+	case "anthropic":
+		return c.AnthropicKey != ""
 	}
 	return false
 }

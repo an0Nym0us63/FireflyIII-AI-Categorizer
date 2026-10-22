@@ -1,6 +1,6 @@
 # Firefly III AI Categorizer
 
-Automatically categorise transactions in [Firefly III](https://www.firefly-iii.org/) using an LLM — choose from OpenAI, Gemini, DeepSeek, or locally hosted. New withdrawals are classified into one of three outcomes and written back without any manual intervention. Process transactions automatically using a Firefly III webhook, or use the web interface to mass categorize transactions.
+Automatically categorise transactions in [Firefly III](https://www.firefly-iii.org/) using an LLM — choose from OpenAI, Gemini, DeepSeek, Anthropic Claude, or locally hosted. New withdrawals are classified into one of three outcomes and written back without any manual intervention. Process transactions automatically using a Firefly III webhook, or use the web interface to mass categorize transactions.
 
 <img width="100%" alt="Jobs page" src="public/docs/images/jobs_page.webp" />
 
@@ -16,7 +16,7 @@ Automatically categorise transactions in [Firefly III](https://www.firefly-iii.o
 The original project is [bahuma20/firefly-iii-ai-categorize](https://github.com/bahuma20/firefly-iii-ai-categorize), whose author archived the project. [openaccountants/firefly-iii-ai-categorize](https://github.com/openaccountants/firefly-iii-ai-categorize) forked it and introduced the three-outcome classification model. This project is a fork of that fork, rewritten from scratch with a new UI and additional features:
 
 - **Web UI.** A built-in dashboard, styled to match Firefly III's AdminLTE theme with light and dark mode support, provides real-time job monitoring, a transactions browser with manual re-categorisation, a category viewer, a review page for AI decisions, and a full settings page.
-- **Multiple AI providers.** Supports OpenAI (and any OpenAI-compatible endpoint such as Ollama or Azure OpenAI), Google Gemini, and DeepSeek — switchable from the settings page.
+- **Multiple AI providers.** Supports OpenAI (and any OpenAI-compatible endpoint such as Ollama or Azure OpenAI), Google Gemini, DeepSeek, and Anthropic Claude — switchable from the settings page.
 - **Batch categorisation.** All uncategorised withdrawals can be classified in one operation from the UI or the command line.
 - **Three-outcome classification model.** Carried forward from the [openaccountants fork](https://github.com/openaccountants/firefly-iii-ai-categorize). The AI discloses its confidence level (`CLASSIFIED`, `ASSUMED`, `NEEDS_REVIEW`) rather than silently guessing or doing nothing.
 - **Transaction history context.** Past categorised transactions are sent to the model as few-shot examples, improving accuracy for recurring merchants. Repeated transactions from the same vendor are categorised automatically, skipping the AI calls entirely.
@@ -84,6 +84,8 @@ In the **Settings → AI Provider** section, choose a provider and enter your AP
 **Google Gemini** — go to [aistudio.google.com](https://aistudio.google.com), sign in, and click **Get API key**. The default model is `gemini-3.1-flash`.
 
 **DeepSeek** — create an account at [platform.deepseek.com](https://platform.deepseek.com), go to **API keys**, and generate a new key. The default model is `deepseek-chat`.
+
+**Anthropic Claude** — create a key at [platform.claude.com](https://platform.claude.com/settings/keys). The default model is `claude-haiku-5-5`, which is fast and inexpensive; `claude-sonnet-5-5` is more capable. Claude Max and Team plans include monthly API credits: create the key in the Console organization linked to your plan so they are used. Optional web search lets Claude look up obscure merchants (up to 3 searches per transaction, billed per search).
 
 **Local (Ollama)** — select OpenAI as the provider, set **Base URL** to your Ollama endpoint (e.g. `http://localhost:11434/v1`), leave the API key blank, and set the model name to whichever model you have pulled.
 
@@ -211,7 +213,7 @@ All variables are optional. When they are absent, the server starts normally and
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_PROVIDER` | `openai` | Provider: `openai`, `gemini`, or `deepseek` |
+| `AI_PROVIDER` | `openai` | Provider: `openai`, `gemini`, `deepseek`, or `anthropic` |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
 | `OPENAI_BASE_URL` | — | Override for OpenAI-compatible APIs (Ollama, Azure, etc.) |
@@ -220,6 +222,10 @@ All variables are optional. When they are absent, the server starts normally and
 | `GEMINI_THINKING` | `low` | Reasoning effort for Gemini: `minimal`/`low`/`medium`/`high`. Lower = cheaper & faster (classification needs little). Uses thinking_level on Gemini 3+, thinking_budget on 2.5 |
 | `DEEPSEEK_API_KEY` | — | DeepSeek API key |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model name |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key |
+| `ANTHROPIC_MODEL` | `claude-haiku-5-5` | Claude model name |
+| `ANTHROPIC_EFFORT` | `low` | Reasoning effort for Claude: `low`/`medium`/`high`. Lower = cheaper & faster |
+| `ANTHROPIC_WEB_SEARCH` | `false` | Let Claude search the web to identify obscure merchants |
 
 ### Server
 

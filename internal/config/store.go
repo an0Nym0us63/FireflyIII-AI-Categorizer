@@ -22,6 +22,10 @@ type StoredConfig struct {
 	GeminiModel         string `json:"gemini_model,omitempty"`
 	DeepseekKey         string `json:"deepseek_api_key,omitempty"`
 	DeepseekModel       string `json:"deepseek_model,omitempty"`
+	AnthropicKey        string `json:"anthropic_api_key,omitempty"`
+	AnthropicModel      string `json:"anthropic_model,omitempty"`
+	AnthropicEffort     string `json:"anthropic_effort,omitempty"`
+	AnthropicWebSearch  *bool  `json:"anthropic_web_search,omitempty"`
 	TagPrefix           string `json:"tag_prefix,omitempty"`
 	CustomSystemContext string `json:"custom_system_context,omitempty"`
 

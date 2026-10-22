@@ -12,6 +12,10 @@ type BuildParams struct {
 	GeminiGrounding bool
 	DeepseekKey     string
 	DeepseekModel   string
+	AnthropicKey       string
+	AnthropicModel     string
+	AnthropicEffort    string
+	AnthropicWebSearch bool
 	CustomContext   string // optional free-text context appended to the system prompt
 }
 
@@ -20,6 +24,8 @@ func Build(p BuildParams) (Classifier, error) {
 	switch p.Provider {
 	case "gemini":
 		return NewGemini(p.GeminiKey, p.GeminiModel, p.CustomContext, p.GeminiThinking, p.GeminiGrounding)
+	case "anthropic":
+		return NewAnthropic(p.AnthropicKey, p.AnthropicModel, p.CustomContext, p.AnthropicEffort, p.AnthropicWebSearch), nil
 	case "deepseek":
 		return NewDeepseek(p.DeepseekKey, p.DeepseekModel, p.CustomContext), nil
 	default:
